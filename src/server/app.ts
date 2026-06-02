@@ -161,6 +161,15 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     guacd: { host: env.guacdHost, port: env.guacdPort }
   }));
 
+  app.post("/api/alert-deliveries/:id/retry", async (request) => {
+    const id = routeId(request);
+    await prisma.alertDelivery.update({
+      where: { id },
+      data: { status: "queued", error: null }
+    });
+    return { ok: true };
+  });
+
   app.get("/api/setup/status", async () => {
     const [resourceCount, layout] = await Promise.all([
       prisma.resource.count(),

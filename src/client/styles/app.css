@@ -1070,7 +1070,8 @@ label {
   padding-bottom: 10px;
 }
 
-.folder-strip span {
+.folder-strip span,
+.folder-chip {
   flex: 0 0 auto;
   min-height: 26px;
   padding: 4px 9px;
@@ -1079,6 +1080,15 @@ label {
   color: var(--muted);
   background: #101415;
   font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.1s, color 0.1s;
+}
+
+.folder-chip.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(45, 212, 191, 0.08);
 }
 
 .connection-row {
@@ -1583,6 +1593,83 @@ label {
 .recent-session-row small {
   color: var(--muted);
   font-size: 11px;
+}
+
+/* Monitoring: mute picker */
+.mute-picker {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(45, 212, 191, 0.35);
+  border-radius: 8px;
+  background: rgba(45, 212, 191, 0.05);
+  font-size: 13px;
+}
+
+.mute-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Monitor card: actions column */
+.monitor-card-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* Vault: vault row with actions overlay */
+.vault-row-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.vault-row-wrap .vault-row {
+  width: 100%;
+}
+
+.vault-row-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Vault: orphaned tag */
+.orphan-tag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(242, 100, 100, 0.45);
+  color: #ff9d9d;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Vault: secret countdown banner */
+.secret-countdown {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line-soft);
+  background: #101415;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Monitoring: 5-column incident row */
+.incident-row-5 {
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
 }
 
 @media (max-width: 920px) {

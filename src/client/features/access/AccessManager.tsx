@@ -29,6 +29,7 @@ export function AccessManager({
   onRefresh: () => Promise<void>;
 }) {
   const [query, setQuery] = useState("");
+  const [folderFilter, setFolderFilter] = useState<string | null>(null);
   const [tabs, setTabs] = useState<RemoteTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [launchingId, setLaunchingId] = useState<string | null>(null);
@@ -39,9 +40,11 @@ export function AccessManager({
     () =>
       data.connections.filter((connection) => {
         const haystack = `${connection.name ?? ""} ${connection.resource?.name ?? ""} ${connection.host} ${connection.type}`;
-        return haystack.toLowerCase().includes(query.toLowerCase());
+        const matchesQuery = haystack.toLowerCase().includes(query.toLowerCase());
+        const matchesFolder = !folderFilter || connection.folderId === folderFilter;
+        return matchesQuery && matchesFolder;
       }),
-    [data.connections, query]
+    [data.connections, query, folderFilter]
   );
 
   async function launch(connection: ConnectionDto) {
@@ -120,9 +123,20 @@ export function AccessManager({
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find host" />
         </label>
         <div className="folder-strip">
-          <span>All</span>
+          <span
+            className={`folder-chip ${!folderFilter ? "active" : ""}`}
+            onClick={() => setFolderFilter(null)}
+          >
+            All
+          </span>
           {folders.map((folder) => (
-            <span key={folder.id}>{folder.name}</span>
+            <span
+              key={folder.id}
+              className={`folder-chip ${folderFilter === folder.id ? "active" : ""}`}
+              onClick={() => setFolderFilter(folderFilter === folder.id ? null : folder.id)}
+            >
+              {folder.name}
+            </span>
           ))}
         </div>
         <div className="connection-list">
@@ -138,7 +152,8 @@ export function AccessManager({
               <span>
                 <strong>{connectionTitle(connection)}</strong>
                 <small>
-                  {connection.type.toUpperCase()} {connection.host}:{connection.port}
+                  {connection.type.toUpperCase()} · {connection.host}:{connection.port}
+                  {connection.credential ? ` · ${connection.credential.label}` : ""}
                 </small>
               </span>
               {launchingId === connection.id ? <RefreshCw className="spin" size={15} /> : <Play size={15} />}

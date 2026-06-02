@@ -118,22 +118,12 @@ export async function registerSearchRoutes({ app, prisma }: RouteContext): Promi
         action: "openVault",
         payload: { credentialId: credential.id }
       })),
-      {
-        id: "nav-dashboard",
-        type: "navigation",
-        title: "Dashboard",
-        subtitle: "Open pro console dashboard",
-        action: "navigate",
-        payload: { view: "dashboard" }
-      },
-      {
-        id: "nav-access",
-        type: "navigation",
-        title: "Access",
-        subtitle: "Open remote manager",
-        action: "navigate",
-        payload: { view: "access" }
-      }
+      { id: "nav-dashboard", type: "navigation", title: "Dashboard", subtitle: "Overview and resource tiles", action: "navigate", payload: { view: "dashboard" } },
+      { id: "nav-access", type: "navigation", title: "Access", subtitle: "Browser-based SSH and RDP sessions", action: "navigate", payload: { view: "access" } },
+      { id: "nav-monitoring", type: "navigation", title: "Monitoring", subtitle: "Health checks and incidents", action: "navigate", payload: { view: "monitoring" } },
+      { id: "nav-vault", type: "navigation", title: "Vault", subtitle: "Encrypted credential vault", action: "navigate", payload: { view: "vault" } },
+      { id: "nav-alerts", type: "navigation", title: "Alerts", subtitle: "Alert channels and delivery rules", action: "navigate", payload: { view: "alerts" } },
+      { id: "nav-inventory", type: "navigation", title: "Inventory", subtitle: "Manage resources, connections, and checks", action: "navigate", payload: { view: "inventory" } }
     ].slice(0, limit);
   });
 }
