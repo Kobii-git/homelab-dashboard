@@ -57,20 +57,11 @@ Open **http://localhost:4173** and log in with your `ADMIN_PASSWORD`.
 
 ## First-run demo data
 
-To pre-populate the dashboard with a realistic homelab (resources, health checks, credentials, an open incident, and notes) set `SEED_DEMO=true` in `docker-compose.yml` before the first start:
+On the first login after a fresh install, the dashboard detects that no resources exist and shows a **first-run setup screen**. A toggle lets you choose whether to load demo data before entering the dashboard.
 
-```yaml
-environment:
-  SEED_DEMO: "true"   # remove or set to "false" after first start
-```
+The demo data includes sample resources, grouped by category, with health checks, SSH/RDP connections, an encrypted credential vault, an open incident, alert channel, and a pinned note — everything needed to explore the full feature set.
 
-Then:
-
-```sh
-docker compose up -d
-```
-
-The demo data is safe to run against an existing installation — it uses upserts and will not duplicate records. Remove `SEED_DEMO: "true"` after the first start to avoid re-seeding on every restart.
+The choice is recorded in the database. The setup screen will not appear again once dismissed.
 
 ---
 
@@ -85,7 +76,6 @@ The demo data is safe to run against an existing installation — it uses upsert
 | `GUACD_HOST` | No | `guacd` host — default `guacd` in Docker |
 | `GUACD_PORT` | No | `guacd` port — default `4822` |
 | `PORT` | No | HTTP port — default `4173` |
-| `SEED_DEMO` | No | Set to `true` on first start to load demo data |
 
 > Keep this on a LAN, VPN, or private mesh network. There is no multi-user auth or HTTPS termination built in — put a reverse proxy (nginx, Caddy, Traefik) in front if exposing beyond localhost.
 

@@ -1,7 +1,6 @@
 import {
   Activity,
   Bell,
-  Command,
   Gauge,
   Home,
   KeyRound,
@@ -14,6 +13,7 @@ import {
   TerminalSquare
 } from "lucide-react";
 import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+
 import { CommandPalette } from "./components/CommandPalette";
 import { DetailDrawer, type DrawerState } from "./components/DetailDrawer";
 import { AccessManager } from "./features/access/AccessManager";
@@ -104,6 +104,58 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
   );
 }
 
+function SetupScreen({
+  loading,
+  error,
+  onComplete
+}: {
+  loading: boolean;
+  error: string | null;
+  onComplete: (withDemo: boolean) => void;
+}) {
+  const [withDemo, setWithDemo] = useState(true);
+
+  return (
+    <main className="login-shell">
+      <div className="setup-panel">
+        <div className="brand-lock">
+          <Gauge size={28} />
+          <div>
+            <h1>Homelab Dashboard</h1>
+            <span>First-run setup</span>
+          </div>
+        </div>
+        <p className="setup-description">
+          Your dashboard is empty. Load demo data to explore every feature with sample resources,
+          health checks, credentials, and an open incident — or start with a clean slate.
+        </p>
+        <div className="toggle-row" onClick={() => setWithDemo((v) => !v)}>
+          <span className={`toggle-track ${withDemo ? "is-on" : ""}`}>
+            <span className="toggle-thumb" />
+          </span>
+          <span>
+            <strong>Load demo data</strong>
+            <small>
+              Sample homelab with grouped resources, SSH/RDP connections, health checks, an open
+              incident, vault credentials, and a pinned note
+            </small>
+          </span>
+        </div>
+        {error ? <p className="form-error">{error}</p> : null}
+        <button
+          className="primary-button"
+          type="button"
+          disabled={loading}
+          onClick={() => onComplete(withDemo)}
+        >
+          {loading ? <RefreshCw className="spin" size={16} /> : <Gauge size={16} />}
+          {loading ? (withDemo ? "Loading demo data…" : "Setting up…") : "Get started"}
+        </button>
+      </div>
+    </main>
+  );
+}
+
 function StatusStrip({ data }: { data: V2Data }) {
   const openIncidents = data.incidents.filter((incident) => incident.status !== "resolved").length;
   const failingChecks = data.checks.filter((check) => check.latestStatus === "offline").length;
@@ -134,6 +186,9 @@ function DrawerBody({ rows }: { rows: Array<[string, string | number | null | un
 
 export function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [firstRun, setFirstRun] = useState<boolean | null>(null);
+  const [setupLoading, setSetupLoading] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
   const [view, setView] = useState<AppView>("dashboard");
   const [data, setData] = useState<V2Data>(emptyV2Data);
   const [loading, setLoading] = useState(false);
@@ -219,7 +274,25 @@ export function App() {
     const me = await apiGet<{ authenticated: boolean }>("/api/auth/me");
     setAuthenticated(me.authenticated);
     if (me.authenticated) {
+      const [, status] = await Promise.all([
+        loadData(),
+        apiGet<{ firstRun: boolean }>("/api/setup/status")
+      ]);
+      setFirstRun(status.firstRun);
+    }
+  }
+
+  async function completeSetup(withDemo: boolean) {
+    setSetupLoading(true);
+    setSetupError(null);
+    try {
+      await apiSend("/api/setup", "POST", { seedDemo: withDemo });
       await loadData();
+      setFirstRun(false);
+    } catch (e) {
+      setSetupError(e instanceof Error ? e.message : "Setup failed");
+    } finally {
+      setSetupLoading(false);
     }
   }
 
@@ -378,12 +451,16 @@ export function App() {
     }
   }
 
-  if (authenticated === null) {
+  if (authenticated === null || (authenticated && firstRun === null)) {
     return <div className="loading-screen">Loading</div>;
   }
 
   if (!authenticated) {
-    return <LoginView onLogin={() => checkAuth()} />;
+    return <LoginView onLogin={() => void checkAuth()} />;
+  }
+
+  if (firstRun) {
+    return <SetupScreen loading={setupLoading} error={setupError} onComplete={completeSetup} />;
   }
 
   return (

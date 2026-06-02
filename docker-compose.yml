@@ -9,7 +9,6 @@ services:
       DATABASE_URL: file:/data/homelab.db
       GUACD_HOST: guacd
       GUACD_PORT: 4822
-      # SEED_DEMO: "true"   # uncomment on first run to load demo resources, checks, and credentials
     ports:
       - "4173:4173"
     volumes:

@@ -1458,6 +1458,79 @@ label {
   padding: 22px;
 }
 
+.setup-panel {
+  display: grid;
+  gap: 22px;
+  width: min(480px, 100%);
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.setup-description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.toggle-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-track {
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #1a2226;
+  position: relative;
+  transition: background 0.15s, border-color 0.15s;
+  margin-top: 2px;
+}
+
+.toggle-track.is-on {
+  background: var(--accent-strong);
+  border-color: var(--accent);
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #8a9aa3;
+  transition: transform 0.15s, background 0.15s;
+}
+
+.toggle-track.is-on .toggle-thumb {
+  transform: translateX(20px);
+  background: #fff;
+}
+
+.toggle-row strong {
+  display: block;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.toggle-row small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .login-panel h1 {
   margin: 0;
   font-size: 24px;

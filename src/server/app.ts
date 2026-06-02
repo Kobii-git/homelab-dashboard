@@ -7,7 +7,7 @@ import staticFiles from "@fastify/static";
 import websocket from "@fastify/websocket";
 import { PrismaClient } from "@prisma/client";
 import Fastify, { type FastifyInstance } from "fastify";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import { isAuthenticated, createAuthToken, SESSION_COOKIE, verifyAdminPassword } from "./auth.js";
 import { getEnv, type AppEnv } from "./env.js";
 import { wireGuacamoleTunnel, SessionStore } from "./guacamole.js";
@@ -29,6 +29,7 @@ import {
   sessionLaunchSchema
 } from "./validation.js";
 import { decryptCredential, encryptCredential, type PlainCredential } from "./vault.js";
+import { seedDemo } from "./seed.js";
 import { createAuditEvent } from "./audit.js";
 import { registerAlertRoutes } from "./routes/alerts.js";
 import { registerIncidentRoutes } from "./routes/incidents.js";
@@ -159,6 +160,30 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     vaultConfigured: Boolean(env.vaultKey && env.vaultKey.length >= 16),
     guacd: { host: env.guacdHost, port: env.guacdPort }
   }));
+
+  app.get("/api/setup/status", async () => {
+    const [resourceCount, layout] = await Promise.all([
+      prisma.resource.count(),
+      prisma.dashboardLayout.findUnique({ where: { id: "main" } })
+    ]);
+    const layoutData = parseLayout(layout?.layoutJson ?? "{}");
+    return { firstRun: resourceCount === 0 && !layoutData.setupDismissed };
+  });
+
+  app.post("/api/setup", async (request) => {
+    const body = z.object({ seedDemo: z.boolean() }).parse(request.body);
+    if (body.seedDemo) {
+      await seedDemo(prisma, env.vaultKey);
+    }
+    const layout = await prisma.dashboardLayout.findUnique({ where: { id: "main" } });
+    const existing = parseLayout(layout?.layoutJson ?? "{}");
+    await prisma.dashboardLayout.upsert({
+      where: { id: "main" },
+      create: { id: "main", layoutJson: JSON.stringify({ ...existing, setupDismissed: true }) },
+      update: { layoutJson: JSON.stringify({ ...existing, setupDismissed: true }) }
+    });
+    return { ok: true };
+  });
 
   app.post("/api/auth/login", async (request, reply) => {
     const body = loginSchema.parse(request.body);

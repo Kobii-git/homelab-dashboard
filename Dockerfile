@@ -24,8 +24,4 @@ COPY --from=build /app/prisma ./prisma
 VOLUME ["/data"]
 EXPOSE 4173
 
-CMD ["sh", "-c", "npx prisma db push --skip-generate && \
-  if [ \"$SEED_DEMO\" = \"true\" ]; then \
-    echo '[homelab] Seeding demo data...' && node dist/server/seed.js && echo '[homelab] Demo data ready.'; \
-  fi && \
-  node dist/server/index.js"]
+CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/server/index.js"]
