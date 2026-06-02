@@ -14,15 +14,18 @@ function safeEqual(a: string, b: string): boolean {
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.scryptSync(password, salt, 64) as Buffer;
+  const hash = crypto.pbkdf2Sync(password, salt, 100_000, 64, "sha256");
   return `${salt}:${hash.toString("hex")}`;
 }
 
 export function verifyHashedPassword(password: string, stored: string): boolean {
-  const [salt, hash] = stored.split(":");
-  if (!salt || !hash) return false;
-  const derived = crypto.scryptSync(password, salt, 64) as Buffer;
-  const storedBuf = Buffer.from(hash, "hex");
+  const idx = stored.indexOf(":");
+  if (idx < 0) return false;
+  const salt = stored.slice(0, idx);
+  const hexHash = stored.slice(idx + 1);
+  if (!salt || !hexHash) return false;
+  const derived = crypto.pbkdf2Sync(password, salt, 100_000, 64, "sha256");
+  const storedBuf = Buffer.from(hexHash, "hex");
   if (derived.length !== storedBuf.length) return false;
   return crypto.timingSafeEqual(derived, storedBuf);
 }
@@ -33,25 +36,23 @@ export async function verifyAdminLogin(
   env: AppEnv,
   prisma: PrismaClient
 ): Promise<boolean> {
-  // Legacy mode: env var password, username not checked
+  // Legacy: env var password (no username check)
   if (env.adminPassword) {
     return safeEqual(password, env.adminPassword);
   }
   const account = await prisma.adminAccount.findUnique({ where: { id: "admin" } });
   if (!account) return false;
-  if (username && account.username !== username) return false;
+  // Username check is case-insensitive; omitting username skips the check
+  if (username && account.username.toLowerCase() !== username.toLowerCase()) return false;
   return verifyHashedPassword(password, account.passwordHash);
 }
 
-// Kept for vault reveal (password only, no username check)
 export async function verifyAdminPassword(
   password: string,
   env: AppEnv,
   prisma: PrismaClient
 ): Promise<boolean> {
-  if (env.adminPassword) {
-    return safeEqual(password, env.adminPassword);
-  }
+  if (env.adminPassword) return safeEqual(password, env.adminPassword);
   const account = await prisma.adminAccount.findUnique({ where: { id: "admin" } });
   if (!account) return false;
   return verifyHashedPassword(password, account.passwordHash);

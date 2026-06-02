@@ -197,7 +197,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       })
       .parse(request.body);
 
-    // Create admin account if password provided and no env var override
+    // Create admin account
     if (body.password && !env.adminPassword) {
       const hash = hashPassword(body.password);
       await prisma.adminAccount.upsert({
@@ -207,10 +207,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       });
     }
 
-    if (body.seedDemo) {
-      await seedDemo(prisma, env.vaultKey);
-    }
-
+    // Mark setup dismissed immediately so the client can proceed
     const layout = await prisma.dashboardLayout.findUnique({ where: { id: "main" } });
     const existing = parseLayout(layout?.layoutJson ?? "{}");
     await prisma.dashboardLayout.upsert({
@@ -218,6 +215,14 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       create: { id: "main", layoutJson: JSON.stringify({ ...existing, setupDismissed: true }) },
       update: { layoutJson: JSON.stringify({ ...existing, setupDismissed: true }) }
     });
+
+    // Seed demo data in the background — don't block the response
+    if (body.seedDemo) {
+      seedDemo(prisma, env.vaultKey).catch((err) => {
+        app.log.error({ err }, "Demo seed failed");
+      });
+    }
+
     return { ok: true };
   });
 
