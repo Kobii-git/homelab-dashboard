@@ -21,37 +21,49 @@ A private, self-hosted command centre for your homelab. Launch SSH/RDP sessions 
 
 ## Quick start with Docker (recommended)
 
-**No git clone required.** Pull the image directly.
+**No git clone required.** The image is hosted on GitHub Container Registry.
 
-### 1. Create a directory and config file
+### Authenticate once per machine
 
-```sh
-mkdir homelab-dashboard && cd homelab-dashboard
-curl -O https://raw.githubusercontent.com/Kobii-git/homelab-dashboard/main/.env.example
-cp .env.example .env
-```
-
-Edit `.env` and set all three secrets before continuing:
-
-```env
-ADMIN_PASSWORD=your-strong-password
-COOKIE_SECRET=a-random-string-of-at-least-32-characters
-HOMELAB_VAULT_KEY=another-random-string-at-least-16-chars
-```
-
-### 2. Download the compose file
+The image is in a private registry. Create a **GitHub PAT** with `read:packages` scope at
+https://github.com/settings/tokens/new, then log in:
 
 ```sh
-curl -O https://raw.githubusercontent.com/Kobii-git/homelab-dashboard/main/docker-compose.yml
+echo YOUR_GITHUB_TOKEN | docker login ghcr.io -u Kobii-git --password-stdin
 ```
 
-### 3. Start
+This stores credentials in `~/.docker/config.json` — you only need to do it once per machine.
+
+### One-command install
 
 ```sh
-docker compose up -d
+curl -fsSL https://raw.githubusercontent.com/Kobii-git/homelab-dashboard/main/docker-compose.yml \
+  -o /tmp/homelab.yml && \
+ADMIN_PASSWORD=your-password \
+COOKIE_SECRET=$(openssl rand -hex 32) \
+HOMELAB_VAULT_KEY=$(openssl rand -hex 16) \
+docker compose -f /tmp/homelab.yml up -d
 ```
 
 Open **http://localhost:4173** and log in with your `ADMIN_PASSWORD`.
+
+> The `openssl rand` commands generate cryptographically random secrets automatically.
+> Write down `ADMIN_PASSWORD` — you'll need it to log in.
+
+### Using a `.env` file instead
+
+If you prefer to keep secrets in a file:
+
+```sh
+mkdir homelab && cd homelab
+curl -fsSL https://raw.githubusercontent.com/Kobii-git/homelab-dashboard/main/docker-compose.yml -o docker-compose.yml
+cat > .env <<EOF
+ADMIN_PASSWORD=your-strong-password
+COOKIE_SECRET=$(openssl rand -hex 32)
+HOMELAB_VAULT_KEY=$(openssl rand -hex 16)
+EOF
+docker compose up -d
+```
 
 ---
 

@@ -3,12 +3,13 @@ services:
     image: ghcr.io/kobii-git/homelab-dashboard:latest
     container_name: homelab-dashboard
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       DATABASE_URL: file:/data/homelab.db
       GUACD_HOST: guacd
       GUACD_PORT: 4822
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      COOKIE_SECRET: ${COOKIE_SECRET}
+      HOMELAB_VAULT_KEY: ${HOMELAB_VAULT_KEY}
     ports:
       - "4173:4173"
     volumes:
