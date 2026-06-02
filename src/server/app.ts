@@ -9,7 +9,7 @@ import websocket from "@fastify/websocket";
 import { PrismaClient } from "@prisma/client";
 import Fastify, { type FastifyInstance } from "fastify";
 import { z, ZodError } from "zod";
-import { isAuthenticated, createAuthToken, SESSION_COOKIE, verifyAdminPassword, hashPassword } from "./auth.js";
+import { isAuthenticated, createAuthToken, SESSION_COOKIE, verifyAdminPassword, verifyAdminLogin, hashPassword } from "./auth.js";
 import { getEnv, type AppEnv } from "./env.js";
 import { wireGuacamoleTunnel, SessionStore } from "./guacamole.js";
 import { runHealthCheck, startHealthScheduler } from "./healthChecks.js";
@@ -190,16 +190,20 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   app.post("/api/setup", async (request) => {
     const body = z
-      .object({ password: z.string().min(1).optional(), seedDemo: z.boolean() })
+      .object({
+        username: z.string().trim().min(1).optional(),
+        password: z.string().min(1).optional(),
+        seedDemo: z.boolean()
+      })
       .parse(request.body);
 
     // Create admin account if password provided and no env var override
     if (body.password && !env.adminPassword) {
-      const hash = await hashPassword(body.password);
+      const hash = hashPassword(body.password);
       await prisma.adminAccount.upsert({
         where: { id: "admin" },
-        create: { id: "admin", passwordHash: hash },
-        update: { passwordHash: hash }
+        create: { id: "admin", username: body.username ?? "admin", passwordHash: hash },
+        update: { username: body.username ?? "admin", passwordHash: hash }
       });
     }
 
@@ -220,7 +224,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.post("/api/auth/login", async (request, reply) => {
     const body = loginSchema.parse(request.body);
 
-    if (!(await verifyAdminPassword(body.password, env, prisma))) {
+    if (!(await verifyAdminLogin(body.username, body.password, env, prisma))) {
       reply.code(401).send({ error: "Invalid password" });
       return;
     }

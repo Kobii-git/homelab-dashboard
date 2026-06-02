@@ -1,10 +1,7 @@
 import crypto from "node:crypto";
-import { promisify } from "node:util";
 import type { PrismaClient } from "@prisma/client";
 import type { FastifyRequest } from "fastify";
 import type { AppEnv } from "./env.js";
-
-const scryptAsync = promisify(crypto.scrypt);
 
 export const SESSION_COOKIE = "homelab_session";
 
@@ -15,27 +12,43 @@ function safeEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(ab, bb);
 }
 
-export async function hashPassword(password: string): Promise<string> {
+export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString("hex");
-  const hash = (await scryptAsync(password, salt, 64)) as Buffer;
+  const hash = crypto.scryptSync(password, salt, 64) as Buffer;
   return `${salt}:${hash.toString("hex")}`;
 }
 
-export async function verifyHashedPassword(password: string, stored: string): Promise<boolean> {
+export function verifyHashedPassword(password: string, stored: string): boolean {
   const [salt, hash] = stored.split(":");
   if (!salt || !hash) return false;
-  const derived = (await scryptAsync(password, salt, 64)) as Buffer;
+  const derived = crypto.scryptSync(password, salt, 64) as Buffer;
   const storedBuf = Buffer.from(hash, "hex");
   if (derived.length !== storedBuf.length) return false;
   return crypto.timingSafeEqual(derived, storedBuf);
 }
 
+export async function verifyAdminLogin(
+  username: string | undefined,
+  password: string,
+  env: AppEnv,
+  prisma: PrismaClient
+): Promise<boolean> {
+  // Legacy mode: env var password, username not checked
+  if (env.adminPassword) {
+    return safeEqual(password, env.adminPassword);
+  }
+  const account = await prisma.adminAccount.findUnique({ where: { id: "admin" } });
+  if (!account) return false;
+  if (username && account.username !== username) return false;
+  return verifyHashedPassword(password, account.passwordHash);
+}
+
+// Kept for vault reveal (password only, no username check)
 export async function verifyAdminPassword(
   password: string,
   env: AppEnv,
   prisma: PrismaClient
 ): Promise<boolean> {
-  // Env var takes precedence — supports existing deployments
   if (env.adminPassword) {
     return safeEqual(password, env.adminPassword);
   }

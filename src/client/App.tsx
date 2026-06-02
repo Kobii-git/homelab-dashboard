@@ -56,6 +56,7 @@ const navItems: Array<{ id: AppView; label: string; icon: ReactNode }> = [
 ];
 
 function LoginView({ onLogin }: { onLogin: () => void }) {
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -66,7 +67,7 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
     setError(null);
 
     try {
-      await apiSend("/api/auth/login", "POST", { password });
+      await apiSend("/api/auth/login", "POST", { username: username || undefined, password });
       onLogin();
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : "Login failed");
@@ -86,9 +87,18 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
           </div>
         </div>
         <label>
-          Password
+          Username
           <input
             autoFocus
+            type="text"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            placeholder="admin"
+          />
+        </label>
+        <label>
+          Password
+          <input
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
@@ -113,21 +123,23 @@ function SetupScreen({
   loading: boolean;
   error: string | null;
   needsAccount: boolean;
-  onComplete: (password: string | null, withDemo: boolean) => void;
+  onComplete: (username: string | null, password: string | null, withDemo: boolean) => void;
 }) {
   const [withDemo, setWithDemo] = useState(true);
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
   function submit() {
     if (needsAccount) {
+      if (!username) { setLocalError("Please choose a username."); return; }
       if (!password) { setLocalError("Please set a password."); return; }
       if (password !== confirm) { setLocalError("Passwords do not match."); return; }
       if (password.length < 6) { setLocalError("Password must be at least 6 characters."); return; }
     }
     setLocalError(null);
-    onComplete(needsAccount ? password : null, withDemo);
+    onComplete(needsAccount ? username : null, needsAccount ? password : null, withDemo);
   }
 
   const displayError = localError ?? error;
@@ -145,12 +157,21 @@ function SetupScreen({
 
         {needsAccount ? (
           <>
-            <p className="setup-description">Create the admin password you'll use to log in.</p>
+            <p className="setup-description">Create the admin account you'll use to log in.</p>
+            <label>
+              Username
+              <input
+                type="text"
+                autoFocus
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="e.g. admin"
+              />
+            </label>
             <label>
               Password
               <input
                 type="password"
-                autoFocus
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Min. 6 characters"
@@ -323,18 +344,31 @@ export function App() {
     }
   }
 
-  async function completeSetup(password: string | null, withDemo: boolean) {
+  async function completeSetup(username: string | null, password: string | null, withDemo: boolean) {
     setSetupLoading(true);
     setSetupError(null);
     try {
-      await apiSend("/api/setup", "POST", { password: password ?? undefined, seedDemo: withDemo });
-      await loadData();
+      await apiSend("/api/setup", "POST", {
+        username: username ?? undefined,
+        password: password ?? undefined,
+        seedDemo: withDemo
+      });
       setSetupStatus(null);
     } catch (e) {
       setSetupError(e instanceof Error ? e.message : "Setup failed");
-    } finally {
       setSetupLoading(false);
+      return;
     }
+    // Auto-login then always call checkAuth to get out of loading state
+    if (password) {
+      try {
+        await apiSend("/api/auth/login", "POST", { username: username ?? undefined, password });
+      } catch {
+        // auto-login failed — checkAuth below will show login screen
+      }
+    }
+    await checkAuth();
+    setSetupLoading(false);
   }
 
   useEffect(() => {
@@ -503,18 +537,7 @@ export function App() {
         loading={setupLoading}
         error={setupError}
         needsAccount={true}
-        onComplete={async (password, withDemo) => {
-          await completeSetup(password, withDemo);
-          // After account creation, log in automatically
-          if (password) {
-            try {
-              await apiSend("/api/auth/login", "POST", { password });
-              await checkAuth();
-            } catch {
-              // login failed — user will see login screen
-            }
-          }
-        }}
+        onComplete={completeSetup}
       />
     );
   }

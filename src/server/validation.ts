@@ -13,6 +13,7 @@ const nullableText = z.string().trim().min(1).max(2000).optional().nullable();
 const optionalText = z.string().trim().min(1).max(2000).optional();
 
 export const loginSchema = z.object({
+  username: z.string().trim().min(1).optional(),
   password: z.string().min(1)
 });
 
