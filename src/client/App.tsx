@@ -107,13 +107,30 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
 function SetupScreen({
   loading,
   error,
+  needsAccount,
   onComplete
 }: {
   loading: boolean;
   error: string | null;
-  onComplete: (withDemo: boolean) => void;
+  needsAccount: boolean;
+  onComplete: (password: string | null, withDemo: boolean) => void;
 }) {
   const [withDemo, setWithDemo] = useState(true);
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  function submit() {
+    if (needsAccount) {
+      if (!password) { setLocalError("Please set a password."); return; }
+      if (password !== confirm) { setLocalError("Passwords do not match."); return; }
+      if (password.length < 6) { setLocalError("Password must be at least 6 characters."); return; }
+    }
+    setLocalError(null);
+    onComplete(needsAccount ? password : null, withDemo);
+  }
+
+  const displayError = localError ?? error;
 
   return (
     <main className="login-shell">
@@ -125,10 +142,32 @@ function SetupScreen({
             <span>First-run setup</span>
           </div>
         </div>
-        <p className="setup-description">
-          Your dashboard is empty. Load demo data to explore every feature with sample resources,
-          health checks, credentials, and an open incident — or start with a clean slate.
-        </p>
+
+        {needsAccount ? (
+          <>
+            <p className="setup-description">Create the admin password you'll use to log in.</p>
+            <label>
+              Password
+              <input
+                type="password"
+                autoFocus
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Min. 6 characters"
+              />
+            </label>
+            <label>
+              Confirm password
+              <input
+                type="password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                placeholder="Repeat password"
+              />
+            </label>
+          </>
+        ) : null}
+
         <div className="toggle-row" onClick={() => setWithDemo((v) => !v)}>
           <span className={`toggle-track ${withDemo ? "is-on" : ""}`}>
             <span className="toggle-thumb" />
@@ -136,17 +175,19 @@ function SetupScreen({
           <span>
             <strong>Load demo data</strong>
             <small>
-              Sample homelab with grouped resources, SSH/RDP connections, health checks, an open
-              incident, vault credentials, and a pinned note
+              Sample resources, SSH/RDP connections, health checks, an open incident, vault
+              credentials, and a pinned note
             </small>
           </span>
         </div>
-        {error ? <p className="form-error">{error}</p> : null}
+
+        {displayError ? <p className="form-error">{displayError}</p> : null}
+
         <button
           className="primary-button"
           type="button"
           disabled={loading}
-          onClick={() => onComplete(withDemo)}
+          onClick={submit}
         >
           {loading ? <RefreshCw className="spin" size={16} /> : <Gauge size={16} />}
           {loading ? (withDemo ? "Loading demo data…" : "Setting up…") : "Get started"}
@@ -186,7 +227,7 @@ function DrawerBody({ rows }: { rows: Array<[string, string | number | null | un
 
 export function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
-  const [firstRun, setFirstRun] = useState<boolean | null>(null);
+  const [setupStatus, setSetupStatus] = useState<{ firstRun: boolean; needsAccount: boolean } | null>(null);
   const [setupLoading, setSetupLoading] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   const [view, setView] = useState<AppView>("dashboard");
@@ -271,24 +312,24 @@ export function App() {
   }
 
   async function checkAuth() {
-    const me = await apiGet<{ authenticated: boolean }>("/api/auth/me");
+    const [me, status] = await Promise.all([
+      apiGet<{ authenticated: boolean }>("/api/auth/me"),
+      apiGet<{ firstRun: boolean; needsAccount: boolean }>("/api/setup/status")
+    ]);
     setAuthenticated(me.authenticated);
+    setSetupStatus(status);
     if (me.authenticated) {
-      const [, status] = await Promise.all([
-        loadData(),
-        apiGet<{ firstRun: boolean }>("/api/setup/status")
-      ]);
-      setFirstRun(status.firstRun);
+      await loadData();
     }
   }
 
-  async function completeSetup(withDemo: boolean) {
+  async function completeSetup(password: string | null, withDemo: boolean) {
     setSetupLoading(true);
     setSetupError(null);
     try {
-      await apiSend("/api/setup", "POST", { seedDemo: withDemo });
+      await apiSend("/api/setup", "POST", { password: password ?? undefined, seedDemo: withDemo });
       await loadData();
-      setFirstRun(false);
+      setSetupStatus(null);
     } catch (e) {
       setSetupError(e instanceof Error ? e.message : "Setup failed");
     } finally {
@@ -451,16 +492,46 @@ export function App() {
     }
   }
 
-  if (authenticated === null || (authenticated && firstRun === null)) {
+  if (authenticated === null || setupStatus === null) {
     return <div className="loading-screen">Loading</div>;
+  }
+
+  // No account exists yet — show account creation before anything else
+  if (setupStatus.needsAccount) {
+    return (
+      <SetupScreen
+        loading={setupLoading}
+        error={setupError}
+        needsAccount={true}
+        onComplete={async (password, withDemo) => {
+          await completeSetup(password, withDemo);
+          // After account creation, log in automatically
+          if (password) {
+            try {
+              await apiSend("/api/auth/login", "POST", { password });
+              await checkAuth();
+            } catch {
+              // login failed — user will see login screen
+            }
+          }
+        }}
+      />
+    );
   }
 
   if (!authenticated) {
     return <LoginView onLogin={() => void checkAuth()} />;
   }
 
-  if (firstRun) {
-    return <SetupScreen loading={setupLoading} error={setupError} onComplete={completeSetup} />;
+  if (setupStatus.firstRun) {
+    return (
+      <SetupScreen
+        loading={setupLoading}
+        error={setupError}
+        needsAccount={false}
+        onComplete={completeSetup}
+      />
+    );
   }
 
   return (

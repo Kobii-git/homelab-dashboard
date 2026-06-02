@@ -1,4 +1,5 @@
 import { verifyAdminPassword } from "../auth.js";
+
 import { createAuditEvent } from "../audit.js";
 import { serializeAuditEvent } from "../serializers.js";
 import {
@@ -105,7 +106,7 @@ export async function registerVaultRoutes({ app, prisma, env }: RouteContext): P
   app.post("/api/vault/reveal", async (request, reply) => {
     const body = vaultRevealSchema.parse(request.body);
 
-    if (!verifyAdminPassword(body.password, env)) {
+    if (!(await verifyAdminPassword(body.password, env, prisma))) {
       await createAuditEvent(prisma, {
         action: "vault.reveal.denied",
         entityType: "credential",

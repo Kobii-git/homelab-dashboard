@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,7 +9,7 @@ import websocket from "@fastify/websocket";
 import { PrismaClient } from "@prisma/client";
 import Fastify, { type FastifyInstance } from "fastify";
 import { z, ZodError } from "zod";
-import { isAuthenticated, createAuthToken, SESSION_COOKIE, verifyAdminPassword } from "./auth.js";
+import { isAuthenticated, createAuthToken, SESSION_COOKIE, verifyAdminPassword, hashPassword } from "./auth.js";
 import { getEnv, type AppEnv } from "./env.js";
 import { wireGuacamoleTunnel, SessionStore } from "./guacamole.js";
 import { runHealthCheck, startHealthScheduler } from "./healthChecks.js";
@@ -106,7 +107,12 @@ function routeId(request: { params: unknown }): string {
 }
 
 export async function createApp(options: CreateAppOptions = {}): Promise<FastifyInstance> {
-  const env = options.env ?? getEnv();
+  const raw = options.env ?? getEnv();
+  const env: AppEnv = {
+    ...raw,
+    cookieSecret: raw.cookieSecret ?? crypto.randomBytes(32).toString("hex"),
+    vaultKey: raw.vaultKey ?? crypto.randomBytes(32).toString("hex")
+  };
   const prisma = options.prisma ?? new PrismaClient();
   const sessions = new SessionStore();
   const app = Fastify({ logger: options.logger ?? env.nodeEnv === "production" });
@@ -171,19 +177,36 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   });
 
   app.get("/api/setup/status", async () => {
-    const [resourceCount, layout] = await Promise.all([
+    const [resourceCount, layout, adminAccount] = await Promise.all([
       prisma.resource.count(),
-      prisma.dashboardLayout.findUnique({ where: { id: "main" } })
+      prisma.dashboardLayout.findUnique({ where: { id: "main" } }),
+      env.adminPassword ? null : prisma.adminAccount.findUnique({ where: { id: "admin" } })
     ]);
     const layoutData = parseLayout(layout?.layoutJson ?? "{}");
-    return { firstRun: resourceCount === 0 && !layoutData.setupDismissed };
+    const hasAccount = Boolean(env.adminPassword) || Boolean(adminAccount);
+    const emptyDashboard = resourceCount === 0 && !layoutData.setupDismissed;
+    return { firstRun: !hasAccount || emptyDashboard, needsAccount: !hasAccount };
   });
 
   app.post("/api/setup", async (request) => {
-    const body = z.object({ seedDemo: z.boolean() }).parse(request.body);
+    const body = z
+      .object({ password: z.string().min(1).optional(), seedDemo: z.boolean() })
+      .parse(request.body);
+
+    // Create admin account if password provided and no env var override
+    if (body.password && !env.adminPassword) {
+      const hash = await hashPassword(body.password);
+      await prisma.adminAccount.upsert({
+        where: { id: "admin" },
+        create: { id: "admin", passwordHash: hash },
+        update: { passwordHash: hash }
+      });
+    }
+
     if (body.seedDemo) {
       await seedDemo(prisma, env.vaultKey);
     }
+
     const layout = await prisma.dashboardLayout.findUnique({ where: { id: "main" } });
     const existing = parseLayout(layout?.layoutJson ?? "{}");
     await prisma.dashboardLayout.upsert({
@@ -197,7 +220,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.post("/api/auth/login", async (request, reply) => {
     const body = loginSchema.parse(request.body);
 
-    if (!verifyAdminPassword(body.password, env)) {
+    if (!(await verifyAdminPassword(body.password, env, prisma))) {
       reply.code(401).send({ error: "Invalid password" });
       return;
     }

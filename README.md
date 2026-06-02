@@ -21,48 +21,43 @@ A private, self-hosted command centre for your homelab. Launch SSH/RDP sessions 
 
 ## Quick start with Docker (recommended)
 
-**No git clone required.** The image is hosted on GitHub Container Registry.
+**No configuration required.** The app sets itself up on first boot.
 
-### Authenticate once per machine
-
-The image is in a private registry. Create a **GitHub PAT** with `read:packages` scope at
-https://github.com/settings/tokens/new, then log in:
+### Authenticate to the private image registry (once per machine)
 
 ```sh
 echo YOUR_GITHUB_TOKEN | docker login ghcr.io -u Kobii-git --password-stdin
 ```
 
-This stores credentials in `~/.docker/config.json` — you only need to do it once per machine.
+Create a GitHub PAT with `read:packages` scope at https://github.com/settings/tokens/new.
+This is stored in `~/.docker/config.json` — you only need to do it once per machine.
 
-### One-command install
+### Install — one command
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Kobii-git/homelab-dashboard/main/docker-compose.yml \
-  -o /tmp/homelab.yml && \
-ADMIN_PASSWORD=your-password \
-COOKIE_SECRET=$(openssl rand -hex 32) \
-HOMELAB_VAULT_KEY=$(openssl rand -hex 16) \
-docker compose -f /tmp/homelab.yml up -d
+  -o /tmp/homelab.yml && docker compose -f /tmp/homelab.yml up -d
 ```
 
-Open **http://localhost:4173** and log in with your `ADMIN_PASSWORD`.
+Open **http://localhost:4173**. On first visit you'll be prompted to **create a password** and
+optionally load demo data — no env vars needed.
 
-> The `openssl rand` commands generate cryptographically random secrets automatically.
-> Write down `ADMIN_PASSWORD` — you'll need it to log in.
+### What the first-run screen does
 
-### Using a `.env` file instead
+1. You choose a password for the admin account (stored as a salted scrypt hash in the database)
+2. A toggle lets you load demo data to explore the full feature set
+3. The cookie signing key and vault encryption key are auto-generated and persisted in the
+   database — nothing to write down or back up separately
 
-If you prefer to keep secrets in a file:
+### Pinning secrets (optional, recommended for production)
 
-```sh
-mkdir homelab && cd homelab
-curl -fsSL https://raw.githubusercontent.com/Kobii-git/homelab-dashboard/main/docker-compose.yml -o docker-compose.yml
-cat > .env <<EOF
-ADMIN_PASSWORD=your-strong-password
-COOKIE_SECRET=$(openssl rand -hex 32)
-HOMELAB_VAULT_KEY=$(openssl rand -hex 16)
-EOF
-docker compose up -d
+If you want to be explicit — or ensure sessions survive container restarts — add these to
+`docker-compose.yml` under `environment:`:
+
+```yaml
+ADMIN_PASSWORD: your-password        # bypasses the web account creation screen
+COOKIE_SECRET: random-32-char-string # persistent sessions across restarts
+HOMELAB_VAULT_KEY: random-key        # bring your own vault encryption key
 ```
 
 ---
@@ -81,10 +76,10 @@ The choice is recorded in the database. The setup screen will not appear again o
 
 | Variable | Required | Description |
 |---|---|---|
-| `ADMIN_PASSWORD` | Yes | Single admin login password |
-| `COOKIE_SECRET` | Yes | Signs the session cookie — minimum 32 characters |
-| `HOMELAB_VAULT_KEY` | Yes | Encrypts stored credentials — minimum 16 characters |
-| `DATABASE_URL` | Yes | Prisma SQLite path — default `file:/data/homelab.db` |
+| `ADMIN_PASSWORD` | No | Skip web account creation and use this password instead |
+| `COOKIE_SECRET` | No | Signs session cookies — auto-generated if unset (sessions reset on restart) |
+| `HOMELAB_VAULT_KEY` | No | Vault encryption key — auto-generated and persisted in DB if unset |
+| `DATABASE_URL` | No | Prisma SQLite path — default `file:/data/homelab.db` |
 | `GUACD_HOST` | No | `guacd` host — default `guacd` in Docker |
 | `GUACD_PORT` | No | `guacd` port — default `4822` |
 | `PORT` | No | HTTP port — default `4173` |
