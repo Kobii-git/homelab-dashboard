@@ -1,0 +1,351 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model DashboardGroup {
+  id        String     @id @default(cuid())
+  name      String
+  sortOrder Int        @default(0)
+  collapsed Boolean    @default(false)
+  resources Resource[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Resource {
+  id           String        @id @default(cuid())
+  name         String
+  kind         String
+  url          String?
+  description  String?
+  icon         String?
+  color        String?
+  host         String?
+  notes        String?
+  favorite     Boolean       @default(false)
+  sortOrder    Int           @default(0)
+  groupId      String?
+  group        DashboardGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  tags         Tag[]         @relation("ResourceTags")
+  connections  Connection[]
+  healthChecks HealthCheck[]
+  incidents    Incident[]
+  notesList    Note[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([groupId])
+  @@index([kind])
+  @@index([favorite])
+}
+
+model Credential {
+  id            String       @id @default(cuid())
+  label         String
+  username      String?
+  notes         String?
+  folderId      String?
+  folder        Folder?      @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  tags          Tag[]        @relation("CredentialTags")
+  lastUsedAt    DateTime?
+  encryptedBlob String
+  iv            String
+  authTag       String
+  connections   Connection[]
+  sessionHistory SessionHistory[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([folderId])
+  @@index([lastUsedAt])
+}
+
+model Connection {
+  id           String      @id @default(cuid())
+  resourceId   String
+  resource     Resource    @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  type         String
+  name         String?
+  host         String
+  port         Int
+  usernameHint String?
+  credentialId String?
+  credential   Credential? @relation(fields: [credentialId], references: [id], onDelete: SetNull)
+  notes        String?
+  favorite     Boolean     @default(false)
+  folderId     String?
+  folder       Folder?     @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  tags         Tag[]       @relation("ConnectionTags")
+  lastLaunchedAt DateTime?
+  sessionHistory SessionHistory[]
+  sortOrder    Int         @default(0)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([resourceId])
+  @@index([credentialId])
+  @@index([folderId])
+  @@index([type])
+  @@index([favorite])
+}
+
+model HealthCheck {
+  id              String         @id @default(cuid())
+  resourceId      String
+  resource        Resource       @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  type            String
+  target          String
+  intervalSeconds Int            @default(60)
+  timeoutMs       Int            @default(3000)
+  enabled         Boolean        @default(true)
+  latestStatus    String         @default("unknown")
+  latestLatencyMs Int?
+  latestCheckedAt DateTime?
+  latestError     String?
+  consecutiveFailures Int        @default(0)
+  consecutiveSuccesses Int       @default(0)
+  failureThreshold Int           @default(1)
+  successThreshold Int           @default(1)
+  lastTransitionAt DateTime?
+  results         HealthResult[]
+  incidents       Incident[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([resourceId])
+  @@index([enabled])
+}
+
+model HealthResult {
+  id        String      @id @default(cuid())
+  checkId   String
+  check     HealthCheck @relation(fields: [checkId], references: [id], onDelete: Cascade)
+  status    String
+  latencyMs Int?
+  error     String?
+  checkedAt DateTime    @default(now())
+
+  @@index([checkId])
+  @@index([checkedAt])
+}
+
+model DashboardLayout {
+  id         String   @id
+  layoutJson String   @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model DashboardWidget {
+  id         String   @id @default(cuid())
+  type       String
+  title      String
+  configJson String   @default("{}")
+  x          Int      @default(0)
+  y          Int      @default(0)
+  w          Int      @default(4)
+  h          Int      @default(3)
+  sortOrder  Int      @default(0)
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([type])
+  @@index([enabled])
+  @@index([sortOrder])
+}
+
+model Folder {
+  id          String       @id @default(cuid())
+  name        String
+  type        String
+  parentId    String?
+  parent      Folder?      @relation("FolderTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Folder[]     @relation("FolderTree")
+  sortOrder   Int          @default(0)
+  credentials Credential[]
+  connections Connection[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([type])
+  @@index([parentId])
+}
+
+model Tag {
+  id          String       @id @default(cuid())
+  name        String
+  color       String?
+  type        String       @default("general")
+  resources   Resource[]   @relation("ResourceTags")
+  connections Connection[] @relation("ConnectionTags")
+  credentials Credential[] @relation("CredentialTags")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([name, type])
+  @@index([type])
+}
+
+model SessionHistory {
+  id           String      @id @default(cuid())
+  connectionId String?
+  connection   Connection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  credentialId String?
+  credential   Credential? @relation(fields: [credentialId], references: [id], onDelete: SetNull)
+  resourceName String
+  connectionName String?
+  protocol     String
+  host         String
+  port         Int
+  status       String      @default("launching")
+  error        String?
+  hasCredential Boolean    @default(false)
+  startedAt    DateTime    @default(now())
+  endedAt      DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([connectionId])
+  @@index([credentialId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+model AuditEvent {
+  id          String   @id @default(cuid())
+  actor       String   @default("admin")
+  action      String
+  entityType  String
+  entityId    String?
+  summary     String
+  metadataJson String  @default("{}")
+  createdAt   DateTime @default(now())
+
+  @@index([action])
+  @@index([entityType])
+  @@index([createdAt])
+}
+
+model Incident {
+  id          String      @id @default(cuid())
+  checkId     String?
+  check       HealthCheck? @relation(fields: [checkId], references: [id], onDelete: SetNull)
+  resourceId  String?
+  resource    Resource?   @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+  maintenanceWindowId String?
+  maintenanceWindow MaintenanceWindow? @relation(fields: [maintenanceWindowId], references: [id], onDelete: SetNull)
+  status      String      @default("open")
+  severity    String      @default("warning")
+  title       String
+  summary     String?
+  failureCount Int        @default(1)
+  openedAt    DateTime    @default(now())
+  acknowledgedAt DateTime?
+  resolvedAt  DateTime?
+  mutedUntil  DateTime?
+  alertDeliveries AlertDelivery[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([checkId])
+  @@index([resourceId])
+  @@index([status])
+  @@index([openedAt])
+}
+
+model MaintenanceWindow {
+  id          String     @id @default(cuid())
+  name        String
+  startsAt    DateTime
+  endsAt      DateTime
+  enabled     Boolean    @default(true)
+  scopeJson   String     @default("{}")
+  notes       String?
+  incidents   Incident[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([enabled])
+  @@index([startsAt])
+  @@index([endsAt])
+}
+
+model AlertChannel {
+  id          String          @id @default(cuid())
+  name        String
+  type        String
+  enabled     Boolean         @default(true)
+  configSummaryJson String    @default("{}")
+  encryptedConfigBlob String
+  iv          String
+  authTag     String
+  rules       AlertRule[]
+  deliveries  AlertDelivery[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([type])
+  @@index([enabled])
+}
+
+model AlertRule {
+  id          String         @id @default(cuid())
+  name        String
+  channelId   String
+  channel     AlertChannel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  event       String
+  enabled     Boolean        @default(true)
+  cooldownSeconds Int        @default(900)
+  lastTriggeredAt DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  deliveries  AlertDelivery[]
+
+  @@index([channelId])
+  @@index([event])
+  @@index([enabled])
+}
+
+model AlertDelivery {
+  id          String        @id @default(cuid())
+  channelId   String
+  channel     AlertChannel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  ruleId      String?
+  rule        AlertRule?    @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  incidentId  String?
+  incident    Incident?     @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+  event       String
+  status      String        @default("queued")
+  attempts    Int           @default(0)
+  error       String?
+  payloadJson String        @default("{}")
+  sentAt      DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([channelId])
+  @@index([ruleId])
+  @@index([incidentId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Note {
+  id          String    @id @default(cuid())
+  title       String
+  body        String
+  pinned      Boolean   @default(false)
+  resourceId  String?
+  resource    Resource? @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([pinned])
+  @@index([resourceId])
+}

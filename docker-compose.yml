@@ -1,0 +1,26 @@
+services:
+  dashboard:
+    image: ghcr.io/kobii-git/homelab-dashboard:latest
+    container_name: homelab-dashboard
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: file:/data/homelab.db
+      GUACD_HOST: guacd
+      GUACD_PORT: 4822
+      # SEED_DEMO: "true"   # uncomment on first run to load demo resources, checks, and credentials
+    ports:
+      - "4173:4173"
+    volumes:
+      - homelab-dashboard-data:/data
+    depends_on:
+      - guacd
+
+  guacd:
+    image: guacamole/guacd:1.5.5
+    container_name: homelab-guacd
+    restart: unless-stopped
+
+volumes:
+  homelab-dashboard-data:

@@ -1,0 +1,26 @@
+services:
+  dashboard:
+    build: .
+    container_name: homelab-dashboard
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: file:/data/homelab.db
+      GUACD_HOST: guacd
+      GUACD_PORT: 4822
+      # SEED_DEMO: "true"
+    ports:
+      - "4173:4173"
+    volumes:
+      - homelab-dashboard-data:/data
+    depends_on:
+      - guacd
+
+  guacd:
+    image: guacamole/guacd:1.5.5
+    container_name: homelab-guacd
+    restart: unless-stopped
+
+volumes:
+  homelab-dashboard-data:
