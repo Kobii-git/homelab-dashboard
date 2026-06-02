@@ -78,6 +78,7 @@ The choice is recorded in the database. The setup screen will not appear again o
 |---|---|---|
 | `ADMIN_PASSWORD` | No | Skip web account creation and use this password instead |
 | `COOKIE_SECRET` | No | Signs session cookies — auto-generated if unset (sessions reset on restart) |
+| `COOKIE_SECURE` | No | Set to `true` only if serving over HTTPS. Default `false` for plain-HTTP LAN access |
 | `HOMELAB_VAULT_KEY` | No | Vault encryption key — auto-generated and persisted in DB if unset |
 | `DATABASE_URL` | No | Prisma SQLite path — default `file:/data/homelab.db` |
 | `GUACD_HOST` | No | `guacd` host — default `guacd` in Docker |

@@ -237,7 +237,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     reply.setCookie(SESSION_COOKIE, createAuthToken(env), {
       httpOnly: true,
       sameSite: "lax",
-      secure: env.nodeEnv === "production",
+      secure: env.cookieSecure,
       path: "/",
       maxAge: 60 * 60 * 24 * 30
     });
