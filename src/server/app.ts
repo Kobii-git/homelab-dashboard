@@ -151,7 +151,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       return;
     }
 
-    const publicRoutes = new Set(["/api/auth/login", "/api/auth/me", "/api/health"]);
+    const publicRoutes = new Set(["/api/auth/login", "/api/auth/me", "/api/health", "/api/setup/status", "/api/setup"]);
     if (publicRoutes.has(url.pathname)) {
       return;
     }
