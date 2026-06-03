@@ -1,14 +1,11 @@
 import {
-  Download,
-  ExternalLink,
   Gauge,
   LogOut,
   Moon,
   PanelLeft,
   PanelLeftClose,
-  Plus,
-  RefreshCw,
   Search,
+  Settings,
   Shield,
   Sun
 } from "lucide-react";
@@ -28,9 +25,6 @@ export function AppSidebar({
   theme,
   onToggleTheme,
   onOpenPalette,
-  onSync,
-  onOpenInventory,
-  onOpenBackup,
   onOpenKeyboardHelp,
   onLogout,
   liveSessionCount,
@@ -46,9 +40,6 @@ export function AppSidebar({
   theme: ThemeMode;
   onToggleTheme: () => void;
   onOpenPalette: () => void;
-  onSync: () => void;
-  onOpenInventory: () => void;
-  onOpenBackup: () => void;
   onOpenKeyboardHelp: () => void;
   onLogout: () => void;
   liveSessionCount: number;
@@ -62,12 +53,7 @@ export function AppSidebar({
   return (
     <>
       {hidden ? (
-        <button
-          className="sidebar-reveal"
-          type="button"
-          title="Show navigation"
-          onClick={onCycleSidebar}
-        >
+        <button className="sidebar-reveal" type="button" title="Show navigation" onClick={onCycleSidebar}>
           <PanelLeft size={18} />
         </button>
       ) : null}
@@ -76,15 +62,20 @@ export function AppSidebar({
         <div className="sidebar-brand">
           <Gauge size={compact ? 20 : 24} />
           {!compact ? <span>Homelab</span> : null}
-          <button
-            className="icon-button sidebar-toggle"
-            type="button"
-            title={compact ? "Expand sidebar" : "Collapse sidebar"}
-            onClick={onCycleSidebar}
-          >
+          <button className="icon-button sidebar-toggle" type="button" title={compact ? "Expand sidebar" : "Collapse sidebar"} onClick={onCycleSidebar}>
             {compact ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
           </button>
         </div>
+
+        <button className="sidebar-search" type="button" title="Command palette (Ctrl K)" onClick={onOpenPalette}>
+          <Search size={16} />
+          {!compact ? (
+            <>
+              <span>Search</span>
+              <kbd>Ctrl K</kbd>
+            </>
+          ) : null}
+        </button>
 
         {!compact ? (
           <div className="sidebar-stats" aria-label="Summary">
@@ -110,39 +101,11 @@ export function AppSidebar({
           ))}
         </nav>
 
-        <div className="sidebar-tools">
-          <button className="sidebar-tool" type="button" title="Command palette (Ctrl K)" onClick={onOpenPalette}>
-            <Search size={16} />
-            {!compact ? <span>Search</span> : null}
-          </button>
-          <button className="sidebar-tool" type="button" title="New resource" onClick={onOpenInventory}>
-            <Plus size={16} />
-            {!compact ? <span>New</span> : null}
-          </button>
-          <button className="sidebar-tool" type="button" title="Sync data" onClick={onSync}>
-            <RefreshCw size={16} />
-            {!compact ? <span>Sync</span> : null}
-          </button>
-          <button className="sidebar-tool" type="button" title="Backup" onClick={onOpenBackup}>
-            <Download size={16} />
-            {!compact ? <span>Backup</span> : null}
-          </button>
-          <button
-            className="sidebar-tool"
-            type="button"
-            title="Status page"
-            onClick={() => window.open("/status", "_blank", "noopener,noreferrer")}
-          >
-            <ExternalLink size={16} />
-            {!compact ? <span>Status</span> : null}
-          </button>
+        <div className="sidebar-footer">
           <button className="sidebar-tool" type="button" title="Keyboard shortcuts" onClick={onOpenKeyboardHelp}>
             <Shield size={16} />
             {!compact ? <span>Shortcuts</span> : null}
           </button>
-        </div>
-
-        <div className="sidebar-footer">
           <button className="sidebar-tool" type="button" title="Toggle theme" onClick={onToggleTheme}>
             {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
             {!compact ? <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span> : null}
@@ -156,4 +119,8 @@ export function AppSidebar({
       </aside>
     </>
   );
+}
+
+export function settingsNavItem(): NavItem {
+  return { id: "settings", label: "Settings", icon: <Settings size={18} /> };
 }

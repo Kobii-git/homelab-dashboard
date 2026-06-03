@@ -1,4 +1,4 @@
-import { Activity, Play, RefreshCw, Star } from "lucide-react";
+import { Activity, Pencil, Play, RefreshCw, Star } from "lucide-react";
 import type { ConnectionDto } from "../../lib/api";
 import { formatDateTime } from "../../lib/format";
 import type { ReachabilityState } from "./AccessDeviceCard";
@@ -13,15 +13,21 @@ export function AccessDeviceList({
   launchingId,
   reachability,
   connectDisabled = false,
+  monitoredIds,
   onConnect,
-  onTest
+  onTest,
+  onEdit,
+  onMonitor
 }: {
   connections: ConnectionDto[];
   launchingId: string | null;
   reachability: Record<string, ReachabilityState>;
   connectDisabled?: boolean;
+  monitoredIds: Set<string>;
   onConnect: (connection: ConnectionDto) => void;
   onTest: (connection: ConnectionDto) => void;
+  onEdit: (connection: ConnectionDto) => void;
+  onMonitor: (connection: ConnectionDto) => void;
 }) {
   return (
     <div className="access-device-list">
@@ -59,6 +65,18 @@ export function AccessDeviceList({
               {state.status === "idle" ? "—" : null}
             </span>
             <span className="access-device-list-actions">
+              <button className="icon-text-button" type="button" onClick={() => onEdit(connection)}>
+                <Pencil size={14} />
+                Edit
+              </button>
+              <button
+                className={`icon-text-button ${monitoredIds.has(connection.id) ? "is-active" : ""}`}
+                type="button"
+                onClick={() => onMonitor(connection)}
+              >
+                <Activity size={14} />
+                {monitoredIds.has(connection.id) ? "Monitored" : "Monitor"}
+              </button>
               <button
                 className="icon-text-button"
                 type="button"

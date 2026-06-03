@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 
-import { AppSidebar } from "./components/AppSidebar";
+import { AppSidebar, settingsNavItem } from "./components/AppSidebar";
 import { CommandPalette } from "./components/CommandPalette";
 import { BuildBadge } from "./components/BuildBadge";
 import { DetailDrawer, type DrawerState } from "./components/DetailDrawer";
@@ -26,6 +26,7 @@ import { InventoryView, type InventoryTab } from "./features/inventory/Inventory
 import { MonitoringCenter } from "./features/monitoring/MonitoringCenter";
 import { emptyV2Data, type AppView, type V2Data } from "./features/types";
 import { VaultView } from "./features/vault/VaultView";
+import { SettingsView } from "./features/settings/SettingsView";
 import {
   apiGet,
   apiSend,
@@ -58,7 +59,8 @@ const navItems: Array<{ id: AppView; label: string; icon: ReactNode }> = [
   { id: "monitoring", label: "Monitoring", icon: <Activity size={18} /> },
   { id: "vault", label: "Vault", icon: <KeyRound size={18} /> },
   { id: "alerts", label: "Alerts", icon: <Bell size={18} /> },
-  { id: "inventory", label: "Inventory", icon: <Server size={18} /> }
+  { id: "inventory", label: "Inventory", icon: <Server size={18} /> },
+  settingsNavItem()
 ];
 
 function LoginView({ onLogin }: { onLogin: () => void }) {
@@ -252,6 +254,8 @@ export function App() {
   const [keyboardHelpOpen, setKeyboardHelpOpen] = useState(false);
   const [inventoryTab, setInventoryTab] = useState<InventoryTab>("resource");
   const [launchConnectionId, setLaunchConnectionId] = useState<string | null>(null);
+  const [username, setUsername] = useState("admin");
+  const [authSource, setAuthSource] = useState<"env" | "database">("database");
   const remoteSessions = useRemoteSessions();
   const { theme, toggleTheme, sidebarMode, cycleSidebar } = useAppChrome();
 
@@ -331,10 +335,12 @@ export function App() {
 
   async function checkAuth() {
     const [me, status] = await Promise.all([
-      apiGet<{ authenticated: boolean }>("/api/auth/me"),
+      apiGet<{ authenticated: boolean; username?: string; authSource?: "env" | "database" }>("/api/auth/me"),
       apiGet<{ firstRun: boolean; needsAccount: boolean }>("/api/setup/status")
     ]);
     setAuthenticated(me.authenticated);
+    if (me.username) setUsername(me.username);
+    if (me.authSource) setAuthSource(me.authSource);
     setSetupStatus(status);
     if (me.authenticated) {
       await loadData();
@@ -595,9 +601,6 @@ export function App() {
         theme={theme}
         onToggleTheme={toggleTheme}
         onOpenPalette={() => setPaletteOpen(true)}
-        onSync={() => void loadData()}
-        onOpenInventory={() => { setInventoryTab("resource"); setView("inventory"); }}
-        onOpenBackup={() => { setInventoryTab("backup"); setView("inventory"); }}
         onOpenKeyboardHelp={() => setKeyboardHelpOpen(true)}
         onLogout={logout}
         liveSessionCount={remoteSessions.tabs.filter((tab) => tab.state === "connected" || tab.state === "launching").length}
@@ -667,6 +670,14 @@ export function App() {
             <VaultView data={data} onRefresh={loadData} onInspectCredential={inspectCredential} />
           ) : null}
           {view === "alerts" ? <AlertsView data={data} onRefresh={loadData} /> : null}
+          {view === "settings" ? (
+            <SettingsView
+              username={username}
+              authSource={authSource}
+              onRefresh={loadData}
+              onOpenBackup={() => { setInventoryTab("backup"); setView("inventory"); }}
+            />
+          ) : null}
         </div>
         <DetailDrawer drawer={drawer} onClose={() => setDrawer(null)} />
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onAction={handlePaletteAction} />

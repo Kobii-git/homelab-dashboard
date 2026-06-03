@@ -21,7 +21,7 @@ type StoredSession = {
 export class SessionStore {
   private readonly sessions = new Map<string, StoredSession>();
 
-  create(config: GuacamoleSessionConfig, ttlMs = 5 * 60 * 1000): string {
+  create(config: GuacamoleSessionConfig, ttlMs = 60 * 60 * 1000): string {
     const token = crypto.randomBytes(32).toString("base64url");
     this.sessions.set(token, { config, expiresAt: Date.now() + ttlMs });
     return token;

@@ -302,9 +302,51 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return { authenticated: false };
   });
 
-  app.get("/api/auth/me", async (request) => ({
-    authenticated: isAuthenticated(request, env)
-  }));
+  app.get("/api/auth/me", async (request) => {
+    const authenticated = isAuthenticated(request, env);
+    if (!authenticated) {
+      return { authenticated: false };
+    }
+    const account = await prisma.adminAccount.findUnique({ where: { id: "admin" } });
+    return {
+      authenticated: true,
+      username: account?.username ?? "admin",
+      authSource: env.adminPassword ? "env" : "database"
+    };
+  });
+
+  app.post("/api/auth/password", async (request, reply) => {
+    const body = z
+      .object({
+        currentPassword: z.string().min(1),
+        newPassword: z.string().min(8)
+      })
+      .parse(request.body);
+
+    if (!isAuthenticated(request, env)) {
+      reply.code(401).send({ error: "Authentication required" });
+      return;
+    }
+
+    if (env.adminPassword) {
+      reply.code(400).send({
+        error: "Password is managed by ADMIN_PASSWORD env var on the server. Update docker-compose and restart."
+      });
+      return;
+    }
+
+    if (!(await verifyAdminPassword(body.currentPassword, env, prisma))) {
+      reply.code(401).send({ error: "Current password is incorrect" });
+      return;
+    }
+
+    await prisma.adminAccount.update({
+      where: { id: "admin" },
+      data: { passwordHash: hashPassword(body.newPassword) }
+    });
+
+    return { ok: true };
+  });
 
   const routeContext = { app, prisma, env };
   await registerSearchRoutes(routeContext);
@@ -816,9 +858,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       return;
     }
 
-    wireGuacamoleTunnel(socket, session, { host: env.guacdHost, port: env.guacdPort }, () => {
-      sessions.release(token);
-    });
+    wireGuacamoleTunnel(socket, session, { host: env.guacdHost, port: env.guacdPort });
   });
 
   let stopScheduler: (() => void) | undefined;

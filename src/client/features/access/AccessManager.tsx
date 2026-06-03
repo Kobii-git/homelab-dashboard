@@ -1,8 +1,10 @@
 import {
+  Activity,
   History,
   LayoutGrid,
   List,
   Maximize2,
+  Pencil,
   Play,
   Plus,
   RefreshCw,
@@ -26,6 +28,7 @@ import type { ConnectionDto, SessionHistoryDto, SessionLaunchDto } from "../../l
 import { apiGet, apiSend, emptyToNull } from "../../lib/api";
 import { FormErrorBanner, runFormAction, runFormSubmit } from "../../lib/forms";
 import { formatDateTime } from "../../lib/format";
+import { pushToast } from "../../lib/toast";
 import type { V2Data } from "../types";
 import type { DashboardResource } from "../../../shared/types";
 
@@ -63,6 +66,7 @@ export function AccessManager({
   const [query, setQuery] = useState("");
   const [folderFilter, setFolderFilter] = useState<string | null>(null);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [editingConnection, setEditingConnection] = useState<ConnectionDto | null>(null);
   const [launchingId, setLaunchingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -277,6 +281,70 @@ export function AccessManager({
     }, setActionError, setSubmitting, "Device added");
   }
 
+  async function updateDevice(event: FormEvent<HTMLFormElement>) {
+    if (!editingConnection) return;
+    await runFormSubmit(event, async (form) => {
+      const host = String(form.get("host") ?? "").trim();
+      const port = Number(form.get("port") || (protocol === "ssh" ? 22 : 3389));
+      await apiSend(`/api/connections/${editingConnection.id}`, "PATCH", {
+        name: emptyToNull(form.get("connectionName")),
+        host,
+        port,
+        usernameHint: emptyToNull(form.get("usernameHint")),
+        credentialId: emptyToNull(form.get("credentialId")),
+        folderId: emptyToNull(form.get("folderId")),
+        notes: emptyToNull(form.get("notes"))
+      });
+      const resourceName = String(form.get("name") ?? "").trim();
+      if (resourceName && editingConnection.resourceId) {
+        await apiSend(`/api/resources/${editingConnection.resourceId}`, "PATCH", {
+          name: resourceName,
+          host,
+          description: emptyToNull(form.get("description"))
+        });
+      }
+      setEditingConnection(null);
+      await onRefresh();
+    }, setActionError, setSubmitting, "Device updated");
+  }
+
+  function connectionMonitored(connection: ConnectionDto): boolean {
+    const target = `${connection.host}:${connection.port}`;
+    return data.checks.some(
+      (check) => check.resourceId === connection.resourceId && check.target === target && check.enabled
+    );
+  }
+
+  async function enableMonitoring(connection: ConnectionDto) {
+    const target = `${connection.host}:${connection.port}`;
+    const existing = data.checks.find(
+      (check) => check.resourceId === connection.resourceId && check.target === target
+    );
+    if (existing) {
+      if (!existing.enabled) {
+        await apiSend(`/api/health-checks/${existing.id}`, "PATCH", { enabled: true });
+        pushToast("Monitoring enabled");
+      } else {
+        pushToast("Already monitored");
+      }
+      await onRefresh();
+      return;
+    }
+    await runFormAction(async () => {
+      await apiSend("/api/health-checks", "POST", {
+        resourceId: connection.resourceId,
+        type: "tcp",
+        target,
+        intervalSeconds: 60,
+        timeoutMs: 3000,
+        failureThreshold: 2,
+        successThreshold: 1,
+        enabled: true
+      });
+      await onRefresh();
+    }, setActionError, setSubmitting, "Monitoring enabled");
+  }
+
   async function testDevice(connection: ConnectionDto) {
     setReachability((current) => ({ ...current, [connection.id]: { status: "testing" } }));
     try {
@@ -323,6 +391,11 @@ export function AccessManager({
   );
 
   const fullscreen = activeTab?.fullscreen ?? false;
+
+  const monitoredIds = useMemo(
+    () => new Set(protocolConnections.filter(connectionMonitored).map((c) => c.id)),
+    [protocolConnections, data.checks]
+  );
 
   return (
     <main className={`access-page access-page-${protocol} ${fullscreen ? "is-fullscreen" : ""}`}>
@@ -454,6 +527,44 @@ export function AccessManager({
         </form>
       ) : null}
 
+      {editingConnection && !fullscreen ? (
+        <form className="access-quick-add" onSubmit={updateDevice}>
+          <div className="access-quick-add-head">
+            <Pencil size={18} />
+            <strong>Edit {connectionTitle(editingConnection)}</strong>
+            <button className="icon-button" type="button" title="Close" onClick={() => setEditingConnection(null)}>
+              <X size={15} />
+            </button>
+          </div>
+          <div className="access-quick-add-grid">
+            <label>Name<input name="name" defaultValue={editingConnection.resource?.name ?? connectionTitle(editingConnection)} required /></label>
+            <label>Host<input name="host" defaultValue={editingConnection.host} required /></label>
+            <label>Port<input name="port" type="number" min="1" max="65535" defaultValue={editingConnection.port} /></label>
+            <label>Connection name<input name="connectionName" defaultValue={editingConnection.name ?? ""} /></label>
+            <label>Username hint<input name="usernameHint" defaultValue={editingConnection.usernameHint ?? ""} /></label>
+            <label>
+              Credential
+              <select name="credentialId" defaultValue={editingConnection.credentialId ?? ""}>
+                <option value="">Prompt or anonymous</option>
+                {data.credentials.map((credential) => <option key={credential.id} value={credential.id}>{credential.label}</option>)}
+              </select>
+            </label>
+            <label>
+              Folder
+              <select name="folderId" defaultValue={editingConnection.folderId ?? ""}>
+                <option value="">Unfiled</option>
+                {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+              </select>
+            </label>
+            <label className="access-span-2">Description<textarea name="description" rows={2} defaultValue={editingConnection.resource?.description ?? ""} /></label>
+            <label className="access-span-2">Notes<textarea name="notes" rows={2} defaultValue={editingConnection.notes ?? ""} /></label>
+          </div>
+          <button className="primary-button" type="submit" disabled={submitting} style={{ maxWidth: 220 }}>
+            <Save size={15} /> Save changes
+          </button>
+        </form>
+      ) : null}
+
       {fullscreen || view === "sessions" ? (
         <section className="access-sessions-panel">
           <div className="access-session-tabs">
@@ -495,15 +606,22 @@ export function AccessManager({
           </div>
 
           <div className="access-session-stage">
-            {activeTab?.session ? (
-              <GuacamoleDisplay
-                key={activeTab.session.websocketPath}
-                websocketPath={activeTab.session.websocketPath}
-                displayName={activeTab.title}
-                sessionHistoryId={activeTab.id}
-                onConnected={markSessionConnected}
-              />
-            ) : activeTab ? (
+            {protocolTabs.map((tab) =>
+              tab.session ? (
+                <div
+                  className={`access-session-pane ${tab.id === activeTab?.id ? "is-active" : ""}`}
+                  key={tab.session.websocketPath}
+                >
+                  <GuacamoleDisplay
+                    websocketPath={tab.session.websocketPath}
+                    displayName={tab.title}
+                    sessionHistoryId={tab.id}
+                    onConnected={markSessionConnected}
+                  />
+                </div>
+              ) : null
+            )}
+            {activeTab && !activeTab.session ? (
               <div className="empty-state access-session-empty">
                 <ProtocolIcon protocol={activeTab.protocol} size={42} />
                 <h2>{sessionStatusLabel(activeTab.state)}</h2>
@@ -521,7 +639,7 @@ export function AccessManager({
                   </button>
                 ) : null}
               </div>
-            ) : (
+            ) : !activeTab ? (
               <div className="empty-state access-session-empty">
                 <ProtocolIcon protocol={protocol} size={42} />
                 <h2>No {protocol.toUpperCase()} session</h2>
@@ -530,7 +648,7 @@ export function AccessManager({
                   <Server size={15} /> Browse devices
                 </button>
               </div>
-            )}
+            ) : null}
           </div>
 
           {!fullscreen ? (
@@ -622,8 +740,11 @@ export function AccessManager({
                 launchingId={launchingId}
                 reachability={reachability}
                 connectDisabled={guacdReachable === false}
+                monitoredIds={monitoredIds}
                 onConnect={(connection) => void launch(connection)}
                 onTest={(connection) => void testDevice(connection)}
+                onEdit={(connection) => { setEditingConnection(connection); setShowQuickAdd(false); }}
+                onMonitor={(connection) => void enableMonitoring(connection)}
               />
             ) : (
               <div className="access-device-grid">
@@ -634,8 +755,11 @@ export function AccessManager({
                     launching={launchingId === connection.id}
                     reachability={reachability[connection.id] ?? { status: "idle" }}
                     connectDisabled={guacdReachable === false}
+                    monitored={monitoredIds.has(connection.id)}
                     onConnect={() => void launch(connection)}
                     onTest={() => void testDevice(connection)}
+                    onEdit={() => { setEditingConnection(connection); setShowQuickAdd(false); }}
+                    onMonitor={() => void enableMonitoring(connection)}
                   />
                 ))}
               </div>

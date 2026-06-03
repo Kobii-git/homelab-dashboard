@@ -1,4 +1,4 @@
-import { Activity, Play, RefreshCw, Star } from "lucide-react";
+import { Activity, Pencil, Play, RefreshCw, Star } from "lucide-react";
 import type { ConnectionDto } from "../../lib/api";
 import { formatDateTime } from "../../lib/format";
 import { ProtocolIcon, type Protocol } from "./accessUtils";
@@ -18,15 +18,21 @@ export function AccessDeviceCard({
   launching,
   reachability,
   connectDisabled = false,
+  monitored = false,
   onConnect,
-  onTest
+  onTest,
+  onEdit,
+  onMonitor
 }: {
   connection: ConnectionDto;
   launching: boolean;
   reachability: ReachabilityState;
   connectDisabled?: boolean;
+  monitored?: boolean;
   onConnect: () => void;
   onTest: () => void;
+  onEdit: () => void;
+  onMonitor: () => void;
 }) {
   const protocol = connection.type as Protocol;
 
@@ -54,6 +60,19 @@ export function AccessDeviceCard({
         <p className="access-reachability fail">{reachability.message}</p>
       ) : null}
       <div className="access-device-actions">
+        <button className="icon-text-button" type="button" onClick={onEdit}>
+          <Pencil size={14} />
+          Edit
+        </button>
+        <button
+          className={`icon-text-button ${monitored ? "is-active" : ""}`}
+          type="button"
+          onClick={onMonitor}
+          title={monitored ? "Already monitored" : "Enable TCP monitoring"}
+        >
+          <Activity size={14} />
+          {monitored ? "Monitored" : "Monitor"}
+        </button>
         <button
           className="icon-text-button"
           type="button"

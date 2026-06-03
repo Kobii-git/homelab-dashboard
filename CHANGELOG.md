@@ -6,6 +6,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.3] - 2026-06-04
+
+### Added
+- **Settings** page — change password, Sync, Backup, Status page
+- **Edit device** on SSH / Remote Desktop device list (host, port, credential, notes)
+- **Monitor** button on devices — one-click TCP health check
+
+### Fixed
+- **Invalid or expired session token** — tokens no longer deleted when the WebSocket closes; sessions stay mounted when switching tabs
+
+### Changed
+- Sidebar: **Search** at top; tools moved to Settings; **Shortcuts** + **Light mode** at bottom
+
+---
+
 ## [0.2.2] - 2026-06-03
 
 ### Added
