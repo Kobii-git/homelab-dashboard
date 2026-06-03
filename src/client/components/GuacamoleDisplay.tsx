@@ -6,6 +6,7 @@ type GuacamoleDisplayProps = {
   displayName: string;
   sessionHistoryId?: string;
   onConnected?: (sessionHistoryId: string) => void;
+  onFailed?: (sessionHistoryId: string, message: string) => void;
 };
 
 function websocketUrl(path: string): string {
@@ -17,11 +18,14 @@ export function GuacamoleDisplay({
   websocketPath,
   displayName,
   sessionHistoryId,
-  onConnected
+  onConnected,
+  onFailed
 }: GuacamoleDisplayProps) {
   const displayRef = useRef<HTMLDivElement | null>(null);
   const connectedRef = useRef(false);
+  const failedRef = useRef(false);
   const onConnectedRef = useRef(onConnected);
+  const onFailedRef = useRef(onFailed);
   const sessionIdRef = useRef(sessionHistoryId);
   const [state, setState] = useState("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -31,11 +35,16 @@ export function GuacamoleDisplay({
   }, [onConnected]);
 
   useEffect(() => {
+    onFailedRef.current = onFailed;
+  }, [onFailed]);
+
+  useEffect(() => {
     sessionIdRef.current = sessionHistoryId;
   }, [sessionHistoryId]);
 
   useEffect(() => {
     connectedRef.current = false;
+    failedRef.current = false;
   }, [websocketPath]);
 
   useEffect(() => {
@@ -63,14 +72,28 @@ export function GuacamoleDisplay({
     keyboard.onkeydown = (keysym: number) => client.sendKeyEvent(1, keysym);
     keyboard.onkeyup = (keysym: number) => client.sendKeyEvent(0, keysym);
 
-    tunnel.onerror = (status: { code?: number; message?: string }) => {
-      setError(status.message ?? "Tunnel connection failed");
+    const reportFailure = (message: string) => {
+      if (failedRef.current) {
+        return;
+      }
+
+      failedRef.current = true;
+      connectedRef.current = false;
+      setError(message);
       setState("error");
+
+      const sessionId = sessionIdRef.current;
+      if (sessionId && !sessionId.startsWith("pending-")) {
+        onFailedRef.current?.(sessionId, message);
+      }
+    };
+
+    tunnel.onerror = (status: { code?: number; message?: string }) => {
+      reportFailure(status.message ?? "Tunnel connection failed");
     };
 
     client.onerror = (guacError: { message?: string }) => {
-      setError(guacError.message ?? "Remote session failed");
-      setState("error");
+      reportFailure(guacError.message ?? "Remote session failed");
     };
 
     client.onstatechange = (clientState: number) => {

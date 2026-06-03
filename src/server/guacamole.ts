@@ -20,14 +20,22 @@ type StoredSession = {
 
 export class SessionStore {
   private readonly sessions = new Map<string, StoredSession>();
+  private readonly tokensBySessionId = new Map<string, string>();
 
-  create(config: GuacamoleSessionConfig, ttlMs = 60 * 60 * 1000): string {
+  create(config: GuacamoleSessionConfig, sessionId?: string, ttlMs = 60 * 60 * 1000): string {
     const token = crypto.randomBytes(32).toString("base64url");
     this.sessions.set(token, { config, expiresAt: Date.now() + ttlMs });
+    if (sessionId) {
+      this.tokensBySessionId.set(sessionId, token);
+    }
     return token;
   }
 
-  get(token: string): GuacamoleSessionConfig | undefined {
+  get(token: string | null | undefined): GuacamoleSessionConfig | undefined {
+    if (!token) {
+      return undefined;
+    }
+
     const session = this.sessions.get(token);
 
     if (!session) {
@@ -42,16 +50,21 @@ export class SessionStore {
     return session.config;
   }
 
-  release(token: string): void {
-    this.sessions.delete(token);
+  getBySessionId(sessionId: string | null | undefined): GuacamoleSessionConfig | undefined {
+    if (!sessionId) {
+      return undefined;
+    }
+
+    const token = this.tokensBySessionId.get(sessionId);
+    return token ? this.get(token) : undefined;
   }
 
-  consume(token: string): GuacamoleSessionConfig | undefined {
-    const config = this.get(token);
-    if (config) {
-      this.sessions.delete(token);
-    }
-    return config;
+  resolve(token: string | null | undefined, sessionId: string | null | undefined): GuacamoleSessionConfig | undefined {
+    return this.get(token) ?? this.getBySessionId(sessionId);
+  }
+
+  release(token: string): void {
+    this.sessions.delete(token);
   }
 
   sweep(): void {
@@ -189,11 +202,10 @@ function rawDataToBuffer(message: RawData): Buffer {
 export function wireGuacamoleTunnel(
   ws: WebSocket,
   config: GuacamoleSessionConfig,
-  options: { host: string; port: number },
-  onClose?: () => void
+  options: { host: string; port: number }
 ): void {
   const guacd = net.createConnection({ host: options.host, port: options.port });
-  let streaming = false;
+  let guacdReady = false;
   let closed = false;
 
   const closeBoth = () => {
@@ -206,23 +218,23 @@ export function wireGuacamoleTunnel(
     if (ws.readyState === ws.OPEN) {
       ws.close();
     }
-    onClose?.();
   };
 
-  const parser = new InstructionParser((instruction) => {
+  const guacdParser = new InstructionParser((instruction) => {
     if (instruction.opcode === "args") {
-      const args = instruction.args;
       guacd.write(encodeInstruction("size", 1280, 720, 96));
       guacd.write(encodeInstruction("audio", "audio/L16"));
       guacd.write(encodeInstruction("video"));
       guacd.write(encodeInstruction("image", "image/png", "image/jpeg", "image/webp"));
       guacd.write(encodeInstruction("timezone", process.env.TZ ?? "UTC"));
-      guacd.write(encodeInstruction("connect", ...args.map((arg) => valueForArgument(config, arg))));
+      guacd.write(
+        encodeInstruction("connect", ...instruction.args.map((arg) => valueForArgument(config, arg)))
+      );
       return;
     }
 
     if (instruction.opcode === "ready") {
-      streaming = true;
+      guacdReady = true;
       ws.send(encodeInstruction("ready", ...instruction.args));
       return;
     }
@@ -230,21 +242,27 @@ export function wireGuacamoleTunnel(
     if (instruction.opcode === "error") {
       ws.send(encodeInstruction("error", ...instruction.args));
       closeBoth();
-      return;
     }
   });
 
-  guacd.once("connect", () => {
-    guacd.write(encodeInstruction("select", config.protocol));
+  ws.on("message", (message) => {
+    if (closed) {
+      return;
+    }
+    guacd.write(rawDataToBuffer(message));
   });
 
   guacd.on("data", (chunk) => {
-    if (streaming) {
+    if (closed) {
+      return;
+    }
+
+    if (guacdReady) {
       ws.send(chunk);
       return;
     }
 
-    parser.push(chunk.toString("utf8"));
+    guacdParser.push(chunk.toString("utf8"));
   });
 
   guacd.once("error", (error) => {
@@ -255,18 +273,6 @@ export function wireGuacamoleTunnel(
   });
 
   guacd.once("close", closeBoth);
-
-  ws.on("message", (message) => {
-    const payload = rawDataToBuffer(message);
-
-    if (streaming) {
-      guacd.write(payload);
-      return;
-    }
-
-    parser.push(payload.toString("utf8"));
-  });
-
   ws.once("close", closeBoth);
   ws.once("error", closeBoth);
 }

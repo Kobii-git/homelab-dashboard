@@ -187,7 +187,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       "/api/version",
       "/api/setup/status",
       "/api/setup",
-      "/api/status"
+      "/api/status",
+      "/api/tunnel"
     ]);
     if (publicRoutes.has(url.pathname)) {
       return;
@@ -825,33 +826,38 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       summary: `Launched ${connection.type.toUpperCase()} session to ${connection.host}`,
       metadata: { connectionId: connection.id, resourceId: connection.resourceId }
     });
-    const token = sessions.create({
-      protocol: connection.type as "rdp" | "ssh",
-      host: connection.host,
-      port: connection.port,
-      displayName,
-      usernameHint: connection.usernameHint,
-      credential
-    });
+    const token = sessions.create(
+      {
+        protocol: connection.type as "rdp" | "ssh",
+        host: connection.host,
+        port: connection.port,
+        displayName,
+        usernameHint: connection.usernameHint,
+        credential
+      },
+      history.id
+    );
 
     return {
       token,
       sessionHistory: serializeSessionHistory(history),
       displayName,
-      websocketPath: `/api/tunnel?token=${encodeURIComponent(token)}`
+      websocketPath: `/api/tunnel?token=${encodeURIComponent(token)}&session=${encodeURIComponent(history.id)}`
     };
   });
 
   app.get("/api/tunnel", { websocket: true }, (socket, request) => {
+    const query = request.query as { token?: string; session?: string };
     const url = new URL(request.raw.url ?? "/", "http://localhost");
-    const token = url.searchParams.get("token");
+    const token = query.token ?? url.searchParams.get("token");
+    const sessionId = query.session ?? url.searchParams.get("session");
 
-    if (!token) {
+    if (!token && !sessionId) {
       socket.close(1008, "Missing session token");
       return;
     }
 
-    const session = sessions.get(token);
+    const session = sessions.resolve(token, sessionId);
 
     if (!session) {
       socket.close(1008, "Invalid or expired session token");

@@ -110,6 +110,7 @@ describe("api routes", () => {
     expect(launch.statusCode).toBe(200);
     expect(launch.body).not.toContain("super-secret");
     expect(launch.json<{ websocketPath: string }>().websocketPath).toContain("/api/tunnel?token=");
+    expect(launch.json<{ websocketPath: string }>().websocketPath).toContain("&session=");
   });
 
   it("rejects setup after an admin account exists", async () => {

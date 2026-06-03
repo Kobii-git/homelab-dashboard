@@ -172,7 +172,7 @@ export function AccessManager({
       (tab) =>
         tab.protocol === protocol &&
         tab.connectionId === connection.id &&
-        (tab.state === "launching" || tab.state === "connected") &&
+        tab.state === "connected" &&
         tab.session
     );
     if (existing) {
@@ -385,6 +385,27 @@ export function AccessManager({
         await onRefresh();
       } catch {
         // Session still usable even if history update fails.
+      }
+    },
+    [onRefresh, setTabs]
+  );
+
+  const markSessionFailed = useCallback(
+    async (sessionId: string, message: string) => {
+      if (sessionId.startsWith("pending-")) return;
+      setTabs((current) =>
+        current.map((tab) =>
+          tab.id === sessionId ? { ...tab, state: "failed", error: message, session: undefined } : tab
+        )
+      );
+      try {
+        await apiSend(`/api/sessions/history/${sessionId}`, "PATCH", {
+          status: "failed",
+          error: message
+        });
+        await onRefresh();
+      } catch {
+        // Tab state already reflects the failure.
       }
     },
     [onRefresh, setTabs]
@@ -617,6 +638,7 @@ export function AccessManager({
                     displayName={tab.title}
                     sessionHistoryId={tab.id}
                     onConnected={markSessionConnected}
+                    onFailed={markSessionFailed}
                   />
                 </div>
               ) : null
