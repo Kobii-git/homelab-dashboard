@@ -106,9 +106,14 @@ export async function registerStatusRoutes({ app, prisma }: RouteContext): Promi
         '<span class="pill">' + data.summary.openIncidents + ' incidents</span>'
       ].join('');
       list.innerHTML = data.resources.map(function(resource) {
-        return '<div class="row"><div><strong>' + resource.name + '</strong><small>' + (resource.host || resource.url || resource.kind) + '</small></div><span class="status-' + resource.status + '">' + resource.status + '</span></div>';
+        return '<div class="row"><div><strong>' + esc(resource.name) + '</strong><small>' + esc(resource.host || resource.url || resource.kind) + '</small></div><span class="status-' + esc(resource.status) + '">' + esc(resource.status) + '</span></div>';
       }).join('');
       document.querySelector('.meta').textContent = 'Updated ' + new Date(data.generatedAt).toLocaleString();
+    }
+    function esc(value) {
+      return String(value ?? '').replace(/[&<>"']/g, function(ch) {
+        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch] || ch;
+      });
     }
     render();
     setInterval(render, 30000);

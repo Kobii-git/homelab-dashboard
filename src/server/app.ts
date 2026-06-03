@@ -42,6 +42,7 @@ import { registerExportRoutes } from "./routes/export.js";
 import { registerStatusRoutes } from "./routes/status.js";
 import { registerWidgetRoutes } from "./routes/widgets.js";
 import { testGuacdReachable, testTcpReachable } from "./connectivity.js";
+import { RateLimiter } from "./rateLimit.js";
 import { serializeSessionHistory } from "./serializers.js";
 
 type CreateAppOptions = {
@@ -60,6 +61,14 @@ function parseLayout(layoutJson: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+async function adminAccountExists(env: AppEnv, prisma: PrismaClient): Promise<boolean> {
+  if (env.adminPassword) {
+    return true;
+  }
+  const account = await prisma.adminAccount.findUnique({ where: { id: "admin" } });
+  return Boolean(account);
 }
 
 function sanitizeCredential(credential: {
@@ -133,6 +142,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   };
   const prisma = options.prisma ?? new PrismaClient();
   const sessions = new SessionStore();
+  const loginLimiter = new RateLimiter(10, 60_000);
   const app = Fastify({ logger: options.logger ?? env.nodeEnv === "production" });
 
   await app.register(cookie, {
@@ -216,7 +226,11 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return { firstRun: !hasAccount || emptyDashboard, needsAccount: !hasAccount };
   });
 
-  app.post("/api/setup", async (request) => {
+  app.post("/api/setup", async (request, reply) => {
+    if (await adminAccountExists(env, prisma)) {
+      return reply.code(403).send({ error: "Setup already completed" });
+    }
+
     const body = z
       .object({
         username: z.string().trim().min(1).optional(),
@@ -255,6 +269,11 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   });
 
   app.post("/api/auth/login", async (request, reply) => {
+    const clientIp = request.ip || "unknown";
+    if (!loginLimiter.allow(clientIp)) {
+      return reply.code(429).send({ error: "Too many login attempts. Try again shortly." });
+    }
+
     const body = loginSchema.parse(request.body);
 
     if (!(await verifyAdminLogin(body.username, body.password, env, prisma))) {
@@ -490,21 +509,39 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       rest.domain !== undefined ||
       rest.privateKey !== undefined ||
       rest.passphrase !== undefined;
+    const usernameChanged = rest.username !== undefined;
 
-    if (hasSecretUpdate) {
-      Object.assign(
-        data,
-        encryptCredential(
-          {
-            username: rest.username ?? undefined,
-            password: rest.password ?? undefined,
-            domain: rest.domain ?? undefined,
-            privateKey: rest.privateKey ?? undefined,
-            passphrase: rest.passphrase ?? undefined
-          },
-          env.vaultKey
-        )
+    if (hasSecretUpdate || usernameChanged) {
+      const existing = await prisma.credential.findUniqueOrThrow({
+        where: { id },
+        select: { encryptedBlob: true, iv: true, authTag: true }
+      });
+      const merged = decryptCredential(
+        {
+          encryptedBlob: existing.encryptedBlob,
+          iv: existing.iv,
+          authTag: existing.authTag
+        },
+        env.vaultKey
       );
+
+      if (rest.password !== undefined) {
+        merged.password = rest.password || undefined;
+      }
+      if (rest.domain !== undefined) {
+        merged.domain = rest.domain || undefined;
+      }
+      if (rest.privateKey !== undefined) {
+        merged.privateKey = rest.privateKey || undefined;
+      }
+      if (rest.passphrase !== undefined) {
+        merged.passphrase = rest.passphrase || undefined;
+      }
+      if (rest.username !== undefined) {
+        merged.username = rest.username || undefined;
+      }
+
+      Object.assign(data, encryptCredential(merged, env.vaultKey));
     }
 
     const credential = await prisma.credential.update({
@@ -767,7 +804,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       return;
     }
 
-    const session = sessions.get(token);
+    const session = sessions.consume(token);
 
     if (!session) {
       socket.close(1008, "Invalid or expired session token");

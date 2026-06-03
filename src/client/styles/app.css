@@ -2577,3 +2577,126 @@ label {
     height: 70vh;
   }
 }
+
+.backup-restore-view {
+  display: grid;
+  gap: 18px;
+}
+
+.backup-security-banner {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+  padding: 14px 16px;
+  border: 1px solid rgba(45, 212, 191, 0.35);
+  border-radius: 10px;
+  background: rgba(45, 212, 191, 0.06);
+}
+
+.backup-security-banner strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.backup-security-banner p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.backup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.backup-panel {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #101415;
+}
+
+.backup-panel h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.backup-panel p,
+.backup-list {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.backup-list {
+  padding-left: 18px;
+}
+
+.backup-file-name {
+  margin: 0;
+  font-size: 13px;
+  color: #d7fff8;
+}
+
+.backup-preview,
+.backup-import-form,
+.backup-result {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #101415;
+}
+
+.backup-preview-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.backup-valid {
+  color: #86efac;
+}
+
+.backup-invalid {
+  color: #fca5a5;
+}
+
+.backup-warning-box,
+.backup-error-box,
+.backup-replace-warning {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.backup-warning-box {
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.backup-error-box {
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.backup-replace-warning {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
+  color: #fecaca;
+}
+
+@media (max-width: 920px) {
+  .backup-grid {
+    grid-template-columns: 1fr;
+  }
+}

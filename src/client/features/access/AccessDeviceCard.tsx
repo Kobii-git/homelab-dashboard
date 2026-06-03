@@ -17,12 +17,14 @@ export function AccessDeviceCard({
   connection,
   launching,
   reachability,
+  connectDisabled = false,
   onConnect,
   onTest
 }: {
   connection: ConnectionDto;
   launching: boolean;
   reachability: ReachabilityState;
+  connectDisabled?: boolean;
   onConnect: () => void;
   onTest: () => void;
 }) {
@@ -64,7 +66,7 @@ export function AccessDeviceCard({
         <button
           className="primary-button access-connect-btn"
           type="button"
-          disabled={launching}
+          disabled={launching || connectDisabled}
           onClick={onConnect}
         >
           {launching ? <RefreshCw className="spin" size={15} /> : <Play size={15} />}

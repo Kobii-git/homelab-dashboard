@@ -42,6 +42,14 @@ export class SessionStore {
     return session.config;
   }
 
+  consume(token: string): GuacamoleSessionConfig | undefined {
+    const config = this.get(token);
+    if (config) {
+      this.sessions.delete(token);
+    }
+    return config;
+  }
+
   sweep(): void {
     const now = Date.now();
     for (const [token, session] of this.sessions) {

@@ -14,7 +14,7 @@ import {
   WifiOff,
   X
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { RESOURCE_KINDS } from "../../../shared/types";
 import { EmptyPanel, MetricCard } from "../../components/Primitives";
 import { GuacamoleDisplay } from "../../components/GuacamoleDisplay";
@@ -68,6 +68,7 @@ export function AccessManager({
   const [submitting, setSubmitting] = useState(false);
   const [guacdReachable, setGuacdReachable] = useState<boolean | null>(null);
   const [reachability, setReachability] = useState<Record<string, ReachabilityState>>({});
+  const launchHandledRef = useRef<string | null>(null);
 
   const copy = PAGE_COPY[protocol];
   const folders = data.folders.filter((folder) => folder.type === "connection" || folder.type === "mixed");
@@ -114,14 +115,24 @@ export function AccessManager({
   }, []);
 
   useEffect(() => {
-    if (!launchConnectionId) return;
-    const connection = data.connections.find((item) => item.id === launchConnectionId);
-    onLaunchHandled?.();
-    if (connection?.type === protocol) {
-      setView("sessions");
-      void launch(connection);
+    if (!launchConnectionId) {
+      launchHandledRef.current = null;
+      return;
     }
-  }, [launchConnectionId, protocol]);
+    if (launchHandledRef.current === launchConnectionId) {
+      return;
+    }
+
+    const connection = data.connections.find((item) => item.id === launchConnectionId);
+    if (!connection || connection.type !== protocol) {
+      return;
+    }
+
+    launchHandledRef.current = launchConnectionId;
+    onLaunchHandled?.();
+    setView("sessions");
+    void launch(connection);
+  }, [launchConnectionId, protocol, data.connections]);
 
   async function refreshGuacd() {
     try {
@@ -135,7 +146,19 @@ export function AccessManager({
   async function launch(connection: ConnectionDto) {
     if (connection.type !== protocol) return;
 
-    if (guacdReachable === false) {
+    let reachable = guacdReachable;
+    if (reachable !== true) {
+      try {
+        const health = await apiGet<{ guacd: { reachable: boolean } }>("/api/health");
+        reachable = health.guacd.reachable;
+        setGuacdReachable(reachable);
+      } catch {
+        reachable = false;
+        setGuacdReachable(false);
+      }
+    }
+
+    if (!reachable) {
       setActionError("guacd is offline — remote sessions cannot start until the tunnel service is reachable.");
       setView("sessions");
       return;
@@ -193,10 +216,12 @@ export function AccessManager({
         error: tab.error ?? null
       });
     }
-    const nextTabs = tabs.filter((item) => item.id !== tab.id);
-    setTabs(nextTabs);
-    const nextForProtocol = nextTabs.filter((item) => item.protocol === protocol);
-    setActiveTabId(nextForProtocol[0]?.id ?? null);
+    setTabs((current) => {
+      const nextTabs = current.filter((item) => item.id !== tab.id);
+      const nextForProtocol = nextTabs.filter((item) => item.protocol === protocol);
+      setActiveTabId(nextForProtocol[0]?.id ?? null);
+      return nextTabs;
+    });
     await onRefresh();
   }
 
@@ -270,6 +295,22 @@ export function AccessManager({
   function connectionTitle(connection: ConnectionDto): string {
     return connection.name ?? connection.resource?.name ?? connection.host;
   }
+
+  const markSessionConnected = useCallback(
+    async (sessionId: string) => {
+      if (sessionId.startsWith("pending-")) return;
+      try {
+        await apiSend(`/api/sessions/history/${sessionId}`, "PATCH", { status: "connected" });
+        setTabs((current) =>
+          current.map((tab) => (tab.id === sessionId ? { ...tab, state: "connected" } : tab))
+        );
+        await onRefresh();
+      } catch {
+        // Session still usable even if history update fails.
+      }
+    },
+    [onRefresh, setTabs]
+  );
 
   const fullscreen = activeTab?.fullscreen ?? false;
 
@@ -445,7 +486,12 @@ export function AccessManager({
 
           <div className="access-session-stage">
             {activeTab?.session ? (
-              <GuacamoleDisplay websocketPath={activeTab.session.websocketPath} displayName={activeTab.title} />
+              <GuacamoleDisplay
+                websocketPath={activeTab.session.websocketPath}
+                displayName={activeTab.title}
+                sessionHistoryId={activeTab.id}
+                onConnected={markSessionConnected}
+              />
             ) : activeTab ? (
               <div className="empty-state access-session-empty">
                 <ProtocolIcon protocol={activeTab.protocol} size={42} />
@@ -564,6 +610,7 @@ export function AccessManager({
                 connections={filteredDevices}
                 launchingId={launchingId}
                 reachability={reachability}
+                connectDisabled={guacdReachable === false}
                 onConnect={(connection) => void launch(connection)}
                 onTest={(connection) => void testDevice(connection)}
               />
@@ -575,6 +622,7 @@ export function AccessManager({
                     connection={connection}
                     launching={launchingId === connection.id}
                     reachability={reachability[connection.id] ?? { status: "idle" }}
+                    connectDisabled={guacdReachable === false}
                     onConnect={() => void launch(connection)}
                     onTest={() => void testDevice(connection)}
                   />

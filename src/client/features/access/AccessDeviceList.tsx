@@ -12,12 +12,14 @@ export function AccessDeviceList({
   connections,
   launchingId,
   reachability,
+  connectDisabled = false,
   onConnect,
   onTest
 }: {
   connections: ConnectionDto[];
   launchingId: string | null;
   reachability: Record<string, ReachabilityState>;
+  connectDisabled?: boolean;
   onConnect: (connection: ConnectionDto) => void;
   onTest: (connection: ConnectionDto) => void;
 }) {
@@ -69,7 +71,7 @@ export function AccessDeviceList({
               <button
                 className="primary-button"
                 type="button"
-                disabled={launchingId === connection.id}
+                disabled={launchingId === connection.id || connectDisabled}
                 onClick={() => onConnect(connection)}
               >
                 {launchingId === connection.id ? <RefreshCw className="spin" size={14} /> : <Play size={14} />}

@@ -22,6 +22,7 @@ import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import type { ConnectionDto } from "../../lib/api";
 import type { DashboardResource } from "../../../shared/types";
+import { ProtocolIcon } from "../access/accessUtils";
 import { WidgetSettings } from "../../components/WidgetSettings";
 import { EmptyPanel, MetricCard, StatusBadge } from "../../components/Primitives";
 import { dashboardResources, formatDateTime, statusFor, summarizeResourceStatus } from "../../lib/format";
@@ -38,14 +39,14 @@ const icons: Record<string, ReactNode> = {
 
 function ResourceTile({
   resource,
-  connection,
+  connections,
   onOpen,
   onFavorite,
   onInspect,
   onConnect
 }: {
   resource: DashboardResource;
-  connection: ConnectionDto | null;
+  connections: ConnectionDto[];
   onOpen: (resource: DashboardResource) => void;
   onFavorite: (resource: DashboardResource) => void;
   onInspect: (resource: DashboardResource) => void;
@@ -54,7 +55,7 @@ function ResourceTile({
   const status = statusFor(resource);
   const color = resource.color ?? "#2dd4bf";
   const checks = resource.healthChecks ?? [];
-  const connections = resource.connections ?? [];
+  const resourceConnections = resource.connections ?? [];
   const latestCheck = checks
     .filter((check) => check.latestCheckedAt)
     .sort((left, right) => String(right.latestCheckedAt).localeCompare(String(left.latestCheckedAt)))[0];
@@ -73,8 +74,8 @@ function ResourceTile({
       <div className="resource-meta">
         <span className="kind-chip">{resource.kind}</span>
         {resource.host ? <span>{resource.host}</span> : null}
-        {connections.length > 0 ? (
-          <span>{connections.map((item) => item.type.toUpperCase()).join(" + ")}</span>
+        {resourceConnections.length > 0 ? (
+          <span>{resourceConnections.map((item) => item.type.toUpperCase()).join(" + ")}</span>
         ) : null}
         {resource.tags?.length ? <span>{resource.tags.map((tag) => tag.name).join(", ")}</span> : null}
       </div>
@@ -85,11 +86,17 @@ function ResourceTile({
       </div>
       <div className="resource-actions">
         <StatusBadge status={status} />
-        {connection ? (
-          <button className="icon-button is-active" type="button" title={`Connect ${connection.type.toUpperCase()}`} onClick={() => onConnect(connection)}>
-            <TerminalSquare size={16} />
+        {connections.map((connection) => (
+          <button
+            className="icon-button is-active"
+            type="button"
+            title={`Connect ${connection.type.toUpperCase()}`}
+            key={connection.id}
+            onClick={() => onConnect(connection)}
+          >
+            <ProtocolIcon protocol={connection.type} size={16} />
           </button>
-        ) : null}
+        ))}
         <button className="icon-button" type="button" title="Details" onClick={() => onInspect(resource)}>
           <Info size={16} />
         </button>
@@ -144,12 +151,15 @@ export function DashboardConsole({
     () => dashboardResources(data.dashboard.groups, data.dashboard.ungroupedResources),
     [data.dashboard]
   );
-  const connectionByResource = useMemo(() => {
-    const map = new Map<string, ConnectionDto>();
+  const connectionsByResource = useMemo(() => {
+    const map = new Map<string, ConnectionDto[]>();
     for (const connection of data.connections) {
-      if (!map.has(connection.resourceId)) {
-        map.set(connection.resourceId, connection);
-      }
+      const list = map.get(connection.resourceId) ?? [];
+      list.push(connection);
+      map.set(connection.resourceId, list);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => a.type.localeCompare(b.type));
     }
     return map;
   }, [data.connections]);
@@ -186,7 +196,7 @@ export function DashboardConsole({
       <ResourceTile
         key={resource.id}
         resource={resource}
-        connection={connectionByResource.get(resource.id) ?? null}
+        connections={connectionsByResource.get(resource.id) ?? []}
         onInspect={onInspectResource}
         onOpen={openResource}
         onConnect={onConnect}

@@ -225,10 +225,12 @@ function SetupScreen({
   );
 }
 
-function StatusStrip({ data }: { data: V2Data }) {
+function StatusStrip({ data, liveSessionCount }: { data: V2Data; liveSessionCount: number }) {
   const openIncidents = data.incidents.filter((incident) => incident.status !== "resolved").length;
   const failingChecks = data.checks.filter((check) => check.latestStatus === "offline").length;
-  const activeSessions = data.sessionHistory.filter((session) => session.status === "launching").length;
+  const activeSessions =
+    liveSessionCount ||
+    data.sessionHistory.filter((session) => session.status === "connected" || session.status === "launching").length;
 
   return (
     <div className="status-strip">
@@ -443,6 +445,7 @@ export function App() {
 
   async function logout() {
     await apiSend("/api/auth/logout", "POST");
+    remoteSessions.reset();
     setAuthenticated(false);
   }
 
@@ -457,19 +460,8 @@ export function App() {
   }
 
   async function exportInventory() {
-    try {
-      const payload = await apiGet<Record<string, unknown>>("/api/export");
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `homelab-export-${new Date().toISOString().slice(0, 10)}.json`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-      pushToast("Inventory exported");
-    } catch (error) {
-      pushToast(error instanceof Error ? error.message : "Export failed", "error");
-    }
+    setInventoryTab("backup");
+    setView("inventory");
   }
 
   function openConnection(connection: ConnectionDto) {
@@ -640,7 +632,10 @@ export function App() {
             <span>Command palette</span>
             <kbd>Ctrl K</kbd>
           </button>
-          <StatusStrip data={data} />
+          <StatusStrip
+            data={data}
+            liveSessionCount={remoteSessions.tabs.filter((tab) => tab.state === "connected" || tab.state === "launching").length}
+          />
           <button className="icon-text-button" type="button" onClick={() => { setInventoryTab("resource"); setView("inventory"); }}>
             <Plus size={16} />
             New
@@ -649,9 +644,9 @@ export function App() {
             <ExternalLink size={16} />
             Status
           </button>
-          <button className="icon-text-button" type="button" onClick={() => void exportInventory()}>
+          <button className="icon-text-button" type="button" onClick={() => { setInventoryTab("backup"); setView("inventory"); }}>
             <Download size={16} />
-            Export
+            Backup
           </button>
           <button className="icon-text-button" type="button" onClick={() => setKeyboardHelpOpen(true)}>
             <Shield size={16} />

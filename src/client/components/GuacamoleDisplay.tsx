@@ -4,6 +4,8 @@ import Guacamole from "guacamole-common-js";
 type GuacamoleDisplayProps = {
   websocketPath: string;
   displayName: string;
+  sessionHistoryId?: string;
+  onConnected?: (sessionHistoryId: string) => void;
 };
 
 function websocketUrl(path: string): string {
@@ -11,10 +13,25 @@ function websocketUrl(path: string): string {
   return `${protocol}//${window.location.host}${path}`;
 }
 
-export function GuacamoleDisplay({ websocketPath, displayName }: GuacamoleDisplayProps) {
+export function GuacamoleDisplay({
+  websocketPath,
+  displayName,
+  sessionHistoryId,
+  onConnected
+}: GuacamoleDisplayProps) {
   const displayRef = useRef<HTMLDivElement | null>(null);
+  const connectedRef = useRef(false);
+  const onConnectedRef = useRef(onConnected);
   const [state, setState] = useState("connecting");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onConnectedRef.current = onConnected;
+  }, [onConnected]);
+
+  useEffect(() => {
+    connectedRef.current = false;
+  }, [websocketPath, sessionHistoryId]);
 
   useEffect(() => {
     if (!displayRef.current) {
@@ -22,6 +39,8 @@ export function GuacamoleDisplay({ websocketPath, displayName }: GuacamoleDispla
     }
 
     displayRef.current.innerHTML = "";
+    displayRef.current.tabIndex = 0;
+
     const tunnel = new Guacamole.WebSocketTunnel(websocketUrl(websocketPath));
     const client = new Guacamole.Client(tunnel);
     const displayElement = client.getDisplay().getElement();
@@ -33,7 +52,7 @@ export function GuacamoleDisplay({ websocketPath, displayName }: GuacamoleDispla
       client.sendMouseState(mouseState);
     };
 
-    const keyboard = new Guacamole.Keyboard(document);
+    const keyboard = new Guacamole.Keyboard(displayRef.current);
     keyboard.onkeydown = (keysym: number) => client.sendKeyEvent(1, keysym);
     keyboard.onkeyup = (keysym: number) => client.sendKeyEvent(0, keysym);
 
@@ -44,10 +63,26 @@ export function GuacamoleDisplay({ websocketPath, displayName }: GuacamoleDispla
 
     client.onstatechange = (clientState: number) => {
       const labels = ["idle", "connecting", "waiting", "connected", "disconnecting", "disconnected"];
-      setState(labels[clientState] ?? "unknown");
+      const label = labels[clientState] ?? "unknown";
+      setState(label);
+
+      if (
+        label === "connected" &&
+        sessionHistoryId &&
+        !sessionHistoryId.startsWith("pending-") &&
+        !connectedRef.current
+      ) {
+        connectedRef.current = true;
+        onConnectedRef.current?.(sessionHistoryId);
+      }
+
+      if (label === "disconnected" || label === "error") {
+        connectedRef.current = false;
+      }
     };
 
     client.connect("");
+    displayRef.current.focus();
 
     return () => {
       keyboard.onkeydown = null;
@@ -55,7 +90,7 @@ export function GuacamoleDisplay({ websocketPath, displayName }: GuacamoleDispla
       client.disconnect();
       displayElement.remove();
     };
-  }, [websocketPath]);
+  }, [websocketPath, sessionHistoryId]);
 
   return (
     <section className="session-stage" aria-label={displayName}>

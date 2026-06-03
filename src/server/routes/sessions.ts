@@ -15,20 +15,24 @@ export async function registerSessionRoutes({ app, prisma }: RouteContext): Prom
   app.patch("/api/sessions/history/:id", async (request) => {
     const { id } = idParamSchema.parse(request.params);
     const body = sessionEndSchema.parse(request.body);
+    const status = body.status ?? "closed";
+    const terminal = status === "closed" || status === "failed";
     const session = await prisma.sessionHistory.update({
       where: { id },
       data: {
-        status: body.status ?? "closed",
+        status,
         error: body.error ?? null,
-        endedAt: new Date()
+        ...(terminal ? { endedAt: new Date() } : {})
       }
     });
-    await createAuditEvent(prisma, {
-      action: "session.closed",
-      entityType: "session",
-      entityId: session.id,
-      summary: `Closed ${session.protocol.toUpperCase()} session to ${session.host}`
-    });
+    if (terminal) {
+      await createAuditEvent(prisma, {
+        action: "session.closed",
+        entityType: "session",
+        entityId: session.id,
+        summary: `Closed ${session.protocol.toUpperCase()} session to ${session.host}`
+      });
+    }
     return serializeSessionHistory(session);
   });
 }

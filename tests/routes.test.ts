@@ -112,6 +112,87 @@ describe("api routes", () => {
     expect(launch.json<{ websocketPath: string }>().websocketPath).toContain("/api/tunnel?token=");
   });
 
+  it("rejects setup after an admin account exists", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/setup",
+      payload: { seedDemo: false }
+    });
+    expect(response.statusCode).toBe(403);
+  });
+
+  it("merges credential secrets on partial patch", async () => {
+    const cookie = await loginCookie();
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/credentials",
+      headers: { cookie },
+      payload: {
+        label: "Patch merge test",
+        username: "admin",
+        password: "original-secret",
+        domain: "LAB"
+      }
+    });
+    expect(created.statusCode).toBe(201);
+    const credentialId = created.json<{ id: string }>().id;
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: `/api/credentials/${credentialId}`,
+      headers: { cookie },
+      payload: { password: "updated-secret" }
+    });
+    expect(patched.statusCode).toBe(200);
+
+    const reveal = await app.inject({
+      method: "POST",
+      url: "/api/vault/reveal",
+      headers: { cookie },
+      payload: { credentialId, password: "test-pass" }
+    });
+    expect(reveal.statusCode).toBe(200);
+    const revealed = reveal.json<{ username: string; password: string; domain: string }>();
+    expect(revealed.username).toBe("admin");
+    expect(revealed.password).toBe("updated-secret");
+    expect(revealed.domain).toBe("LAB");
+  });
+
+  it("updates encrypted username on username-only patch", async () => {
+    const cookie = await loginCookie();
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/credentials",
+      headers: { cookie },
+      payload: {
+        label: "Username patch test",
+        username: "root",
+        password: "secret"
+      }
+    });
+    const credentialId = created.json<{ id: string }>().id;
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: `/api/credentials/${credentialId}`,
+      headers: { cookie },
+      payload: { username: "admin" }
+    });
+    expect(patched.statusCode).toBe(200);
+
+    const reveal = await app.inject({
+      method: "POST",
+      url: "/api/vault/reveal",
+      headers: { cookie },
+      payload: { credentialId, password: "test-pass" }
+    });
+    expect(reveal.statusCode).toBe(200);
+    expect(reveal.json<{ username: string; password: string }>().username).toBe("admin");
+    expect(reveal.json<{ password: string }>().password).toBe("secret");
+  });
+
   it("runs a TCP health check and stores the latest result", async () => {
     const cookie = await loginCookie();
 

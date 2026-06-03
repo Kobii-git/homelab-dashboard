@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { CONNECTION_TYPES, HEALTH_CHECK_TYPES, RESOURCE_KINDS } from "../../../shared/types";
 import { MetricCard, StatusBadge } from "../../components/Primitives";
 import { TagPicker, readTagIds } from "../../components/TagPicker";
+import { BackupRestoreView } from "./BackupRestoreView";
 import type { HealthCheckDto, NoteDto } from "../../lib/api";
 import { apiSend, emptyToNull } from "../../lib/api";
 import { FormErrorBanner, runFormAction } from "../../lib/forms";
@@ -11,7 +12,7 @@ import type { V2Data } from "../types";
 import type { DashboardResource } from "../../../shared/types";
 import type { ConnectionDto } from "../../lib/api";
 
-export type InventoryTab = "resource" | "connection" | "credential" | "check" | "notes" | "tags";
+export type InventoryTab = "resource" | "connection" | "credential" | "check" | "notes" | "tags" | "backup";
 
 const inventoryTabs: Array<{ id: InventoryTab; label: string }> = [
   { id: "resource", label: "Resource" },
@@ -19,7 +20,8 @@ const inventoryTabs: Array<{ id: InventoryTab; label: string }> = [
   { id: "credential", label: "Credential" },
   { id: "check", label: "Health Check" },
   { id: "notes", label: "Notes" },
-  { id: "tags", label: "Tags" }
+  { id: "tags", label: "Tags" },
+  { id: "backup", label: "Backup" }
 ];
 
 type EditMode = "resource" | "connection" | "check" | null;
@@ -329,6 +331,10 @@ export function InventoryView({
         ))}
       </div>
 
+      {activeTab === "backup" ? (
+        <BackupRestoreView onRefresh={onRefresh} />
+      ) : (
+      <>
       <div className="inventory-grid inventory-grid-single">
         {activeTab === "resource" ? (
           <>
@@ -685,6 +691,8 @@ export function InventoryView({
           ) : null}
         </div>
       </section>
+      </>
+      )}
     </main>
   );
 }

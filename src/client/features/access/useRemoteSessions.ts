@@ -27,5 +27,10 @@ export function useRemoteSessions() {
     setActiveTabIds((current) => ({ ...current, [protocol]: tabId }));
   }, []);
 
-  return { tabs, setTabs, getActiveTabId, setActiveTabId };
+  const reset = useCallback(() => {
+    setTabs([]);
+    setActiveTabIds({ ssh: null, rdp: null });
+  }, []);
+
+  return { tabs, setTabs, getActiveTabId, setActiveTabId, reset };
 }
