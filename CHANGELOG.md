@@ -6,6 +6,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.2] - 2026-06-03
+
+### Added
+- **Light / dark mode** toggle in the sidebar
+- **Collapsible sidebar** — full, compact (icons only), or hidden
+
+### Fixed
+- **SSH / RDP sessions stuck on Waiting** — tunnel token no longer consumed on reconnect; duplicate session tabs prevented
+- Guacamole tunnel forwards client messages during handshake
+
+### Changed
+- Removed the global top command bar; Search, Sync, Backup, etc. moved into the sidebar tools section
+
+---
+
 ## [0.2.1] - 2026-06-03
 
 ### Added

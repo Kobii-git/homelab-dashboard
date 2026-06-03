@@ -809,14 +809,16 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       return;
     }
 
-    const session = sessions.consume(token);
+    const session = sessions.get(token);
 
     if (!session) {
       socket.close(1008, "Invalid or expired session token");
       return;
     }
 
-    wireGuacamoleTunnel(socket, session, { host: env.guacdHost, port: env.guacdPort });
+    wireGuacamoleTunnel(socket, session, { host: env.guacdHost, port: env.guacdPort }, () => {
+      sessions.release(token);
+    });
   });
 
   let stopScheduler: (() => void) | undefined;

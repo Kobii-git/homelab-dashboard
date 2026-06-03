@@ -164,6 +164,19 @@ export function AccessManager({
       return;
     }
 
+    const existing = tabs.find(
+      (tab) =>
+        tab.protocol === protocol &&
+        tab.connectionId === connection.id &&
+        (tab.state === "launching" || tab.state === "connected") &&
+        tab.session
+    );
+    if (existing) {
+      setView("sessions");
+      setActiveTabId(existing.id);
+      return;
+    }
+
     setLaunchingId(connection.id);
     setView("sessions");
 
@@ -187,7 +200,7 @@ export function AccessManager({
       const sessionId = session.sessionHistory?.id ?? tempId;
       setTabs((current) =>
         current.map((tab) =>
-          tab.id === tempId ? { ...tab, id: sessionId, state: "connected", session } : tab
+          tab.id === tempId ? { ...tab, id: sessionId, state: "launching", session } : tab
         )
       );
       setActiveTabId(sessionId);
@@ -296,11 +309,11 @@ export function AccessManager({
   const markSessionConnected = useCallback(
     async (sessionId: string) => {
       if (sessionId.startsWith("pending-")) return;
+      setTabs((current) =>
+        current.map((tab) => (tab.id === sessionId ? { ...tab, state: "connected" } : tab))
+      );
       try {
         await apiSend(`/api/sessions/history/${sessionId}`, "PATCH", { status: "connected" });
-        setTabs((current) =>
-          current.map((tab) => (tab.id === sessionId ? { ...tab, state: "connected" } : tab))
-        );
         await onRefresh();
       } catch {
         // Session still usable even if history update fails.
@@ -484,6 +497,7 @@ export function AccessManager({
           <div className="access-session-stage">
             {activeTab?.session ? (
               <GuacamoleDisplay
+                key={activeTab.session.websocketPath}
                 websocketPath={activeTab.session.websocketPath}
                 displayName={activeTab.title}
                 sessionHistoryId={activeTab.id}

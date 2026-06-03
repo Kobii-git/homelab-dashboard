@@ -1,22 +1,19 @@
 import {
   Activity,
   Bell,
-  Download,
-  ExternalLink,
   Gauge,
   Home,
   KeyRound,
-  LogOut,
   Monitor,
   Plus,
   RefreshCw,
-  Search,
   Server,
   Shield,
   TerminalSquare
 } from "lucide-react";
 import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 
+import { AppSidebar } from "./components/AppSidebar";
 import { CommandPalette } from "./components/CommandPalette";
 import { BuildBadge } from "./components/BuildBadge";
 import { DetailDrawer, type DrawerState } from "./components/DetailDrawer";
@@ -50,6 +47,7 @@ import {
   type TagDto
 } from "./lib/api";
 import { formatDateTime } from "./lib/format";
+import { useAppChrome } from "./lib/appChrome";
 import { pushToast } from "./lib/toast";
 import type { DashboardGroupDto, DashboardResource } from "../shared/types";
 
@@ -227,23 +225,6 @@ function SetupScreen({
   );
 }
 
-function StatusStrip({ data, liveSessionCount }: { data: V2Data; liveSessionCount: number }) {
-  const openIncidents = data.incidents.filter((incident) => incident.status !== "resolved").length;
-  const failingChecks = data.checks.filter((check) => check.latestStatus === "offline").length;
-  const activeSessions =
-    liveSessionCount ||
-    data.sessionHistory.filter((session) => session.status === "connected" || session.status === "launching").length;
-
-  return (
-    <div className="status-strip">
-      <span className={openIncidents ? "strip-danger" : ""}>{openIncidents} incidents</span>
-      <span className={failingChecks ? "strip-danger" : ""}>{failingChecks} failing checks</span>
-      <span>{activeSessions} live sessions</span>
-      <span>{data.credentials.length} vault items</span>
-    </div>
-  );
-}
-
 function DrawerBody({ rows }: { rows: Array<[string, string | number | null | undefined]> }) {
   return (
     <div className="key-value-grid">
@@ -272,6 +253,7 @@ export function App() {
   const [inventoryTab, setInventoryTab] = useState<InventoryTab>("resource");
   const [launchConnectionId, setLaunchConnectionId] = useState<string | null>(null);
   const remoteSessions = useRemoteSessions();
+  const { theme, toggleTheme, sidebarMode, cycleSidebar } = useAppChrome();
 
   const openIncidentMap = useMemo(
     () => new Map(data.incidents.map((incident) => [incident.id, incident])),
@@ -603,65 +585,27 @@ export function App() {
   }
 
   return (
-    <div className="app-shell pro-shell">
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <Gauge size={24} />
-          <span>Homelab</span>
-        </div>
-        <nav className="nav-list" aria-label="Primary">
-          {navItems.map((item) => (
-            <button
-              className={view === item.id ? "active" : ""}
-              type="button"
-              key={item.id}
-              onClick={() => setView(item.id)}
-            >
-              {item.icon}
-              {item.label}
-            </button>
-          ))}
-        </nav>
-        <BuildBadge className="sidebar-build-badge" />
-        <button className="nav-utility" type="button" onClick={logout}>
-          <LogOut size={18} />
-          Logout
-        </button>
-      </aside>
+    <div className={`app-shell pro-shell sidebar-${sidebarMode}`}>
+      <AppSidebar
+        navItems={navItems}
+        view={view}
+        onNavigate={setView}
+        sidebarMode={sidebarMode}
+        onCycleSidebar={cycleSidebar}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onOpenPalette={() => setPaletteOpen(true)}
+        onSync={() => void loadData()}
+        onOpenInventory={() => { setInventoryTab("resource"); setView("inventory"); }}
+        onOpenBackup={() => { setInventoryTab("backup"); setView("inventory"); }}
+        onOpenKeyboardHelp={() => setKeyboardHelpOpen(true)}
+        onLogout={logout}
+        liveSessionCount={remoteSessions.tabs.filter((tab) => tab.state === "connected" || tab.state === "launching").length}
+        openIncidents={data.incidents.filter((incident) => incident.status !== "resolved").length}
+        failingChecks={data.checks.filter((check) => check.latestStatus === "offline" && check.enabled).length}
+        vaultCount={data.credentials.length}
+      />
       <div className="content-shell">
-        <header className="top-command-bar">
-          <button className="command-button" type="button" onClick={() => setPaletteOpen(true)}>
-            <Search size={16} />
-            <span>Command palette</span>
-            <kbd>Ctrl K</kbd>
-          </button>
-          <StatusStrip
-            data={data}
-            liveSessionCount={remoteSessions.tabs.filter((tab) => tab.state === "connected" || tab.state === "launching").length}
-          />
-          <div className="top-command-bar-actions">
-            <button className="icon-text-button" type="button" onClick={() => { setInventoryTab("resource"); setView("inventory"); }}>
-              <Plus size={16} />
-              New
-            </button>
-            <button className="icon-text-button" type="button" onClick={() => window.open("/status", "_blank", "noopener,noreferrer")}>
-              <ExternalLink size={16} />
-              Status
-            </button>
-            <button className="icon-text-button" type="button" onClick={() => { setInventoryTab("backup"); setView("inventory"); }}>
-              <Download size={16} />
-              Backup
-            </button>
-            <button className="icon-text-button" type="button" onClick={() => setKeyboardHelpOpen(true)}>
-              <Shield size={16} />
-              Shortcuts
-            </button>
-            <button className="icon-text-button" type="button" onClick={loadData}>
-              <RefreshCw size={16} />
-              Sync
-            </button>
-          </div>
-        </header>
         <div className={`workspace-scroll ${view === "ssh" || view === "rdp" ? "access-workspace" : ""}`}>
           {error ? <div className="app-error">{error}</div> : null}
           {loading ? <div className="loading-strip"><RefreshCw className="spin" size={12} />Refreshing</div> : null}

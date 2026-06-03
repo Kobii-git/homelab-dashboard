@@ -22,6 +22,7 @@ export function GuacamoleDisplay({
   const displayRef = useRef<HTMLDivElement | null>(null);
   const connectedRef = useRef(false);
   const onConnectedRef = useRef(onConnected);
+  const sessionIdRef = useRef(sessionHistoryId);
   const [state, setState] = useState("connecting");
   const [error, setError] = useState<string | null>(null);
 
@@ -30,8 +31,12 @@ export function GuacamoleDisplay({
   }, [onConnected]);
 
   useEffect(() => {
+    sessionIdRef.current = sessionHistoryId;
+  }, [sessionHistoryId]);
+
+  useEffect(() => {
     connectedRef.current = false;
-  }, [websocketPath, sessionHistoryId]);
+  }, [websocketPath]);
 
   useEffect(() => {
     if (!displayRef.current) {
@@ -40,6 +45,8 @@ export function GuacamoleDisplay({
 
     displayRef.current.innerHTML = "";
     displayRef.current.tabIndex = 0;
+    setState("connecting");
+    setError(null);
 
     const tunnel = new Guacamole.WebSocketTunnel(websocketUrl(websocketPath));
     const client = new Guacamole.Client(tunnel);
@@ -56,6 +63,11 @@ export function GuacamoleDisplay({
     keyboard.onkeydown = (keysym: number) => client.sendKeyEvent(1, keysym);
     keyboard.onkeyup = (keysym: number) => client.sendKeyEvent(0, keysym);
 
+    tunnel.onerror = (status: { code?: number; message?: string }) => {
+      setError(status.message ?? "Tunnel connection failed");
+      setState("error");
+    };
+
     client.onerror = (guacError: { message?: string }) => {
       setError(guacError.message ?? "Remote session failed");
       setState("error");
@@ -68,12 +80,12 @@ export function GuacamoleDisplay({
 
       if (
         label === "connected" &&
-        sessionHistoryId &&
-        !sessionHistoryId.startsWith("pending-") &&
+        sessionIdRef.current &&
+        !sessionIdRef.current.startsWith("pending-") &&
         !connectedRef.current
       ) {
         connectedRef.current = true;
-        onConnectedRef.current?.(sessionHistoryId);
+        onConnectedRef.current?.(sessionIdRef.current);
       }
 
       if (label === "disconnected" || label === "error") {
@@ -90,7 +102,7 @@ export function GuacamoleDisplay({
       client.disconnect();
       displayElement.remove();
     };
-  }, [websocketPath, sessionHistoryId]);
+  }, [websocketPath]);
 
   return (
     <section className="session-stage" aria-label={displayName}>

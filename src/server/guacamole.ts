@@ -42,6 +42,10 @@ export class SessionStore {
     return session.config;
   }
 
+  release(token: string): void {
+    this.sessions.delete(token);
+  }
+
   consume(token: string): GuacamoleSessionConfig | undefined {
     const config = this.get(token);
     if (config) {
@@ -185,7 +189,8 @@ function rawDataToBuffer(message: RawData): Buffer {
 export function wireGuacamoleTunnel(
   ws: WebSocket,
   config: GuacamoleSessionConfig,
-  options: { host: string; port: number }
+  options: { host: string; port: number },
+  onClose?: () => void
 ): void {
   const guacd = net.createConnection({ host: options.host, port: options.port });
   let streaming = false;
@@ -201,6 +206,7 @@ export function wireGuacamoleTunnel(
     if (ws.readyState === ws.OPEN) {
       ws.close();
     }
+    onClose?.();
   };
 
   const parser = new InstructionParser((instruction) => {
@@ -251,11 +257,14 @@ export function wireGuacamoleTunnel(
   guacd.once("close", closeBoth);
 
   ws.on("message", (message) => {
-    if (!streaming) {
+    const payload = rawDataToBuffer(message);
+
+    if (streaming) {
+      guacd.write(payload);
       return;
     }
 
-    guacd.write(rawDataToBuffer(message));
+    parser.push(payload.toString("utf8"));
   });
 
   ws.once("close", closeBoth);
