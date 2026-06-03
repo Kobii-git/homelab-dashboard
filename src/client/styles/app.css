@@ -154,6 +154,18 @@ button:disabled {
   overflow: auto;
 }
 
+.workspace-scroll.access-workspace {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.access-workspace .access-page {
+  flex: 1;
+  min-height: 0;
+  padding: 18px 22px;
+}
+
 .command-button {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) auto;
@@ -1038,86 +1050,565 @@ label {
   gap: 6px;
 }
 
-.access-shell {
-  display: grid;
-  grid-template-columns: 330px minmax(0, 1fr);
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.access-shell.is-fullscreen {
-  grid-template-columns: 0 minmax(0, 1fr);
-}
-
-.access-shell.is-fullscreen .connection-rail {
-  display: none;
-}
-
-.connection-rail {
+.access-page {
   display: flex;
   flex-direction: column;
+  gap: 16px;
+  height: 100%;
   min-height: 0;
   padding: 22px;
-  border-right: 1px solid var(--line-soft);
-  background: #141819;
   overflow: hidden;
 }
 
-.quick-add-panel {
-  display: grid;
-  gap: 10px;
-  max-height: min(58vh, 620px);
-  margin-bottom: 14px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+.access-page.is-fullscreen {
+  padding: 0;
+  gap: 0;
+}
+
+.access-page.is-fullscreen .access-sessions-panel {
+  height: 100%;
+}
+
+.access-page.is-fullscreen .access-session-tabs {
+  margin: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
   background: #101415;
-  overflow: auto;
 }
 
-.quick-add-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #e8f0f2;
+.access-page.is-fullscreen .access-session-stage {
+  flex: 1;
+  min-height: 0;
+  border-radius: 0;
 }
 
-.quick-add-panel label {
-  font-size: 12px;
-}
-
-.quick-add-panel label input,
-.quick-add-panel label select,
-.quick-add-panel label textarea {
-  min-height: 34px;
-}
-
-.quick-add-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-}
-
-.rail-header {
+.access-header {
   display: flex;
   align-items: end;
   justify-content: space-between;
-  margin-bottom: 14px;
+  gap: 16px;
 }
 
-.rail-search {
-  width: 100%;
-  margin-bottom: 12px;
-  min-height: 38px;
+.access-header h2 {
+  margin: 0 0 4px;
 }
 
-.connection-list {
+.access-header span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.access-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.access-overview {
   display: grid;
-  flex: 1;
-  min-height: 0;
-  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.access-overview-compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.access-toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.access-layout-toggle {
+  display: inline-flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.access-layout-toggle button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: #101415;
+}
+
+.access-layout-toggle button.active {
+  border-color: rgba(45, 212, 191, 0.55);
+  color: #d7fff8;
+  background: rgba(45, 212, 191, 0.08);
+}
+
+.access-device-list {
+  display: grid;
+  gap: 6px;
   overflow: auto;
+  padding-bottom: 8px;
+}
+
+.access-device-list-head,
+.access-device-list-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) minmax(120px, 1fr) minmax(90px, 0.7fr) minmax(100px, 0.8fr) minmax(100px, 0.8fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.access-device-list-head {
+  min-height: 34px;
+  padding: 0 12px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.access-device-list-row {
+  min-height: 54px;
+  padding: 8px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #101415;
+}
+
+.access-device-list-row:hover {
+  border-color: rgba(45, 212, 191, 0.35);
+}
+
+.access-device-list-name {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.access-device-list-name strong,
+.access-device-list-name small,
+.access-device-list-host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-device-list-name small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.access-device-list-name .access-device-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.access-device-list-reach {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-device-list-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: end;
+}
+
+.access-page-ssh .access-view-tabs button.active {
+  border-color: rgba(45, 212, 191, 0.55);
+}
+
+.access-page-rdp .access-view-tabs button.active {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(96, 165, 250, 0.08);
+}
+
+.access-metric-hit {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.access-metric-hit .metric-card {
+  height: 100%;
+  transition: border-color 0.12s, transform 0.12s;
+}
+
+.access-metric-hit:hover .metric-card {
+  border-color: rgba(45, 212, 191, 0.45);
+  transform: translateY(-1px);
+}
+
+.access-guacd-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  border-radius: 8px;
+  color: #fecaca;
+  background: rgba(248, 113, 113, 0.08);
+  font-size: 13px;
+}
+
+.access-protocol-tabs,
+.access-view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.access-protocol-tabs button,
+.access-view-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: #101415;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+
+.access-protocol-tabs button.active,
+.access-view-tabs button.active {
+  border-color: rgba(45, 212, 191, 0.55);
+  color: #d7fff8;
+  background: rgba(45, 212, 191, 0.08);
+}
+
+.access-tab-count {
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #9fb0b8;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.access-protocol-tabs button.active .access-tab-count,
+.access-view-tabs button.active .access-tab-count {
+  color: #d7fff8;
+  background: rgba(45, 212, 191, 0.18);
+}
+
+.access-quick-add {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #101415;
+}
+
+.access-quick-add-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #e8f0f2;
+}
+
+.access-quick-add-head .icon-button {
+  margin-left: auto;
+}
+
+.access-quick-add-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.access-quick-add-grid label {
+  font-size: 12px;
+}
+
+.access-quick-add-grid .access-span-2 {
+  grid-column: span 2;
+}
+
+.access-devices-panel,
+.access-sessions-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+
+.access-toolbar {
+  display: grid;
+  gap: 10px;
+}
+
+.access-search {
+  width: 100%;
+}
+
+.access-device-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  overflow: auto;
+  padding-bottom: 8px;
+}
+
+.access-device-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #12181a 0%, #101415 100%);
+  transition: border-color 0.12s, transform 0.12s;
+}
+
+.access-device-card:hover {
+  border-color: rgba(45, 212, 191, 0.45);
+  transform: translateY(-1px);
+}
+
+.access-device-card-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+}
+
+.access-device-card-head h3 {
+  margin: 0 0 2px;
+  font-size: 15px;
+}
+
+.access-device-card-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.access-device-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+
+.access-device-icon-ssh {
+  color: #7ee8d8;
+  background: rgba(45, 212, 191, 0.12);
+}
+
+.access-device-icon-rdp {
+  color: #8cb4ff;
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.access-device-fav {
+  color: #fbbf24;
+}
+
+.access-device-meta {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.access-device-meta div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.access-device-meta dt {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.access-device-meta dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.access-connect-btn {
+  flex: 1;
+}
+
+.access-device-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+}
+
+.access-reachability {
+  margin: 0;
+  font-size: 12px;
+}
+
+.access-reachability.ok {
+  color: #86efac;
+}
+
+.access-reachability.fail {
+  color: #fca5a5;
+}
+
+.access-session-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  overflow-x: auto;
+}
+
+.access-session-tab {
+  display: grid;
+  grid-template-columns: auto minmax(90px, 1fr) auto 16px;
+  align-items: center;
+  gap: 8px;
+  min-width: 220px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #d9e0e4;
+  background: #101415;
+}
+
+.access-session-tab.active {
+  border-color: rgba(45, 212, 191, 0.5);
+  background: #142021;
+}
+
+.access-session-tab.state-failed {
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
+.access-session-tab-title,
+.access-session-tab small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-session-tab small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.access-session-stage {
+  flex: 1;
+  min-height: 280px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0b0f11;
+}
+
+.access-session-stage .session-stage {
+  height: 100%;
+  min-height: 280px;
+  border: 0;
+  border-radius: 0;
+}
+
+.access-session-empty {
+  height: 100%;
+  min-height: 320px;
+}
+
+.access-history-panel {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.access-history-list {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.access-history-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #101415;
+}
+
+.access-history-copy {
+  display: grid;
+  min-width: 0;
+}
+
+.access-history-copy strong,
+.access-history-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-history-copy small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.access-history-status {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
+.access-history-status.status-closed {
+  color: #9fb0b8;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.access-history-status.status-failed {
+  color: #fecaca;
+  background: rgba(248, 113, 113, 0.12);
+}
+
+.access-history-status.status-active,
+.access-history-status.status-connected {
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.muted-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .folder-strip {
@@ -1930,9 +2421,43 @@ label {
 }
 
 @media (max-width: 920px) {
-  .app-shell,
-  .access-shell {
+  .app-shell {
     grid-template-columns: 1fr;
+  }
+
+  .access-overview,
+  .access-overview-compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .access-device-list-head {
+    display: none;
+  }
+
+  .access-device-list-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .access-device-list-actions {
+    justify-content: start;
+  }
+
+  .access-quick-add-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .access-quick-add-grid .access-span-2 {
+    grid-column: span 1;
+  }
+
+  .access-history-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .access-history-status,
+  .access-history-row .icon-text-button {
+    display: none;
   }
 
   .sidebar {
@@ -2037,12 +2562,6 @@ label {
 
   .empty-panel {
     grid-template-columns: 1fr;
-  }
-
-  .connection-rail {
-    max-height: 320px;
-    border-right: 0;
-    border-bottom: 1px solid #2d3338;
   }
 
   .detail-drawer {
