@@ -87,11 +87,13 @@ function MiniHistory({ results }: { results: HealthResultDto[] }) {
 export function MonitoringCenter({
   data,
   onRefresh,
-  onInspectIncident
+  onInspectIncident,
+  onOpenInventoryChecks
 }: {
   data: V2Data;
   onRefresh: () => Promise<void>;
   onInspectIncident: (incident: IncidentDto) => void;
+  onOpenInventoryChecks?: () => void;
 }) {
   const [runningId, setRunningId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -386,7 +388,23 @@ export function MonitoringCenter({
             );
           })}
           {filteredChecks.length === 0 ? (
-            <EmptyPanel icon={<Activity size={34} />} title="No checks match" body="Adjust the filters or create HTTP, TCP, or ping checks in Inventory." />
+            <EmptyPanel
+              icon={<Activity size={34} />}
+              title={data.checks.length === 0 ? "No health checks yet" : "No checks match"}
+              body={
+                data.checks.length === 0
+                  ? "Create HTTP, TCP, ping, or SSL checks under Inventory → Checks. Checks run automatically every minute once added."
+                  : "Adjust the filters or create checks in Inventory."
+              }
+              action={
+                onOpenInventoryChecks ? (
+                  <button className="primary-button" type="button" onClick={onOpenInventoryChecks}>
+                    <Plus size={15} />
+                    Add check in Inventory
+                  </button>
+                ) : undefined
+              }
+            />
           ) : null}
         </div>
       </section>

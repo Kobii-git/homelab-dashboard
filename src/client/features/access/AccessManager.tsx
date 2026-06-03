@@ -24,7 +24,7 @@ import { ProtocolIcon, sessionStatusLabel, type Protocol } from "./accessUtils";
 import type { RemoteTab } from "./useRemoteSessions";
 import type { ConnectionDto, SessionHistoryDto, SessionLaunchDto } from "../../lib/api";
 import { apiGet, apiSend, emptyToNull } from "../../lib/api";
-import { FormErrorBanner, runFormAction } from "../../lib/forms";
+import { FormErrorBanner, runFormAction, runFormSubmit } from "../../lib/forms";
 import { formatDateTime } from "../../lib/format";
 import type { V2Data } from "../types";
 import type { DashboardResource } from "../../../shared/types";
@@ -232,9 +232,7 @@ export function AccessManager({
   }
 
   async function addDevice(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await runFormAction(async () => {
-      const form = new FormData(event.currentTarget);
+    await runFormSubmit(event, async (form) => {
       const name = String(form.get("name") ?? "").trim();
       const host = String(form.get("host") ?? "").trim();
       const port = Number(form.get("port") || (protocol === "ssh" ? 22 : 3389));
@@ -261,7 +259,6 @@ export function AccessManager({
         notes: emptyToNull(form.get("notes"))
       });
 
-      event.currentTarget.reset();
       setShowQuickAdd(false);
       await onRefresh();
     }, setActionError, setSubmitting, "Device added");

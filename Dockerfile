@@ -1,5 +1,10 @@
 FROM node:22-alpine AS build
 
+ARG APP_GIT_SHA=unknown
+ARG APP_BUILD_TIME
+ENV APP_GIT_SHA=$APP_GIT_SHA
+ENV APP_BUILD_TIME=$APP_BUILD_TIME
+
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
@@ -9,6 +14,11 @@ COPY . .
 RUN npm run build
 
 FROM node:22-alpine
+
+ARG APP_GIT_SHA=unknown
+ARG APP_BUILD_TIME
+ENV APP_GIT_SHA=$APP_GIT_SHA
+ENV APP_BUILD_TIME=$APP_BUILD_TIME
 
 WORKDIR /app
 ENV NODE_ENV=production

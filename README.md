@@ -2,7 +2,7 @@
 
 A private, self-hosted command centre for your homelab. Launch SSH/RDP sessions in the browser, monitor service health, manage an encrypted credential vault, and get alerted when things break.
 
-![Version](https://img.shields.io/badge/version-0.2.0-2dd4bf)
+![Version](https://img.shields.io/badge/version-0.2.1-2dd4bf)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -168,4 +168,27 @@ docker compose -f docker-compose.build.yml up -d --build
 
 Releases follow [Semantic Versioning](https://semver.org). See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
-Current: **v0.2.0**
+Current: **v0.2.1**
+
+### Verify your running build
+
+| Where | What to look for |
+|---|---|
+| **Sidebar** (bottom) | `v0.2.1 · abc1234` — click for GitHub release notes |
+| **Login screen** | Same badge under the Unlock button |
+| **`/status` page** | Version line under the title |
+| **API** | `curl -s http://localhost:4173/api/version` |
+
+The short hash (`abc1234`) is the git commit baked into the Docker image at build time.
+
+### Release a new version
+
+```sh
+# 1. Bump version + update CHANGELOG.md
+npm version patch   # or minor / major
+
+# 2. Commit, tag, and push
+git push && git push origin v$(node -p "require('./package.json').version")
+```
+
+Pushing a `v*` tag creates a [GitHub Release](https://github.com/Kobii-git/homelab-dashboard/releases) and publishes a matching Docker image to GHCR.

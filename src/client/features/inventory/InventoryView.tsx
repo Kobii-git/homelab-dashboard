@@ -6,7 +6,7 @@ import { TagPicker, readTagIds } from "../../components/TagPicker";
 import { BackupRestoreView } from "./BackupRestoreView";
 import type { HealthCheckDto, NoteDto } from "../../lib/api";
 import { apiSend, emptyToNull } from "../../lib/api";
-import { FormErrorBanner, runFormAction } from "../../lib/forms";
+import { FormErrorBanner, runFormAction, runFormSubmit } from "../../lib/forms";
 import { formatDateTime } from "../../lib/format";
 import type { V2Data } from "../types";
 import type { DashboardResource } from "../../../shared/types";
@@ -91,19 +91,14 @@ export function InventoryView({
   }
 
   async function submitGroup(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await runFormAction(async () => {
-      const f = new FormData(event.currentTarget);
+    await runFormSubmit(event, async (f) => {
       await apiSend("/api/groups", "POST", { name: emptyToNull(f.get("name")) });
-      event.currentTarget.reset();
       await onRefresh();
     }, setActionError, setSubmitting, "Group added");
   }
 
   async function submitResource(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await runFormAction(async () => {
-      const f = new FormData(event.currentTarget);
+    await runFormSubmit(event, async (f) => {
       const body = {
         name: emptyToNull(f.get("name")),
         kind: f.get("kind"),
@@ -120,18 +115,15 @@ export function InventoryView({
       if (editResource) {
         await apiSend(`/api/resources/${editResource.id}`, "PATCH", body);
         cancelEdit();
-      } else {
-        await apiSend("/api/resources", "POST", body);
-        event.currentTarget.reset();
+        return "skip-reset";
       }
+      await apiSend("/api/resources", "POST", body);
       await onRefresh();
     }, setActionError, setSubmitting, editResource ? "Resource updated" : "Resource added");
   }
 
   async function submitConnection(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await runFormAction(async () => {
-      const f = new FormData(event.currentTarget);
+    await runFormSubmit(event, async (f) => {
       const type = String(f.get("type"));
       const resourceId = String(f.get("resourceId"));
       const resource = data.resources.find((item) => item.id === resourceId);
@@ -160,10 +152,11 @@ export function InventoryView({
       if (editConnection) {
         await apiSend(`/api/connections/${editConnection.id}`, "PATCH", body);
         cancelEdit();
-      } else {
-        await apiSend("/api/connections", "POST", body);
-        event.currentTarget.reset();
+        setConnectionTestResult(null);
+        await onRefresh();
+        return "skip-reset";
       }
+      await apiSend("/api/connections", "POST", body);
       setConnectionTestResult(null);
       await onRefresh();
     }, setActionError, setSubmitting, editConnection ? "Connection updated" : "Connection added");
@@ -192,9 +185,7 @@ export function InventoryView({
   }
 
   async function submitCredential(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await runFormAction(async () => {
-      const f = new FormData(event.currentTarget);
+    await runFormSubmit(event, async (f) => {
       await apiSend("/api/credentials", "POST", {
         label: emptyToNull(f.get("label")),
         username: emptyToNull(f.get("username")),
@@ -206,15 +197,12 @@ export function InventoryView({
         folderId: emptyToNull(f.get("folderId")),
         tagIds: readTagIds(f)
       });
-      event.currentTarget.reset();
       await onRefresh();
     }, setActionError, setSubmitting, "Credential added");
   }
 
   async function submitCheck(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await runFormAction(async () => {
-      const f = new FormData(event.currentTarget);
+    await runFormSubmit(event, async (f) => {
       const body = {
         resourceId: f.get("resourceId"),
         type: f.get("type"),
@@ -228,24 +216,21 @@ export function InventoryView({
       if (editCheck) {
         await apiSend(`/api/health-checks/${editCheck.id}`, "PATCH", body);
         cancelEdit();
-      } else {
-        await apiSend("/api/health-checks", "POST", body);
-        event.currentTarget.reset();
+        await onRefresh();
+        return "skip-reset";
       }
+      await apiSend("/api/health-checks", "POST", body);
       await onRefresh();
     }, setActionError, setSubmitting, editCheck ? "Health check updated" : "Health check added");
   }
 
   async function submitTag(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await runFormAction(async () => {
-      const f = new FormData(event.currentTarget);
+    await runFormSubmit(event, async (f) => {
       await apiSend("/api/tags", "POST", {
         name: emptyToNull(f.get("name")),
         color: emptyToNull(f.get("color")),
         type: emptyToNull(f.get("type")) ?? "general"
       });
-      event.currentTarget.reset();
       await onRefresh();
     }, setActionError, setSubmitting, "Tag created");
   }

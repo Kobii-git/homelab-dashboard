@@ -90,6 +90,7 @@ button:disabled {
 .nav-list {
   display: grid;
   gap: 8px;
+  flex: 1;
 }
 
 .nav-list button,
@@ -118,8 +119,32 @@ button:disabled {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
-.nav-utility {
-  margin-top: auto;
+.build-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  color: var(--muted);
+  background: #101415;
+  font-size: 11px;
+  text-decoration: none;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.build-badge:hover {
+  border-color: rgba(45, 212, 191, 0.45);
+  color: #d7fff8;
+}
+
+.sidebar-build-badge {
+  align-self: center;
+}
+
+.login-build-badge {
+  justify-self: center;
 }
 
 .content-shell {
@@ -128,7 +153,7 @@ button:disabled {
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
   background:
     linear-gradient(180deg, rgba(45, 212, 191, 0.06), rgba(14, 17, 18, 0) 260px),
@@ -137,15 +162,36 @@ button:disabled {
 
 .top-command-bar {
   z-index: 8;
-  display: grid;
-  grid-template-columns: minmax(260px, 420px) minmax(0, 1fr) auto auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 10px 12px;
   min-height: 62px;
   padding: 10px 28px;
   border-bottom: 1px solid var(--line-soft);
   background: rgba(14, 17, 18, 0.92);
   backdrop-filter: blur(14px);
+}
+
+.top-command-bar .command-button {
+  flex: 1 1 260px;
+  max-width: 420px;
+}
+
+.top-command-bar .status-strip {
+  flex: 1 1 200px;
+}
+
+.top-command-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.top-command-bar-actions .icon-text-button {
+  white-space: nowrap;
 }
 
 .workspace-scroll {
@@ -157,7 +203,7 @@ button:disabled {
 .workspace-scroll.access-workspace {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .access-workspace .access-page {
@@ -1054,13 +1100,18 @@ label {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  height: 100%;
   min-height: 0;
   padding: 22px;
-  overflow: hidden;
+}
+
+.access-page:not(.is-fullscreen) {
+  flex: 1 0 auto;
+  overflow: visible;
 }
 
 .access-page.is-fullscreen {
+  height: 100%;
+  overflow: hidden;
   padding: 0;
   gap: 0;
 }
@@ -1835,6 +1886,22 @@ label {
   grid-template-columns: minmax(260px, 0.85fr) minmax(320px, 1.1fr) minmax(260px, 0.8fr);
 }
 
+.vault-grid-compact {
+  grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1fr);
+}
+
+.vault-new-panel .section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.vault-new-panel .section-heading h3 {
+  margin: 0;
+}
+
 .vault-row {
   width: 100%;
 }
@@ -2474,8 +2541,12 @@ label {
 
   .top-command-bar {
     position: static;
-    grid-template-columns: 1fr;
     padding: 10px 18px;
+  }
+
+  .top-command-bar-actions {
+    margin-left: 0;
+    width: 100%;
   }
 
   .nav-list {
@@ -2508,7 +2579,13 @@ label {
   }
 
   .header-actions {
-    display: grid;
+    display: flex;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .header-actions .icon-text-button {
+    width: auto;
   }
 
   .monitor-controls {

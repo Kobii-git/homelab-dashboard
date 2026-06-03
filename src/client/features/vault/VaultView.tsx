@@ -1,9 +1,9 @@
-import { AlertTriangle, Clipboard, Eye, EyeOff, FolderPlus, KeyRound, Plus, Save, Search, Shield, Tag, Trash2 } from "lucide-react";
+import { AlertTriangle, Clipboard, Eye, EyeOff, FolderPlus, KeyRound, Plus, Save, Search, Shield, Tag, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyPanel, MetricCard } from "../../components/Primitives";
 import type { CredentialDto } from "../../lib/api";
 import { apiSend, emptyToNull } from "../../lib/api";
-import { FormErrorBanner, runFormAction } from "../../lib/forms";
+import { FormErrorBanner, runFormAction, runFormSubmit } from "../../lib/forms";
 import { formatDateTime } from "../../lib/format";
 import type { V2Data } from "../types";
 
@@ -35,6 +35,7 @@ export function VaultView({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [showNewCredential, setShowNewCredential] = useState(false);
   const editFormRef = useRef<HTMLFormElement>(null);
 
   const selected = useMemo(
@@ -78,20 +79,15 @@ export function VaultView({
   }, [revealed]);
 
   async function createFolder(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await runFormAction(async () => {
-      const form = new FormData(event.currentTarget);
+    await runFormSubmit(event, async (form) => {
       await apiSend("/api/vault/folders", "POST", { name: emptyToNull(form.get("name")), type: "credential" });
-      event.currentTarget.reset();
       await onRefresh();
     }, setActionError, setSubmitting, "Folder created");
   }
 
   async function createCredential(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await runFormAction(async () => {
-      const form = new FormData(event.currentTarget);
-      await apiSend("/api/credentials", "POST", {
+    await runFormSubmit(event, async (form) => {
+      const created = await apiSend<CredentialDto>("/api/credentials", "POST", {
         label: emptyToNull(form.get("label")),
         username: emptyToNull(form.get("username")),
         password: emptyToNull(form.get("password")),
@@ -101,7 +97,9 @@ export function VaultView({
         notes: emptyToNull(form.get("notes")),
         folderId: emptyToNull(form.get("folderId"))
       });
-      event.currentTarget.reset();
+      setSelectedId(created.id);
+      setShowNewCredential(false);
+      setEditingId(null);
       await onRefresh();
     }, setActionError, setSubmitting, "Credential added");
   }
@@ -169,6 +167,16 @@ export function VaultView({
           <h2>Vault</h2>
           <span>{data.credentials.length} credentials · {data.audit.length} audit events</span>
         </div>
+        <div className="header-actions">
+          <button
+            className={`icon-text-button ${showNewCredential ? "is-active" : ""}`}
+            type="button"
+            onClick={() => { setShowNewCredential((value) => !value); setEditingId(null); }}
+          >
+            <Plus size={16} />
+            Add credential
+          </button>
+        </div>
       </header>
 
       <FormErrorBanner message={actionError} />
@@ -181,7 +189,7 @@ export function VaultView({
         <MetricCard icon={<Shield size={18} />} label="Orphaned" value={orphanedCount} tone={orphanedCount ? "offline" : "online"} />
       </section>
 
-      <section className="split-grid vault-grid">
+      <section className={`split-grid vault-grid ${showNewCredential ? "vault-grid-with-form" : "vault-grid-compact"}`}>
         <aside className="table-panel">
           <div className="section-heading" style={{ marginBottom: 10 }}>
             <h3>Credentials</h3>
@@ -196,7 +204,7 @@ export function VaultView({
                 <button
                   className={`vault-row ${selected?.id === credential.id ? "active" : ""}`}
                   type="button"
-                  onClick={() => { setSelectedId(credential.id); setRevealed(null); setEditingId(null); onInspectCredential(credential); }}
+                  onClick={() => { setSelectedId(credential.id); setRevealed(null); setEditingId(null); setShowNewCredential(false); onInspectCredential(credential); }}
                 >
                   <KeyRound size={16} />
                   <span>
@@ -219,7 +227,7 @@ export function VaultView({
               </div>
             ))}
             {filteredCredentials.length === 0 ? (
-              <EmptyPanel icon={<KeyRound size={34} />} title={credSearch ? "No match" : "No credentials"} body={credSearch ? "Try a different search." : "Create credentials in Inventory."} />
+              <EmptyPanel icon={<KeyRound size={34} />} title={credSearch ? "No match" : "No credentials"} body={credSearch ? "Try a different search." : "Click Add credential above to store your first secret."} />
             ) : null}
           </div>
         </aside>
@@ -313,44 +321,51 @@ export function VaultView({
           )}
         </section>
 
-        <section className="table-panel">
-          <h3>New credential</h3>
-          <form className="inline-form" onSubmit={createCredential}>
-            <label>Label<input name="label" required placeholder="Lab admin" /></label>
-            <label>Username<input name="username" placeholder="administrator" /></label>
-            <label>Password<input name="password" type="password" placeholder="Stored encrypted" /></label>
-            <label>Domain<input name="domain" placeholder="Optional" /></label>
-            <label>
-              Folder
-              <select name="folderId" defaultValue="">
-                <option value="">Unfiled</option>
-                {credentialFolders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-              </select>
-            </label>
-            <label>Private key<textarea name="privateKey" rows={3} placeholder="Optional SSH private key" /></label>
-            <label>Passphrase<input name="passphrase" type="password" placeholder="Optional" /></label>
-            <label>Notes<textarea name="notes" rows={2} /></label>
-            <button className="primary-button" type="submit" disabled={submitting}><Plus size={16} /> Add credential</button>
-          </form>
+        {showNewCredential ? (
+          <section className="table-panel vault-new-panel">
+            <div className="section-heading">
+              <h3>New credential</h3>
+              <button className="icon-button" type="button" title="Close" onClick={() => setShowNewCredential(false)}>
+                <X size={14} />
+              </button>
+            </div>
+            <form className="inline-form" onSubmit={createCredential}>
+              <label>Label<input name="label" required placeholder="Lab admin" /></label>
+              <label>Username<input name="username" placeholder="administrator" /></label>
+              <label>Password<input name="password" type="password" placeholder="Stored encrypted" /></label>
+              <label>Domain<input name="domain" placeholder="Optional" /></label>
+              <label>
+                Folder
+                <select name="folderId" defaultValue="">
+                  <option value="">Unfiled</option>
+                  {credentialFolders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                </select>
+              </label>
+              <label>Private key<textarea name="privateKey" rows={3} placeholder="Optional SSH private key" /></label>
+              <label>Passphrase<input name="passphrase" type="password" placeholder="Optional" /></label>
+              <label>Notes<textarea name="notes" rows={2} /></label>
+              <button className="primary-button" type="submit" disabled={submitting}><Plus size={16} /> Add credential</button>
+            </form>
 
-          <div className="panel-divider" />
+            <div className="panel-divider" />
 
-          <h3>Folders</h3>
-          <form className="inline-form" onSubmit={createFolder}>
-            <label>Name<input name="name" required /></label>
-            <button className="primary-button" type="submit"><Plus size={16} /> Add folder</button>
-          </form>
-          <div className="row-list">
-            {data.folders.map((folder) => (
-              <div className="data-row" key={folder.id}>
-                <span>
-                  <strong>{folder.name}</strong>
-                  <small>{folder.type}</small>
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
+            <h3>Folders</h3>
+            <form className="inline-form" onSubmit={createFolder}>
+              <label>Name<input name="name" required /></label>
+              <button className="primary-button" type="submit"><Plus size={16} /> Add folder</button>
+            </form>
+            <div className="row-list">
+              {data.folders.map((folder) => (
+                <div className="data-row" key={folder.id}>
+                  <span>
+                    <strong>{folder.name}</strong>
+                    <small>{folder.type}</small>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </section>
 
       <section className="table-panel">

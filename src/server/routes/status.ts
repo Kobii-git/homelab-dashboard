@@ -1,4 +1,5 @@
 import type { RouteContext } from "./types.js";
+import { getBuildInfo } from "../../shared/version.js";
 
 export async function registerStatusRoutes({ app, prisma }: RouteContext): Promise<void> {
   app.get("/api/status", async () => {
@@ -40,6 +41,7 @@ export async function registerStatusRoutes({ app, prisma }: RouteContext): Promi
 
     return {
       ok: offline === 0 && incidents.length === 0,
+      ...getBuildInfo(),
       summary: {
         resources: resources.length,
         checks: checks.length,
@@ -67,6 +69,7 @@ export async function registerStatusRoutes({ app, prisma }: RouteContext): Promi
   });
 
   app.get("/status", async (_request, reply) => {
+    const build = getBuildInfo();
     reply.type("text/html").send(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -77,6 +80,7 @@ export async function registerStatusRoutes({ app, prisma }: RouteContext): Promi
     body { font-family: system-ui, sans-serif; background: #0d1215; color: #e7eef2; margin: 0; padding: 24px; }
     h1 { margin: 0 0 8px; font-size: 1.4rem; }
     .meta { color: #8aa0a8; margin-bottom: 20px; font-size: 0.9rem; }
+    .build { color: #7ce7c8; font-size: 0.8rem; margin-bottom: 16px; }
     .summary { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; }
     .pill { padding: 8px 12px; border-radius: 999px; border: 1px solid #2d3338; font-size: 0.85rem; }
     .pill.ok { border-color: rgba(45,212,191,.4); color: #7ce7c8; }
@@ -91,6 +95,7 @@ export async function registerStatusRoutes({ app, prisma }: RouteContext): Promi
 </head>
 <body>
   <h1>Homelab Status</h1>
+  <p class="build">v${build.version} · ${build.gitSha}</p>
   <p class="meta">Read-only · auto-refreshes every 30s</p>
   <div id="summary" class="summary"></div>
   <div id="list" class="grid"></div>

@@ -18,6 +18,7 @@ import {
 import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { CommandPalette } from "./components/CommandPalette";
+import { BuildBadge } from "./components/BuildBadge";
 import { DetailDrawer, type DrawerState } from "./components/DetailDrawer";
 import { KeyboardHelp } from "./components/KeyboardHelp";
 import { AccessManager } from "./features/access/AccessManager";
@@ -116,6 +117,7 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
           <KeyRound size={16} />
           Unlock
         </button>
+        <BuildBadge className="login-build-badge" />
       </form>
     </main>
   );
@@ -620,6 +622,7 @@ export function App() {
             </button>
           ))}
         </nav>
+        <BuildBadge className="sidebar-build-badge" />
         <button className="nav-utility" type="button" onClick={logout}>
           <LogOut size={18} />
           Logout
@@ -636,26 +639,28 @@ export function App() {
             data={data}
             liveSessionCount={remoteSessions.tabs.filter((tab) => tab.state === "connected" || tab.state === "launching").length}
           />
-          <button className="icon-text-button" type="button" onClick={() => { setInventoryTab("resource"); setView("inventory"); }}>
-            <Plus size={16} />
-            New
-          </button>
-          <button className="icon-text-button" type="button" onClick={() => window.open("/status", "_blank", "noopener,noreferrer")}>
-            <ExternalLink size={16} />
-            Status
-          </button>
-          <button className="icon-text-button" type="button" onClick={() => { setInventoryTab("backup"); setView("inventory"); }}>
-            <Download size={16} />
-            Backup
-          </button>
-          <button className="icon-text-button" type="button" onClick={() => setKeyboardHelpOpen(true)}>
-            <Shield size={16} />
-            Shortcuts
-          </button>
-          <button className="icon-text-button" type="button" onClick={loadData}>
-            <RefreshCw size={16} />
-            Sync
-          </button>
+          <div className="top-command-bar-actions">
+            <button className="icon-text-button" type="button" onClick={() => { setInventoryTab("resource"); setView("inventory"); }}>
+              <Plus size={16} />
+              New
+            </button>
+            <button className="icon-text-button" type="button" onClick={() => window.open("/status", "_blank", "noopener,noreferrer")}>
+              <ExternalLink size={16} />
+              Status
+            </button>
+            <button className="icon-text-button" type="button" onClick={() => { setInventoryTab("backup"); setView("inventory"); }}>
+              <Download size={16} />
+              Backup
+            </button>
+            <button className="icon-text-button" type="button" onClick={() => setKeyboardHelpOpen(true)}>
+              <Shield size={16} />
+              Shortcuts
+            </button>
+            <button className="icon-text-button" type="button" onClick={loadData}>
+              <RefreshCw size={16} />
+              Sync
+            </button>
+          </div>
         </header>
         <div className={`workspace-scroll ${view === "ssh" || view === "rdp" ? "access-workspace" : ""}`}>
           {error ? <div className="app-error">{error}</div> : null}
@@ -707,7 +712,12 @@ export function App() {
             <InventoryView data={data} onRefresh={loadData} activeTab={inventoryTab} onTabChange={setInventoryTab} />
           ) : null}
           {view === "monitoring" ? (
-            <MonitoringCenter data={data} onRefresh={loadData} onInspectIncident={inspectIncident} />
+            <MonitoringCenter
+              data={data}
+              onRefresh={loadData}
+              onInspectIncident={inspectIncident}
+              onOpenInventoryChecks={() => { setInventoryTab("check"); setView("inventory"); }}
+            />
           ) : null}
           {view === "vault" ? (
             <VaultView data={data} onRefresh={loadData} onInspectCredential={inspectCredential} />

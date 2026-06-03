@@ -12,6 +12,7 @@ import { z, ZodError } from "zod";
 import { isAuthenticated, createAuthToken, SESSION_COOKIE, verifyAdminPassword, verifyAdminLogin, hashPassword } from "./auth.js";
 import { getEnv, type AppEnv } from "./env.js";
 import { wireGuacamoleTunnel, SessionStore } from "./guacamole.js";
+import { getBuildInfo } from "../shared/version.js";
 import { runHealthCheck, startHealthScheduler } from "./healthChecks.js";
 import {
   connectionPatchSchema,
@@ -183,6 +184,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       "/api/auth/login",
       "/api/auth/me",
       "/api/health",
+      "/api/version",
       "/api/setup/status",
       "/api/setup",
       "/api/status"
@@ -200,10 +202,13 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     const guacdReachable = await testGuacdReachable(env.guacdHost, env.guacdPort);
     return {
       ok: true,
+      ...getBuildInfo(),
       vaultConfigured: Boolean(env.vaultKey && env.vaultKey.length >= 16),
       guacd: { host: env.guacdHost, port: env.guacdPort, reachable: guacdReachable }
     };
   });
+
+  app.get("/api/version", async () => getBuildInfo());
 
   app.post("/api/alert-deliveries/:id/retry", async (request) => {
     const id = routeId(request);
