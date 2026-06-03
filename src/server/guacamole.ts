@@ -77,7 +77,10 @@ export class SessionStore {
   }
 }
 
-function encodeInstruction(opcode: string, ...args: Array<string | number | null | undefined>): string {
+export function encodeInstruction(
+  opcode: string,
+  ...args: Array<string | number | null | undefined>
+): string {
   const parts = [opcode, ...args.map((arg) => (arg == null ? "" : String(arg)))];
   return `${parts.map((part) => `${Buffer.byteLength(part, "utf8")}.${part}`).join(",")};`;
 }
@@ -150,7 +153,7 @@ class InstructionParser {
   }
 }
 
-function valueForArgument(config: GuacamoleSessionConfig, argument: string): string {
+export function valueForArgument(config: GuacamoleSessionConfig, argument: string): string {
   const credential = config.credential ?? {};
   const username = credential.username ?? config.usernameHint ?? "";
   const password = credential.password ?? "";
@@ -199,14 +202,30 @@ function rawDataToBuffer(message: RawData): Buffer {
   throw new Error("Unsupported WebSocket payload");
 }
 
+export function rewriteConnectInstruction(
+  config: GuacamoleSessionConfig,
+  connectArgNames: string[],
+  instruction: Instruction
+): string {
+  const values =
+    connectArgNames.length > 0
+      ? connectArgNames.map((arg) => valueForArgument(config, arg))
+      : instruction.args;
+
+  return encodeInstruction("connect", ...values);
+}
+
 export function wireGuacamoleTunnel(
   ws: WebSocket,
   config: GuacamoleSessionConfig,
   options: { host: string; port: number }
 ): void {
   const guacd = net.createConnection({ host: options.host, port: options.port });
+  let guacdOpen = false;
   let guacdReady = false;
   let closed = false;
+  let connectArgNames: string[] = [];
+  const pendingClientMessages: Buffer[] = [];
 
   const closeBoth = () => {
     if (closed) {
@@ -220,36 +239,66 @@ export function wireGuacamoleTunnel(
     }
   };
 
-  const guacdParser = new InstructionParser((instruction) => {
+  const guacdMonitor = new InstructionParser((instruction) => {
     if (instruction.opcode === "args") {
-      guacd.write(encodeInstruction("size", 1280, 720, 96));
-      guacd.write(encodeInstruction("audio", "audio/L16"));
-      guacd.write(encodeInstruction("video"));
-      guacd.write(encodeInstruction("image", "image/png", "image/jpeg", "image/webp"));
-      guacd.write(encodeInstruction("timezone", process.env.TZ ?? "UTC"));
-      guacd.write(
-        encodeInstruction("connect", ...instruction.args.map((arg) => valueForArgument(config, arg)))
-      );
+      connectArgNames = instruction.args;
       return;
     }
 
     if (instruction.opcode === "ready") {
       guacdReady = true;
-      ws.send(encodeInstruction("ready", ...instruction.args));
       return;
     }
 
     if (instruction.opcode === "error") {
-      ws.send(encodeInstruction("error", ...instruction.args));
       closeBoth();
     }
+  });
+
+  const clientParser = new InstructionParser((instruction) => {
+    if (instruction.opcode === "connect") {
+      guacd.write(rewriteConnectInstruction(config, connectArgNames, instruction));
+      return;
+    }
+
+    guacd.write(encodeInstruction(instruction.opcode, ...instruction.args));
+  });
+
+  const handleClientMessage = (message: RawData) => {
+    if (closed) {
+      return;
+    }
+
+    if (guacdReady) {
+      guacd.write(rawDataToBuffer(message));
+      return;
+    }
+
+    clientParser.push(rawDataToBuffer(message).toString("utf8"));
+  };
+
+  const flushPendingClientMessages = () => {
+    for (const message of pendingClientMessages.splice(0)) {
+      handleClientMessage(message);
+    }
+  };
+
+  guacd.once("connect", () => {
+    guacdOpen = true;
+    flushPendingClientMessages();
   });
 
   ws.on("message", (message) => {
     if (closed) {
       return;
     }
-    guacd.write(rawDataToBuffer(message));
+
+    if (!guacdOpen) {
+      pendingClientMessages.push(rawDataToBuffer(message));
+      return;
+    }
+
+    handleClientMessage(message);
   });
 
   guacd.on("data", (chunk) => {
@@ -257,12 +306,11 @@ export function wireGuacamoleTunnel(
       return;
     }
 
-    if (guacdReady) {
-      ws.send(chunk);
-      return;
-    }
+    ws.send(chunk);
 
-    guacdParser.push(chunk.toString("utf8"));
+    if (!guacdReady) {
+      guacdMonitor.push(chunk.toString("utf8"));
+    }
   });
 
   guacd.once("error", (error) => {
