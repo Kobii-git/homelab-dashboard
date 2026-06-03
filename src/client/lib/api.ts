@@ -20,6 +20,7 @@ export type CredentialDto = {
   notes?: string | null;
   folderId?: string | null;
   lastUsedAt?: string | null;
+  tags?: TagDto[];
 };
 
 export type ConnectionDto = {
@@ -36,6 +37,7 @@ export type ConnectionDto = {
   folderId?: string | null;
   lastLaunchedAt?: string | null;
   sortOrder: number;
+  tags?: TagDto[];
   resource?: DashboardResource;
   credential?: CredentialDto | null;
 };
@@ -43,7 +45,7 @@ export type ConnectionDto = {
 export type HealthCheckDto = {
   id: string;
   resourceId: string;
-  type: "http" | "tcp" | "ping";
+  type: "http" | "tcp" | "ping" | "ssl";
   target: string;
   intervalSeconds: number;
   timeoutMs: number;
@@ -109,12 +111,32 @@ export type {
   TagDto
 };
 
+type ApiErrorBody = {
+  error?: string;
+  details?: Array<{ path?: string; message?: string }>;
+};
+
+export function getApiError(error: unknown): string {
+  return error instanceof Error ? error.message : "Request failed";
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
+  let data: ApiErrorBody = {};
+
+  if (text) {
+    try {
+      data = JSON.parse(text) as ApiErrorBody;
+    } catch {
+      data = { error: text || "Request failed" };
+    }
+  }
 
   if (!response.ok) {
-    throw new Error(data.error ?? "Request failed");
+    const details = data.details?.length
+      ? `: ${data.details.map((item) => (item.path ? `${item.path} — ${item.message}` : item.message)).join("; ")}`
+      : "";
+    throw new Error(`${data.error ?? "Request failed"}${details}`);
   }
 
   return data as T;

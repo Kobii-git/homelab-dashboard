@@ -1,6 +1,6 @@
 export const RESOURCE_KINDS = ["app", "website", "docker", "vm", "server", "other"] as const;
 export const CONNECTION_TYPES = ["rdp", "ssh"] as const;
-export const HEALTH_CHECK_TYPES = ["http", "tcp", "ping"] as const;
+export const HEALTH_CHECK_TYPES = ["http", "tcp", "ping", "ssl"] as const;
 export const HEALTH_STATUSES = ["unknown", "online", "offline"] as const;
 export const INCIDENT_STATUSES = ["open", "acknowledged", "resolved", "muted"] as const;
 export const ALERT_CHANNEL_TYPES = ["webhook", "email"] as const;
@@ -37,6 +37,7 @@ export type DashboardResource = {
   favorite: boolean;
   sortOrder: number;
   groupId: string | null;
+  tags?: TagDto[];
   connections?: Array<{ id: string; type: ConnectionType }>;
   healthChecks?: Array<{
     id: string;
@@ -47,6 +48,13 @@ export type DashboardResource = {
     latestCheckedAt: string | null;
     latestError: string | null;
   }>;
+};
+
+export type TagSummary = {
+  id: string;
+  name: string;
+  color: string | null;
+  type: string;
 };
 
 export type DashboardGroupDto = {

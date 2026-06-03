@@ -1,3 +1,4 @@
+import "./bootstrap-env.js";
 import crypto from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { createApp } from "./app.js";

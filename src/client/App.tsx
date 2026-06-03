@@ -1,6 +1,8 @@
 import {
   Activity,
   Bell,
+  Download,
+  ExternalLink,
   Gauge,
   Home,
   KeyRound,
@@ -16,10 +18,11 @@ import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { CommandPalette } from "./components/CommandPalette";
 import { DetailDrawer, type DrawerState } from "./components/DetailDrawer";
+import { KeyboardHelp } from "./components/KeyboardHelp";
 import { AccessManager } from "./features/access/AccessManager";
 import { AlertsView } from "./features/alerts/AlertsView";
 import { DashboardConsole } from "./features/dashboard/DashboardConsole";
-import { InventoryView } from "./features/inventory/InventoryView";
+import { InventoryView, type InventoryTab } from "./features/inventory/InventoryView";
 import { MonitoringCenter } from "./features/monitoring/MonitoringCenter";
 import { emptyV2Data, type AppView, type V2Data } from "./features/types";
 import { VaultView } from "./features/vault/VaultView";
@@ -44,6 +47,7 @@ import {
   type TagDto
 } from "./lib/api";
 import { formatDateTime } from "./lib/format";
+import { pushToast } from "./lib/toast";
 import type { DashboardGroupDto, DashboardResource } from "../shared/types";
 
 const navItems: Array<{ id: AppView; label: string; icon: ReactNode }> = [
@@ -257,6 +261,9 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [drawer, setDrawer] = useState<DrawerState>(null);
+  const [keyboardHelpOpen, setKeyboardHelpOpen] = useState(false);
+  const [inventoryTab, setInventoryTab] = useState<InventoryTab>("resource");
+  const [launchConnectionId, setLaunchConnectionId] = useState<string | null>(null);
 
   const openIncidentMap = useMemo(
     () => new Map(data.incidents.map((incident) => [incident.id, incident])),
@@ -410,9 +417,16 @@ export function App() {
         setView("inventory");
       }
 
+      if (!typing && event.key === "?") {
+        event.preventDefault();
+        setKeyboardHelpOpen(true);
+      }
+
       if (event.key === "Escape") {
         if (paletteOpen) {
           setPaletteOpen(false);
+        } else if (keyboardHelpOpen) {
+          setKeyboardHelpOpen(false);
         } else {
           setDrawer(null);
         }
@@ -421,7 +435,7 @@ export function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [keyboardHelpOpen, paletteOpen]);
 
   async function logout() {
     await apiSend("/api/auth/logout", "POST");
@@ -431,6 +445,32 @@ export function App() {
   async function patchResource(id: string, body: Record<string, unknown>) {
     await apiSend(`/api/resources/${id}`, "PATCH", body);
     await loadData();
+  }
+
+  async function patchGroup(id: string, body: Record<string, unknown>) {
+    await apiSend(`/api/groups/${id}`, "PATCH", body);
+    await loadData();
+  }
+
+  async function exportInventory() {
+    try {
+      const payload = await apiGet<Record<string, unknown>>("/api/export");
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `homelab-export-${new Date().toISOString().slice(0, 10)}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      pushToast("Inventory exported");
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "Export failed", "error");
+    }
+  }
+
+  function openConnection(connection: ConnectionDto) {
+    setLaunchConnectionId(connection.id);
+    setView("access");
   }
 
   function inspectResource(resource: DashboardResource) {
@@ -590,43 +630,69 @@ export function App() {
             <kbd>Ctrl K</kbd>
           </button>
           <StatusStrip data={data} />
-          <button className="icon-text-button" type="button" onClick={() => setView("inventory")}>
+          <button className="icon-text-button" type="button" onClick={() => { setInventoryTab("resource"); setView("inventory"); }}>
             <Plus size={16} />
             New
+          </button>
+          <button className="icon-text-button" type="button" onClick={() => window.open("/status", "_blank", "noopener,noreferrer")}>
+            <ExternalLink size={16} />
+            Status
+          </button>
+          <button className="icon-text-button" type="button" onClick={() => void exportInventory()}>
+            <Download size={16} />
+            Export
+          </button>
+          <button className="icon-text-button" type="button" onClick={() => setKeyboardHelpOpen(true)}>
+            <Shield size={16} />
+            Shortcuts
           </button>
           <button className="icon-text-button" type="button" onClick={loadData}>
             <RefreshCw size={16} />
             Sync
           </button>
         </header>
-        {error ? <div className="app-error">{error}</div> : null}
-        {loading ? <div className="loading-strip"><RefreshCw className="spin" size={12} />Refreshing</div> : null}
-        {view === "dashboard" ? (
-          <DashboardConsole
-            data={data}
-            onRefresh={loadData}
-            onPatchResource={patchResource}
-            onOpenInventory={() => setView("inventory")}
-            onInspectResource={inspectResource}
-            onOpenIncident={(id) => {
-              const incident = openIncidentMap.get(id);
-              if (incident) {
-                inspectIncident(incident);
-              }
-            }}
-          />
-        ) : null}
-        {view === "access" ? <AccessManager data={data} onRefresh={loadData} /> : null}
-        {view === "inventory" ? <InventoryView data={data} onRefresh={loadData} /> : null}
-        {view === "monitoring" ? (
-          <MonitoringCenter data={data} onRefresh={loadData} onInspectIncident={inspectIncident} />
-        ) : null}
-        {view === "vault" ? (
-          <VaultView data={data} onRefresh={loadData} onInspectCredential={inspectCredential} />
-        ) : null}
-        {view === "alerts" ? <AlertsView data={data} onRefresh={loadData} /> : null}
+        <div className="workspace-scroll">
+          {error ? <div className="app-error">{error}</div> : null}
+          {loading ? <div className="loading-strip"><RefreshCw className="spin" size={12} />Refreshing</div> : null}
+          {view === "dashboard" ? (
+            <DashboardConsole
+              data={data}
+              onRefresh={loadData}
+              onPatchResource={patchResource}
+              onPatchGroup={patchGroup}
+              onOpenInventory={() => { setInventoryTab("resource"); setView("inventory"); }}
+              onInspectResource={inspectResource}
+              onOpenIncident={(id) => {
+                const incident = openIncidentMap.get(id);
+                if (incident) {
+                  inspectIncident(incident);
+                }
+              }}
+              onConnect={openConnection}
+            />
+          ) : null}
+          {view === "access" ? (
+            <AccessManager
+              data={data}
+              onRefresh={loadData}
+              launchConnectionId={launchConnectionId}
+              onLaunchHandled={() => setLaunchConnectionId(null)}
+            />
+          ) : null}
+          {view === "inventory" ? (
+            <InventoryView data={data} onRefresh={loadData} activeTab={inventoryTab} onTabChange={setInventoryTab} />
+          ) : null}
+          {view === "monitoring" ? (
+            <MonitoringCenter data={data} onRefresh={loadData} onInspectIncident={inspectIncident} />
+          ) : null}
+          {view === "vault" ? (
+            <VaultView data={data} onRefresh={loadData} onInspectCredential={inspectCredential} />
+          ) : null}
+          {view === "alerts" ? <AlertsView data={data} onRefresh={loadData} /> : null}
+        </div>
         <DetailDrawer drawer={drawer} onClose={() => setDrawer(null)} />
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onAction={handlePaletteAction} />
+        <KeyboardHelp open={keyboardHelpOpen} onClose={() => setKeyboardHelpOpen(false)} />
       </div>
     </div>
   );

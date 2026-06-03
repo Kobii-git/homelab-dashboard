@@ -16,6 +16,7 @@ import { runHealthCheck, startHealthScheduler } from "./healthChecks.js";
 import {
   connectionPatchSchema,
   connectionSchema,
+  connectionTestSchema,
   credentialPatchSchema,
   credentialSchema,
   dashboardGroupPatchSchema,
@@ -37,7 +38,10 @@ import { registerIncidentRoutes } from "./routes/incidents.js";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerVaultRoutes } from "./routes/vault.js";
+import { registerExportRoutes } from "./routes/export.js";
+import { registerStatusRoutes } from "./routes/status.js";
 import { registerWidgetRoutes } from "./routes/widgets.js";
+import { testGuacdReachable, testTcpReachable } from "./connectivity.js";
 import { serializeSessionHistory } from "./serializers.js";
 
 type CreateAppOptions = {
@@ -97,6 +101,7 @@ function sanitizeConnection(connection: any) {
     sortOrder: connection.sortOrder,
     createdAt: connection.createdAt,
     updatedAt: connection.updatedAt,
+    tags: connection.tags ?? [],
     resource: connection.resource,
     credential: connection.credential ? sanitizeCredential(connection.credential) : null
   };
@@ -104,6 +109,19 @@ function sanitizeConnection(connection: any) {
 
 function routeId(request: { params: unknown }): string {
   return idParamSchema.parse(request.params).id;
+}
+
+function splitTagIds<T extends { tagIds?: string[] }>(body: T) {
+  const { tagIds, ...rest } = body;
+  return { rest, tagIds };
+}
+
+function tagConnect(tagIds?: string[]) {
+  return tagIds?.length ? { tags: { connect: tagIds.map((id) => ({ id })) } } : {};
+}
+
+function tagSet(tagIds?: string[] | undefined) {
+  return tagIds !== undefined ? { tags: { set: tagIds.map((id) => ({ id })) } } : {};
 }
 
 export async function createApp(options: CreateAppOptions = {}): Promise<FastifyInstance> {
@@ -151,21 +169,31 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       return;
     }
 
-    const publicRoutes = new Set(["/api/auth/login", "/api/auth/me", "/api/health", "/api/setup/status", "/api/setup"]);
+    const publicRoutes = new Set([
+      "/api/auth/login",
+      "/api/auth/me",
+      "/api/health",
+      "/api/setup/status",
+      "/api/setup",
+      "/api/status"
+    ]);
     if (publicRoutes.has(url.pathname)) {
       return;
     }
 
     if (!isAuthenticated(request, env)) {
-      reply.code(401).send({ error: "Authentication required" });
+      return reply.code(401).send({ error: "Authentication required" });
     }
   });
 
-  app.get("/api/health", async () => ({
-    ok: true,
-    vaultConfigured: Boolean(env.vaultKey && env.vaultKey.length >= 16),
-    guacd: { host: env.guacdHost, port: env.guacdPort }
-  }));
+  app.get("/api/health", async () => {
+    const guacdReachable = await testGuacdReachable(env.guacdHost, env.guacdPort);
+    return {
+      ok: true,
+      vaultConfigured: Boolean(env.vaultKey && env.vaultKey.length >= 16),
+      guacd: { host: env.guacdHost, port: env.guacdPort, reachable: guacdReachable }
+    };
+  });
 
   app.post("/api/alert-deliveries/:id/retry", async (request) => {
     const id = routeId(request);
@@ -261,6 +289,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   await registerIncidentRoutes(routeContext);
   await registerAlertRoutes(routeContext);
   await registerSessionRoutes(routeContext);
+  await registerExportRoutes(routeContext);
+  await registerStatusRoutes(routeContext);
 
   app.get("/api/dashboard", async () => {
     const [groups, ungroupedResources, layout] = await Promise.all([
@@ -270,6 +300,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
           resources: {
             orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
             include: {
+              tags: true,
               healthChecks: true,
               connections: { select: { id: true, type: true } }
             }
@@ -280,6 +311,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
         where: { groupId: null },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
         include: {
+          tags: true,
           healthChecks: true,
           connections: { select: { id: true, type: true } }
         }
@@ -336,6 +368,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     prisma.resource.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: {
+        tags: true,
         healthChecks: true,
         connections: { select: { id: true, type: true } },
         group: true
@@ -345,7 +378,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   app.post("/api/resources", async (request, reply) => {
     const body = resourceSchema.parse(request.body);
-    const resource = await prisma.resource.create({ data: body });
+    const { rest, tagIds } = splitTagIds(body);
+    const resource = await prisma.resource.create({ data: { ...rest, ...tagConnect(tagIds) } });
     reply.code(201);
     return resource;
   });
@@ -353,7 +387,12 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.patch("/api/resources/:id", async (request) => {
     const id = routeId(request);
     const body = resourcePatchSchema.parse(request.body);
-    return prisma.resource.update({ where: { id }, data: body });
+    const { rest, tagIds } = splitTagIds(body);
+    return prisma.resource.update({
+      where: { id },
+      data: { ...rest, ...tagSet(tagIds) },
+      include: { tags: true, healthChecks: true, connections: { select: { id: true, type: true } }, group: true }
+    });
   });
 
   app.delete("/api/resources/:id", async (request) => {
@@ -381,24 +420,26 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   app.post("/api/credentials", async (request, reply) => {
     const body = credentialSchema.parse(request.body);
+    const { rest, tagIds } = splitTagIds(body);
     const encrypted = encryptCredential(
       {
-        username: body.username ?? undefined,
-        password: body.password ?? undefined,
-        domain: body.domain ?? undefined,
-        privateKey: body.privateKey ?? undefined,
-        passphrase: body.passphrase ?? undefined
+        username: rest.username ?? undefined,
+        password: rest.password ?? undefined,
+        domain: rest.domain ?? undefined,
+        privateKey: rest.privateKey ?? undefined,
+        passphrase: rest.passphrase ?? undefined
       },
       env.vaultKey
     );
 
     const credential = await prisma.credential.create({
       data: {
-        label: body.label,
-        username: body.username ?? null,
-        notes: body.notes ?? null,
-        folderId: body.folderId ?? null,
-        ...encrypted
+        label: rest.label,
+        username: rest.username ?? null,
+        notes: rest.notes ?? null,
+        folderId: rest.folderId ?? null,
+        ...encrypted,
+        ...tagConnect(tagIds)
       },
       select: {
         id: true,
@@ -425,40 +466,41 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.patch("/api/credentials/:id", async (request) => {
     const id = routeId(request);
     const body = credentialPatchSchema.parse(request.body);
-    const data: Record<string, unknown> = {};
+    const { rest, tagIds } = splitTagIds(body);
+    const data: Record<string, unknown> = { ...tagSet(tagIds) };
 
-    if (body.label !== undefined) {
-      data.label = body.label;
+    if (rest.label !== undefined) {
+      data.label = rest.label;
     }
 
-    if (body.username !== undefined) {
-      data.username = body.username;
+    if (rest.username !== undefined) {
+      data.username = rest.username;
     }
 
-    if (body.notes !== undefined) {
-      data.notes = body.notes;
+    if (rest.notes !== undefined) {
+      data.notes = rest.notes;
     }
 
-    if (body.folderId !== undefined) {
-      data.folderId = body.folderId;
+    if (rest.folderId !== undefined) {
+      data.folderId = rest.folderId;
     }
 
     const hasSecretUpdate =
-      body.password !== undefined ||
-      body.domain !== undefined ||
-      body.privateKey !== undefined ||
-      body.passphrase !== undefined;
+      rest.password !== undefined ||
+      rest.domain !== undefined ||
+      rest.privateKey !== undefined ||
+      rest.passphrase !== undefined;
 
     if (hasSecretUpdate) {
       Object.assign(
         data,
         encryptCredential(
           {
-            username: body.username ?? undefined,
-            password: body.password ?? undefined,
-            domain: body.domain ?? undefined,
-            privateKey: body.privateKey ?? undefined,
-            passphrase: body.passphrase ?? undefined
+            username: rest.username ?? undefined,
+            password: rest.password ?? undefined,
+            domain: rest.domain ?? undefined,
+            privateKey: rest.privateKey ?? undefined,
+            passphrase: rest.passphrase ?? undefined
           },
           env.vaultKey
         )
@@ -499,6 +541,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     const connections = await prisma.connection.findMany({
       orderBy: [{ sortOrder: "asc" }, { host: "asc" }],
       include: {
+        tags: true,
         resource: true,
         credential: {
           select: {
@@ -518,11 +561,24 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return connections.map(sanitizeConnection);
   });
 
+  app.post("/api/connections/test", async (request) => {
+    const body = connectionTestSchema.parse(request.body);
+    const result = await testTcpReachable(body.host, body.port);
+    return {
+      ok: result.ok,
+      latencyMs: result.latencyMs,
+      error: result.error ?? null,
+      type: body.type ?? null
+    };
+  });
+
   app.post("/api/connections", async (request, reply) => {
     const body = connectionSchema.parse(request.body);
+    const { rest, tagIds } = splitTagIds(body);
     const connection = await prisma.connection.create({
-      data: body,
+      data: { ...rest, ...tagConnect(tagIds) },
       include: {
+        tags: true,
         resource: true,
         credential: {
           select: {
@@ -552,10 +608,12 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.patch("/api/connections/:id", async (request) => {
     const id = routeId(request);
     const body = connectionPatchSchema.parse(request.body);
+    const { rest, tagIds } = splitTagIds(body);
     const connection = await prisma.connection.update({
       where: { id },
-      data: body,
+      data: { ...rest, ...tagSet(tagIds) },
       include: {
+        tags: true,
         resource: true,
         credential: {
           select: {

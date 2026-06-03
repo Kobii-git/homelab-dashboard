@@ -22,6 +22,7 @@ import { FormEvent, useMemo, useState } from "react";
 import { EmptyPanel, MetricCard, StatusBadge } from "../../components/Primitives";
 import type { HealthCheckDto, HealthResultDto, IncidentDto } from "../../lib/api";
 import { apiSend, emptyToNull } from "../../lib/api";
+import { FormErrorBanner, runFormAction } from "../../lib/forms";
 import { formatDateTime } from "../../lib/format";
 import type { V2Data } from "../types";
 
@@ -98,6 +99,8 @@ export function MonitoringCenter({
   const [showDisabled, setShowDisabled] = useState(true);
   const [muteTarget, setMuteTarget] = useState<IncidentDto | null>(null);
   const [muteUntil, setMuteUntil] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const counts = data.checks.reduce(
     (s, c) => { s[c.latestStatus] += 1; return s; },
@@ -164,17 +167,19 @@ export function MonitoringCenter({
 
   async function createMaintenanceWindow(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
-    await apiSend("/api/maintenance-windows", "POST", {
-      name: emptyToNull(form.get("name")),
-      startsAt: new Date(String(form.get("startsAt"))).toISOString(),
-      endsAt: new Date(String(form.get("endsAt"))).toISOString(),
-      notes: emptyToNull(form.get("notes")),
-      enabled: true
-    });
-    formElement.reset();
-    await onRefresh();
+    await runFormAction(async () => {
+      const formElement = event.currentTarget;
+      const form = new FormData(formElement);
+      await apiSend("/api/maintenance-windows", "POST", {
+        name: emptyToNull(form.get("name")),
+        startsAt: new Date(String(form.get("startsAt"))).toISOString(),
+        endsAt: new Date(String(form.get("endsAt"))).toISOString(),
+        notes: emptyToNull(form.get("notes")),
+        enabled: true
+      });
+      formElement.reset();
+      await onRefresh();
+    }, setActionError, setSubmitting, "Maintenance window added");
   }
 
   async function deleteMaintenanceWindow(id: string, name: string) {
@@ -201,6 +206,8 @@ export function MonitoringCenter({
           </button>
         </div>
       </header>
+
+      <FormErrorBanner message={actionError} />
 
       <section className="dashboard-overview">
         <MetricCard icon={<Wifi size={18} />} label="Online checks" value={counts.online} tone="online" />

@@ -25,6 +25,13 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -51,7 +58,9 @@ button:disabled {
 .app-shell {
   display: grid;
   grid-template-columns: 256px minmax(0, 1fr);
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -61,6 +70,8 @@ button:disabled {
   padding: 18px;
   border-right: 1px solid var(--line-soft);
   background: #141819;
+  min-height: 0;
+  overflow: auto;
 }
 
 .sidebar-brand,
@@ -113,16 +124,18 @@ button:disabled {
 
 .content-shell {
   position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
-  min-height: 100vh;
+  min-height: 0;
+  height: 100vh;
+  overflow: hidden;
   background:
     linear-gradient(180deg, rgba(45, 212, 191, 0.06), rgba(14, 17, 18, 0) 260px),
     var(--bg);
 }
 
 .top-command-bar {
-  position: sticky;
-  top: 0;
   z-index: 8;
   display: grid;
   grid-template-columns: minmax(260px, 420px) minmax(0, 1fr) auto auto;
@@ -133,6 +146,12 @@ button:disabled {
   border-bottom: 1px solid var(--line-soft);
   background: rgba(14, 17, 18, 0.92);
   backdrop-filter: blur(14px);
+}
+
+.workspace-scroll {
+  position: relative;
+  min-height: 0;
+  overflow: auto;
 }
 
 .command-button {
@@ -652,7 +671,7 @@ label {
 
 .inventory-tables {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 14px;
 }
 
@@ -1022,7 +1041,9 @@ label {
 .access-shell {
   display: grid;
   grid-template-columns: 330px minmax(0, 1fr);
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .access-shell.is-fullscreen {
@@ -1040,6 +1061,42 @@ label {
   padding: 22px;
   border-right: 1px solid var(--line-soft);
   background: #141819;
+  overflow: hidden;
+}
+
+.quick-add-panel {
+  display: grid;
+  gap: 10px;
+  max-height: min(58vh, 620px);
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #101415;
+  overflow: auto;
+}
+
+.quick-add-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #e8f0f2;
+}
+
+.quick-add-panel label {
+  font-size: 12px;
+}
+
+.quick-add-panel label input,
+.quick-add-panel label select,
+.quick-add-panel label textarea {
+  min-height: 34px;
+}
+
+.quick-add-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
 }
 
 .rail-header {
@@ -1126,6 +1183,7 @@ label {
   min-width: 0;
   min-height: 0;
   padding: 18px;
+  overflow: auto;
 }
 
 .session-tabs {
@@ -1299,6 +1357,12 @@ label {
   align-self: start;
 }
 
+.panel-divider {
+  height: 1px;
+  margin: 18px 0;
+  background: var(--line-soft);
+}
+
 .inline-form {
   display: grid;
   gap: 10px;
@@ -1418,8 +1482,12 @@ label {
 }
 
 .form-error {
-  margin: 0;
+  margin: 0 0 14px;
   padding: 8px 10px;
+}
+
+.quick-add-error {
+  margin: 0 12px 10px;
 }
 
 .empty-state,
@@ -1456,7 +1524,9 @@ label {
 .login-shell {
   display: grid;
   place-items: center;
-  min-height: 100vh;
+  min-height: 100%;
+  height: 100%;
+  overflow: auto;
   padding: 24px;
   background: #111315;
 }
@@ -1670,6 +1740,193 @@ label {
 /* Monitoring: 5-column incident row */
 .incident-row-5 {
   grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
+}
+
+.quick-add-error {
+  margin: 0 12px 10px;
+}
+
+.toast-stack {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  display: grid;
+  gap: 10px;
+  z-index: 120;
+  max-width: min(360px, calc(100vw - 36px));
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #182024;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+}
+
+.toast-success {
+  border-color: rgba(45, 212, 191, 0.35);
+  color: #d7fff8;
+}
+
+.toast-error {
+  border-color: rgba(248, 113, 113, 0.35);
+  color: #fecaca;
+}
+
+.inventory-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.inventory-tabs button {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.inventory-tabs button.active {
+  color: #eafffb;
+  border-color: rgba(45, 212, 191, 0.45);
+  background: rgba(45, 212, 191, 0.12);
+}
+
+.inventory-grid-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.tag-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.tag-chip-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.tag-chip-option span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.link-button {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.widget-settings {
+  margin-bottom: 14px;
+}
+
+.widget-settings summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.widget-settings-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.group-heading {
+  align-items: center;
+}
+
+.group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.group-toggle h3 {
+  margin: 0;
+}
+
+.guacd-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  font-size: 12px;
+}
+
+.guacd-status.online {
+  color: #7ce7c8;
+}
+
+.guacd-status.offline {
+  color: #ffb4b4;
+}
+
+.keyboard-help {
+  width: min(460px, calc(100vw - 32px));
+  margin: 10vh auto;
+  background: #12181c;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.keyboard-help-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.keyboard-help-header h3 {
+  margin: 0;
+  flex: 1;
+}
+
+.keyboard-help-list {
+  display: grid;
+  gap: 10px;
+}
+
+.keyboard-help-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.keyboard-help-row kbd {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: #0d1215;
+  color: #d7fff8;
 }
 
 @media (max-width: 920px) {

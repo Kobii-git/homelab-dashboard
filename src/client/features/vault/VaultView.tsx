@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyPanel, MetricCard } from "../../components/Primitives";
 import type { CredentialDto } from "../../lib/api";
 import { apiSend, emptyToNull } from "../../lib/api";
+import { FormErrorBanner, runFormAction } from "../../lib/forms";
 import { formatDateTime } from "../../lib/format";
 import type { V2Data } from "../types";
 
@@ -32,6 +33,8 @@ export function VaultView({
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const [credSearch, setCredSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const editFormRef = useRef<HTMLFormElement>(null);
 
   const selected = useMemo(
@@ -76,53 +79,80 @@ export function VaultView({
 
   async function createFolder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await apiSend("/api/vault/folders", "POST", { name: emptyToNull(form.get("name")), type: "credential" });
-    event.currentTarget.reset();
-    await onRefresh();
+    await runFormAction(async () => {
+      const form = new FormData(event.currentTarget);
+      await apiSend("/api/vault/folders", "POST", { name: emptyToNull(form.get("name")), type: "credential" });
+      event.currentTarget.reset();
+      await onRefresh();
+    }, setActionError, setSubmitting, "Folder created");
+  }
+
+  async function createCredential(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await runFormAction(async () => {
+      const form = new FormData(event.currentTarget);
+      await apiSend("/api/credentials", "POST", {
+        label: emptyToNull(form.get("label")),
+        username: emptyToNull(form.get("username")),
+        password: emptyToNull(form.get("password")),
+        domain: emptyToNull(form.get("domain")),
+        privateKey: emptyToNull(form.get("privateKey")),
+        passphrase: emptyToNull(form.get("passphrase")),
+        notes: emptyToNull(form.get("notes")),
+        folderId: emptyToNull(form.get("folderId"))
+      });
+      event.currentTarget.reset();
+      await onRefresh();
+    }, setActionError, setSubmitting, "Credential added");
   }
 
   async function reveal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selected) return;
-    const secret = await apiSend<RevealedSecret>("/api/vault/reveal", "POST", {
-      credentialId: selected.id,
-      password: revealPassword
-    });
-    setRevealed(secret);
-    setRevealPassword("");
-    await onRefresh();
+    await runFormAction(async () => {
+      const secret = await apiSend<RevealedSecret>("/api/vault/reveal", "POST", {
+        credentialId: selected.id,
+        password: revealPassword
+      });
+      setRevealed(secret);
+      setRevealPassword("");
+      await onRefresh();
+    }, setActionError, setSubmitting);
   }
 
   async function deleteCredential(credential: CredentialDto) {
     if (!window.confirm(`Delete credential "${credential.label}"? This cannot be undone.`)) return;
-    await apiSend(`/api/credentials/${credential.id}`, "DELETE");
-    if (selectedId === credential.id) setSelectedId(null);
-    if (editingId === credential.id) setEditingId(null);
-    setRevealed(null);
-    await onRefresh();
+    await runFormAction(async () => {
+      await apiSend(`/api/credentials/${credential.id}`, "DELETE");
+      if (selectedId === credential.id) setSelectedId(null);
+      if (editingId === credential.id) setEditingId(null);
+      setRevealed(null);
+      await onRefresh();
+    }, setActionError, setSubmitting);
   }
 
   async function saveEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editingId) return;
-    const form = new FormData(event.currentTarget);
-    const body: Record<string, unknown> = {
-      label: emptyToNull(form.get("label")),
-      username: emptyToNull(form.get("username")),
-      notes: emptyToNull(form.get("notes")),
-      folderId: emptyToNull(form.get("folderId"))
-    };
-    const password = String(form.get("password") ?? "");
-    if (password) {
-      body.password = password;
-      body.domain = emptyToNull(form.get("domain"));
-      body.privateKey = emptyToNull(form.get("privateKey"));
-      body.passphrase = emptyToNull(form.get("passphrase"));
-    }
-    await apiSend(`/api/credentials/${editingId}`, "PATCH", body);
-    setEditingId(null);
-    await onRefresh();
+    await runFormAction(async () => {
+      const form = new FormData(event.currentTarget);
+      const body: Record<string, unknown> = {
+        label: emptyToNull(form.get("label")),
+        username: emptyToNull(form.get("username")),
+        notes: emptyToNull(form.get("notes")),
+        folderId: emptyToNull(form.get("folderId"))
+      };
+      const password = String(form.get("password") ?? "");
+      if (password) {
+        body.password = password;
+        body.domain = emptyToNull(form.get("domain"));
+        body.privateKey = emptyToNull(form.get("privateKey"));
+        body.passphrase = emptyToNull(form.get("passphrase"));
+      }
+      await apiSend(`/api/credentials/${editingId}`, "PATCH", body);
+      setEditingId(null);
+      await onRefresh();
+    }, setActionError, setSubmitting);
   }
 
   async function copy(value: string | null | undefined) {
@@ -140,6 +170,8 @@ export function VaultView({
           <span>{data.credentials.length} credentials · {data.audit.length} audit events</span>
         </div>
       </header>
+
+      <FormErrorBanner message={actionError} />
 
       <section className="dashboard-overview">
         <MetricCard icon={<KeyRound size={18} />} label="Credentials" value={data.credentials.length} tone="accent" />
@@ -282,6 +314,27 @@ export function VaultView({
         </section>
 
         <section className="table-panel">
+          <h3>New credential</h3>
+          <form className="inline-form" onSubmit={createCredential}>
+            <label>Label<input name="label" required placeholder="Lab admin" /></label>
+            <label>Username<input name="username" placeholder="administrator" /></label>
+            <label>Password<input name="password" type="password" placeholder="Stored encrypted" /></label>
+            <label>Domain<input name="domain" placeholder="Optional" /></label>
+            <label>
+              Folder
+              <select name="folderId" defaultValue="">
+                <option value="">Unfiled</option>
+                {credentialFolders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </label>
+            <label>Private key<textarea name="privateKey" rows={3} placeholder="Optional SSH private key" /></label>
+            <label>Passphrase<input name="passphrase" type="password" placeholder="Optional" /></label>
+            <label>Notes<textarea name="notes" rows={2} /></label>
+            <button className="primary-button" type="submit" disabled={submitting}><Plus size={16} /> Add credential</button>
+          </form>
+
+          <div className="panel-divider" />
+
           <h3>Folders</h3>
           <form className="inline-form" onSubmit={createFolder}>
             <label>Name<input name="name" required /></label>

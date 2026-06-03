@@ -3,45 +3,61 @@ import { FormEvent, useState } from "react";
 import { MetricCard } from "../../components/Primitives";
 import type { AlertChannelDto, AlertDeliveryDto, AlertRuleDto } from "../../lib/api";
 import { apiSend, emptyToNull } from "../../lib/api";
+import { FormErrorBanner, runFormAction } from "../../lib/forms";
 import { formatDateTime } from "../../lib/format";
 import type { V2Data } from "../types";
 
 export function AlertsView({ data, onRefresh }: { data: V2Data; onRefresh: () => Promise<void> }) {
   const [channelType, setChannelType] = useState("webhook");
+  const [webhookPreset, setWebhookPreset] = useState("custom");
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const webhookPresets: Record<string, string> = {
+    custom: "",
+    discord: "https://discord.com/api/webhooks/…",
+    slack: "https://hooks.slack.com/services/…",
+    ntfy: "https://ntfy.sh/your-topic"
+  };
 
   async function createChannel(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
-    const type = String(form.get("type"));
-    const config =
-      type === "webhook"
-        ? { url: emptyToNull(form.get("url")), method: "POST" }
-        : {
-            smtpHost: emptyToNull(form.get("smtpHost")),
-            smtpPort: Number(form.get("smtpPort") || 587),
-            from: emptyToNull(form.get("from")),
-            to: emptyToNull(form.get("to"))
-          };
-    await apiSend("/api/alert-channels", "POST", { name: emptyToNull(form.get("name")), type, config, enabled: true });
-    formElement.reset();
-    setChannelType("webhook");
-    await onRefresh();
+    await runFormAction(async () => {
+      const formElement = event.currentTarget;
+      const form = new FormData(formElement);
+      const type = String(form.get("type"));
+      const config =
+        type === "webhook"
+          ? { url: emptyToNull(form.get("url")), method: "POST" }
+          : {
+              smtpHost: emptyToNull(form.get("smtpHost")),
+              smtpPort: Number(form.get("smtpPort") || 587),
+              from: emptyToNull(form.get("from")),
+              to: emptyToNull(form.get("to"))
+            };
+      await apiSend("/api/alert-channels", "POST", { name: emptyToNull(form.get("name")), type, config, enabled: true });
+      formElement.reset();
+      setChannelType("webhook");
+      await onRefresh();
+    }, setActionError, setSubmitting, "Alert channel added");
   }
 
   async function createRule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
-    await apiSend("/api/alert-rules", "POST", {
-      name: emptyToNull(form.get("name")),
-      channelId: form.get("channelId"),
-      event: form.get("event"),
-      cooldownSeconds: Number(form.get("cooldownSeconds") || 900),
-      enabled: true
-    });
-    formElement.reset();
-    await onRefresh();
+    await runFormAction(async () => {
+      const formElement = event.currentTarget;
+      const form = new FormData(formElement);
+      await apiSend("/api/alert-rules", "POST", {
+        name: emptyToNull(form.get("name")),
+        channelId: form.get("channelId"),
+        event: form.get("event"),
+        cooldownSeconds: Number(form.get("cooldownSeconds") || 900),
+        enabled: true
+      });
+      formElement.reset();
+      await onRefresh();
+    }, setActionError, setSubmitting, "Alert rule added");
   }
 
   async function toggleChannel(channel: AlertChannelDto) {
@@ -91,6 +107,8 @@ export function AlertsView({ data, onRefresh }: { data: V2Data; onRefresh: () =>
         </button>
       </header>
 
+      <FormErrorBanner message={actionError} />
+
       <section className="dashboard-overview">
         <MetricCard icon={<Webhook size={18} />} label="Channels" value={data.alertChannels.length} tone="accent" />
         <MetricCard icon={<Bell size={18} />} label="Rules" value={data.alertRules.length} />
@@ -113,10 +131,30 @@ export function AlertsView({ data, onRefresh }: { data: V2Data; onRefresh: () =>
             </select>
           </label>
           {channelType === "webhook" ? (
-            <label>
-              Webhook URL
-              <input name="url" placeholder="https://hooks.example.com/…" />
-            </label>
+            <>
+              <label>
+                Preset
+                <select
+                  value={webhookPreset}
+                  onChange={(event) => {
+                    const preset = event.target.value;
+                    setWebhookPreset(preset);
+                    if (preset !== "custom") {
+                      setWebhookUrl(webhookPresets[preset] ?? "");
+                    }
+                  }}
+                >
+                  <option value="custom">Custom URL</option>
+                  <option value="discord">Discord</option>
+                  <option value="slack">Slack</option>
+                  <option value="ntfy">ntfy</option>
+                </select>
+              </label>
+              <label>
+                Webhook URL
+                <input name="url" value={webhookUrl} onChange={(event) => setWebhookUrl(event.target.value)} placeholder="https://hooks.example.com/…" />
+              </label>
+            </>
           ) : (
             <>
               <label>SMTP host<input name="smtpHost" placeholder="smtp.example.com" /></label>
@@ -125,7 +163,7 @@ export function AlertsView({ data, onRefresh }: { data: V2Data; onRefresh: () =>
               <label>To<input name="to" placeholder="you@example.com" /></label>
             </>
           )}
-          <button className="primary-button" type="submit">
+          <button className="primary-button" type="submit" disabled={submitting}>
             <Plus size={16} />
             Add channel
           </button>
@@ -152,7 +190,7 @@ export function AlertsView({ data, onRefresh }: { data: V2Data; onRefresh: () =>
             </select>
           </label>
           <label>Cooldown (seconds)<input name="cooldownSeconds" type="number" placeholder="900" /></label>
-          <button className="primary-button" type="submit">
+          <button className="primary-button" type="submit" disabled={submitting}>
             <Plus size={16} />
             Add rule
           </button>

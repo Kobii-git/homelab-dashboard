@@ -1,0 +1,119 @@
+import type { RouteContext } from "./types.js";
+
+export async function registerStatusRoutes({ app, prisma }: RouteContext): Promise<void> {
+  app.get("/api/status", async () => {
+    const [resources, checks, incidents] = await Promise.all([
+      prisma.resource.findMany({
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        select: {
+          id: true,
+          name: true,
+          kind: true,
+          url: true,
+          host: true,
+          healthChecks: {
+            select: {
+              id: true,
+              type: true,
+              target: true,
+              latestStatus: true,
+              latestLatencyMs: true,
+              latestCheckedAt: true,
+              latestError: true
+            }
+          }
+        }
+      }),
+      prisma.healthCheck.findMany({
+        where: { enabled: true },
+        select: { latestStatus: true }
+      }),
+      prisma.incident.findMany({
+        where: { status: { not: "resolved" } },
+        select: { id: true, title: true, status: true, severity: true, openedAt: true }
+      })
+    ]);
+
+    const online = checks.filter((check) => check.latestStatus === "online").length;
+    const offline = checks.filter((check) => check.latestStatus === "offline").length;
+    const unknown = checks.length - online - offline;
+
+    return {
+      ok: offline === 0 && incidents.length === 0,
+      summary: {
+        resources: resources.length,
+        checks: checks.length,
+        online,
+        offline,
+        unknown,
+        openIncidents: incidents.length
+      },
+      incidents,
+      resources: resources.map((resource) => ({
+        id: resource.id,
+        name: resource.name,
+        kind: resource.kind,
+        url: resource.url,
+        host: resource.host,
+        status: resource.healthChecks.some((check) => check.latestStatus === "offline")
+          ? "offline"
+          : resource.healthChecks.some((check) => check.latestStatus === "online")
+            ? "online"
+            : "unknown",
+        checks: resource.healthChecks
+      })),
+      generatedAt: new Date().toISOString()
+    };
+  });
+
+  app.get("/status", async (_request, reply) => {
+    reply.type("text/html").send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Homelab Status</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0d1215; color: #e7eef2; margin: 0; padding: 24px; }
+    h1 { margin: 0 0 8px; font-size: 1.4rem; }
+    .meta { color: #8aa0a8; margin-bottom: 20px; font-size: 0.9rem; }
+    .summary { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; }
+    .pill { padding: 8px 12px; border-radius: 999px; border: 1px solid #2d3338; font-size: 0.85rem; }
+    .pill.ok { border-color: rgba(45,212,191,.4); color: #7ce7c8; }
+    .pill.bad { border-color: rgba(248,113,113,.4); color: #ffb4b4; }
+    .grid { display: grid; gap: 10px; }
+    .row { display: flex; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid #2d3338; border-radius: 10px; background: #12181c; }
+    .row small { color: #8aa0a8; display: block; margin-top: 4px; }
+    .status-online { color: #7ce7c8; }
+    .status-offline { color: #ffb4b4; }
+    .status-unknown { color: #cbd5e1; }
+  </style>
+</head>
+<body>
+  <h1>Homelab Status</h1>
+  <p class="meta">Read-only · auto-refreshes every 30s</p>
+  <div id="summary" class="summary"></div>
+  <div id="list" class="grid"></div>
+  <script>
+    async function render() {
+      const data = await fetch('/api/status').then(r => r.json());
+      const summary = document.getElementById('summary');
+      const list = document.getElementById('list');
+      summary.innerHTML = [
+        '<span class="pill ' + (data.ok ? 'ok' : 'bad') + '">' + (data.ok ? 'All systems operational' : 'Issues detected') + '</span>',
+        '<span class="pill">' + data.summary.online + ' online</span>',
+        '<span class="pill">' + data.summary.offline + ' offline</span>',
+        '<span class="pill">' + data.summary.openIncidents + ' incidents</span>'
+      ].join('');
+      list.innerHTML = data.resources.map(function(resource) {
+        return '<div class="row"><div><strong>' + resource.name + '</strong><small>' + (resource.host || resource.url || resource.kind) + '</small></div><span class="status-' + resource.status + '">' + resource.status + '</span></div>';
+      }).join('');
+      document.querySelector('.meta').textContent = 'Updated ' + new Date(data.generatedAt).toLocaleString();
+    }
+    render();
+    setInterval(render, 30000);
+  </script>
+</body>
+</html>`);
+  });
+}

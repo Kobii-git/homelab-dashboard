@@ -6,6 +6,41 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.0] - 2026-06-03
+
+### Added
+
+**Reliability & dev experience**
+- Auto `DATABASE_URL` bootstrap and schema push on `npm run dev`
+- Form error banners and success/error toasts on save actions
+- Improved API validation error messages with field details
+
+**Inventory & vault**
+- Tabbed Inventory (resource, connection, credential, health check, notes, tags)
+- Tag create/assign on resources, connections, and credentials
+- Notes linked to resources
+- Connection TCP reachability test
+- Resource reorder controls
+- JSON inventory export (credentials remain encrypted)
+
+**Dashboard & access**
+- Connect to SSH/RDP from resource tiles
+- Collapsible dashboard groups
+- Widget visibility editor
+- guacd reachability indicator in Access view
+- Session retry on failure
+- Keyboard shortcuts help (`?`)
+
+**Monitoring & alerts**
+- SSL certificate expiry health checks (warns under 30 days)
+- Webhook presets for Discord, Slack, and ntfy
+- Public read-only status page at `/status`
+
+### Fixed
+- Auth hook now properly stops unauthenticated API requests
+
+---
+
 ## [0.1.0] - 2026-06-02
 
 Initial release.

@@ -3,6 +3,7 @@ import net from "node:net";
 import { promisify } from "node:util";
 import type { HealthCheck, PrismaClient } from "@prisma/client";
 import { applyHealthOutcome } from "./incidents.js";
+import { checkSslCertificate } from "./connectivity.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -138,6 +139,8 @@ export async function runHealthCheck(
     outcome = await checkTcp(check.target, check.timeoutMs);
   } else if (check.type === "ping") {
     outcome = await checkPing(check.target, check.timeoutMs);
+  } else if (check.type === "ssl") {
+    outcome = await checkSslCertificate(check.target, check.timeoutMs);
   } else {
     outcome = { status: "offline", error: `Unsupported check type: ${check.type}` };
   }

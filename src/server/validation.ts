@@ -25,6 +25,8 @@ export const dashboardGroupSchema = z.object({
 
 export const dashboardGroupPatchSchema = dashboardGroupSchema.partial();
 
+const tagIdsField = z.array(z.string().cuid()).optional();
+
 export const resourceSchema = z.object({
   name: z.string().trim().min(1).max(160),
   kind: z.enum(RESOURCE_KINDS),
@@ -36,7 +38,8 @@ export const resourceSchema = z.object({
   notes: nullableText,
   favorite: z.boolean().optional(),
   sortOrder: z.number().int().min(0).optional(),
-  groupId: z.string().cuid().optional().nullable()
+  groupId: z.string().cuid().optional().nullable(),
+  tagIds: tagIdsField
 });
 
 export const resourcePatchSchema = resourceSchema.partial();
@@ -49,7 +52,8 @@ export const credentialSchema = z.object({
   password: z.string().max(1000).optional().nullable(),
   domain: z.string().trim().max(200).optional().nullable(),
   privateKey: z.string().max(12000).optional().nullable(),
-  passphrase: z.string().max(1000).optional().nullable()
+  passphrase: z.string().max(1000).optional().nullable(),
+  tagIds: tagIdsField
 });
 
 export const credentialPatchSchema = credentialSchema.partial();
@@ -65,7 +69,8 @@ export const connectionSchema = z.object({
   notes: nullableText,
   favorite: z.boolean().optional(),
   folderId: z.string().cuid().optional().nullable(),
-  sortOrder: z.number().int().min(0).optional()
+  sortOrder: z.number().int().min(0).optional(),
+  tagIds: tagIdsField
 });
 
 export const connectionPatchSchema = connectionSchema.partial();
@@ -197,7 +202,11 @@ export const noteSchema = z.object({
 
 export const notePatchSchema = noteSchema.partial();
 
-export const emptyObjectSchema = z.object({}).passthrough();
+export const connectionTestSchema = z.object({
+  host: z.string().trim().min(1).max(255),
+  port: z.number().int().min(1).max(65535),
+  type: z.enum(CONNECTION_TYPES).optional()
+});
 
 export function nullishToUndefined<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(
