@@ -215,107 +215,151 @@ export function rewriteConnectInstruction(
   return encodeInstruction("connect", ...values);
 }
 
+/**
+ * Build the value to send for a single `connect` argument during the
+ * server-driven guacd handshake. Version-negotiation pseudo-arguments
+ * (e.g. "VERSION_1_5_0") are echoed back unchanged so guacd knows which
+ * protocol version we support; everything else is resolved from the
+ * session config (host, port, vault credentials, display options).
+ */
+function connectValueForArg(config: GuacamoleSessionConfig, argName: string): string {
+  if (argName.startsWith("VERSION_")) {
+    return argName;
+  }
+  return valueForArgument(config, argName);
+}
+
+const HANDSHAKE_TIMEOUT_MS = 15_000;
+
+/**
+ * Bridge a browser WebSocket (guacamole-common-js) to a guacd TCP socket.
+ *
+ * guacamole-common-js does NOT perform the guacd handshake itself — calling
+ * `client.connect()` only opens the tunnel and waits. The SERVER must drive
+ * the full handshake with guacd, then relay the rendered session both ways:
+ *
+ *   server -> guacd : select,<protocol>
+ *   guacd  -> server: args,<version>,<param>,...
+ *   server -> guacd : size / audio / video / image
+ *   server -> guacd : connect,<value per param>   (vault creds injected here)
+ *   guacd  -> server: ready,<id>                  (then render stream)
+ *
+ * Only the initial `args` instruction from guacd is parsed; everything after
+ * the handshake is forwarded as raw bytes in both directions to avoid the
+ * byte/char framing pitfalls of re-encoding the high-volume render stream.
+ */
 export function wireGuacamoleTunnel(
   ws: WebSocket,
   config: GuacamoleSessionConfig,
   options: { host: string; port: number }
 ): void {
   const guacd = net.createConnection({ host: options.host, port: options.port });
-  let guacdOpen = false;
-  let guacdReady = false;
+  guacd.setNoDelay(true);
+
+  let guacdConnected = false;
+  let handshakeDone = false;
   let closed = false;
-  let connectArgNames: string[] = [];
   const pendingClientMessages: Buffer[] = [];
 
-  const closeBoth = () => {
+  const wsOpen = () => ws.readyState === ws.OPEN;
+
+  const handshakeTimer = setTimeout(() => {
+    if (!handshakeDone) {
+      if (wsOpen()) {
+        ws.send(encodeInstruction("error", "guacd handshake timed out", "519"));
+      }
+      closeBoth();
+    }
+  }, HANDSHAKE_TIMEOUT_MS);
+
+  function closeBoth() {
     if (closed) {
       return;
     }
-
     closed = true;
+    clearTimeout(handshakeTimer);
     guacd.destroy();
-    if (ws.readyState === ws.OPEN) {
+    if (wsOpen()) {
       ws.close();
+    }
+  }
+
+  const flushPendingClientMessages = () => {
+    for (const message of pendingClientMessages.splice(0)) {
+      guacd.write(message);
     }
   };
 
-  const guacdMonitor = new InstructionParser((instruction) => {
+  const sendHandshakeReply = (argNames: string[]) => {
+    // Declare what the proxy will relay. Audio/video are disabled (empty);
+    // images cover what the browser display can render.
+    guacd.write(encodeInstruction("size", 1024, 768, 96));
+    guacd.write(encodeInstruction("audio"));
+    guacd.write(encodeInstruction("video"));
+    guacd.write(encodeInstruction("image", "image/png", "image/jpeg", "image/webp"));
+
+    const values = argNames.map((name) => connectValueForArg(config, name));
+    guacd.write(encodeInstruction("connect", ...values));
+
+    handshakeDone = true;
+    clearTimeout(handshakeTimer);
+    flushPendingClientMessages();
+  };
+
+  // Parses only the pre-`ready` handshake traffic from guacd. Once the `args`
+  // instruction is seen we send the reply and switch to raw passthrough.
+  const handshakeParser = new InstructionParser((instruction) => {
+    if (handshakeDone) {
+      return;
+    }
     if (instruction.opcode === "args") {
-      connectArgNames = instruction.args;
+      sendHandshakeReply(instruction.args);
       return;
     }
-
-    if (instruction.opcode === "ready") {
-      guacdReady = true;
-      return;
-    }
-
     if (instruction.opcode === "error") {
+      if (wsOpen()) {
+        ws.send(encodeInstruction("error", ...instruction.args));
+      }
       closeBoth();
     }
   });
 
-  const clientParser = new InstructionParser((instruction) => {
-    if (instruction.opcode === "connect") {
-      guacd.write(rewriteConnectInstruction(config, connectArgNames, instruction));
-      return;
-    }
-
-    guacd.write(encodeInstruction(instruction.opcode, ...instruction.args));
-  });
-
-  const handleClientMessage = (message: RawData) => {
-    if (closed) {
-      return;
-    }
-
-    if (guacdReady) {
-      guacd.write(rawDataToBuffer(message));
-      return;
-    }
-
-    clientParser.push(rawDataToBuffer(message).toString("utf8"));
-  };
-
-  const flushPendingClientMessages = () => {
-    for (const message of pendingClientMessages.splice(0)) {
-      handleClientMessage(message);
-    }
-  };
-
   guacd.once("connect", () => {
-    guacdOpen = true;
-    flushPendingClientMessages();
-  });
-
-  ws.on("message", (message) => {
-    if (closed) {
-      return;
-    }
-
-    if (!guacdOpen) {
-      pendingClientMessages.push(rawDataToBuffer(message));
-      return;
-    }
-
-    handleClientMessage(message);
+    guacdConnected = true;
+    guacd.write(encodeInstruction("select", config.protocol));
   });
 
   guacd.on("data", (chunk) => {
     if (closed) {
       return;
     }
-
-    ws.send(chunk);
-
-    if (!guacdReady) {
-      guacdMonitor.push(chunk.toString("utf8"));
+    if (handshakeDone) {
+      if (wsOpen()) {
+        ws.send(chunk);
+      }
+      return;
     }
+    // Pre-handshake guacd output is ASCII (args/error); parse to drive the
+    // handshake. guacd does not stream render data before we send `connect`,
+    // so there is nothing to lose to the parser's internal buffer here.
+    handshakeParser.push(chunk.toString("utf8"));
+  });
+
+  ws.on("message", (message) => {
+    if (closed) {
+      return;
+    }
+    const buffer = rawDataToBuffer(message);
+    if (!guacdConnected || !handshakeDone) {
+      pendingClientMessages.push(buffer);
+      return;
+    }
+    guacd.write(buffer);
   });
 
   guacd.once("error", (error) => {
-    if (ws.readyState === ws.OPEN) {
-      ws.send(encodeInstruction("error", "520", error.message));
+    if (wsOpen()) {
+      ws.send(encodeInstruction("error", error.message, "519"));
     }
     closeBoth();
   });

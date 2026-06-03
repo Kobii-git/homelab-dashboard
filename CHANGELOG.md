@@ -6,6 +6,30 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.6] - 2026-06-04
+
+### Fixed
+- **SSH and RDP never connected** ("connection lost", with or without vault credentials). `guacamole-common-js` does not perform the guacd handshake itself — it opens the tunnel and waits for the server to stream a fully-connected session. The tunnel was instead waiting for the *browser* to send the `connect` instruction, so it deadlocked against guacd (which waits for `select`) until guacd timed out. The server now drives the full handshake: `select` → reads `args` → sends `size`/`audio`/`video`/`image` → `connect` (with vault credentials and version negotiation injected) → relays the render stream both ways. Added a 15s handshake timeout and a mock-guacd integration test.
+
+### Changed
+- `.gh-bin/` ignored; CHANGELOG and README version references brought in line with `package.json`.
+
+---
+
+## [0.2.5] - 2026-06-04
+
+### Fixed
+- Guacamole **server timeout during SSH/RDP handshake** — forward guacd handshake traffic to the browser and only rewrite the `connect` instruction to inject vault credentials. (Superseded by the full server-driven handshake in 0.2.6.)
+
+---
+
+## [0.2.4] - 2026-06-04
+
+### Fixed
+- **RDP/SSH tunnel handshake and session token lookup** — relay client WebSocket traffic to guacd from the start, allow tunnel auth via session-id fallback, and mark failed sessions so reconnect gets a fresh token.
+
+---
+
 ## [0.2.3] - 2026-06-04
 
 ### Added
