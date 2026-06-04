@@ -6,6 +6,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.14] - 2026-06-05
+
+### Fixed
+- **Browser freeze with multiple sessions** — only the active tab runs a Guacamole
+  client now; background tabs disconnect instead of all rendering RDP at once.
+- **RDP performance** — disabled wallpaper, theming, composition, and animations;
+  capped resolution at 1920×1080 and reduced color depth to 16-bit.
+- **RDP blue / blank screen** — centered scaled canvas and separated RDP vs SSH
+  display layout so the desktop renders correctly.
+- **SSH terminal layout** — terminal now fills the panel at native scale instead
+  of shrinking into a corner with empty black space.
+
+---
+
 ## [0.2.13] - 2026-06-05
 
 ### Added

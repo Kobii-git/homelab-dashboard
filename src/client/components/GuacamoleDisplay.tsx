@@ -13,22 +13,34 @@ type GuacamoleDisplayProps = {
   onToggleFullscreen?: () => void;
 };
 
+const RDP_MAX_WIDTH = 1920;
+const RDP_MAX_HEIGHT = 1080;
+const RESIZE_DEBOUNCE_MS = 350;
+
 function websocketUrl(path: string): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${window.location.host}${path}`;
 }
 
+function capRdpSize(width: number, height: number): { width: number; height: number } {
+  const scale = Math.min(1, RDP_MAX_WIDTH / width, RDP_MAX_HEIGHT / height);
+  return {
+    width: Math.max(640, Math.floor(width * scale)),
+    height: Math.max(480, Math.floor(height * scale))
+  };
+}
+
 export function GuacamoleDisplay({
   websocketPath,
   displayName,
-  protocol,
+  protocol = "ssh",
   sessionHistoryId,
   onConnected,
   onFailed,
   onToggleFullscreen
 }: GuacamoleDisplayProps) {
   const displayRef = useRef<HTMLDivElement | null>(null);
-  const clientRef = useRef<{ sendKeyEvent: (state: number, keysym: number) => void } | null>(null);
+  const clientRef = useRef<{ sendKeyEvent: (state: number, keysym: number) => void; sendSize: (w: number, h: number) => void } | null>(null);
   const connectedRef = useRef(false);
   const failedRef = useRef(false);
   const onConnectedRef = useRef(onConnected);
@@ -72,33 +84,38 @@ export function GuacamoleDisplay({
     clientRef.current = client;
     const display = client.getDisplay();
     const displayElement = display.getElement();
+    const isRdp = protocol === "rdp";
+
     displayElement.style.transformOrigin = "top left";
+    container.classList.toggle("guac-display-rdp", isRdp);
+    container.classList.toggle("guac-display-ssh", !isRdp);
     container.appendChild(displayElement);
 
     let lastSentWidth = 0;
     let lastSentHeight = 0;
     let resizeTimer: number | undefined;
+    let layoutTimer: number | undefined;
 
-    // Scale the rendered remote display to fit the container while preserving
-    // aspect ratio. display.getScale() is then used to translate mouse input.
-    const rescale = () => {
-      const nativeWidth = display.getWidth();
-      const nativeHeight = display.getHeight();
-      const rect = container.getBoundingClientRect();
-      if (!nativeWidth || !nativeHeight || rect.width < 10 || rect.height < 10) {
-        return;
-      }
-      display.scale(Math.min(rect.width / nativeWidth, rect.height / nativeHeight));
-    };
-
-    // Ask the remote to resize to match the container so it uses all the space
-    // (terminals reflow, RDP uses display-update). Debounced to avoid flooding
-    // guacd while the window is being dragged.
-    const requestRemoteSize = () => {
+    const layoutDisplay = () => {
       const rect = container.getBoundingClientRect();
       const width = Math.floor(rect.width);
       const height = Math.floor(rect.height);
-      if (width < 10 || height < 10 || (width === lastSentWidth && height === lastSentHeight)) {
+      if (width < 10 || height < 10) {
+        return;
+      }
+
+      if (isRdp) {
+        const nativeWidth = display.getWidth();
+        const nativeHeight = display.getHeight();
+        if (nativeWidth > 0 && nativeHeight > 0) {
+          display.scale(Math.min(rect.width / nativeWidth, rect.height / nativeHeight));
+        }
+        return;
+      }
+
+      // SSH: match the terminal to the panel — no downscaling.
+      display.scale(1);
+      if (width === lastSentWidth && height === lastSentHeight) {
         return;
       }
       lastSentWidth = width;
@@ -106,26 +123,53 @@ export function GuacamoleDisplay({
       try {
         client.sendSize(width, height);
       } catch {
-        // Some protocols ignore resize; the scale fallback still fits the view.
+        // Terminal resize not supported on this session.
       }
-      rescale();
     };
 
-    display.onresize = rescale;
+    const requestRemoteSize = () => {
+      const rect = container.getBoundingClientRect();
+      let width = Math.floor(rect.width);
+      let height = Math.floor(rect.height);
+      if (width < 10 || height < 10) {
+        return;
+      }
+
+      if (isRdp) {
+        ({ width, height } = capRdpSize(width, height));
+      }
+
+      if (width === lastSentWidth && height === lastSentHeight) {
+        layoutDisplay();
+        return;
+      }
+
+      lastSentWidth = width;
+      lastSentHeight = height;
+      try {
+        client.sendSize(width, height);
+      } catch {
+        // Remote may ignore resize.
+      }
+      layoutDisplay();
+    };
+
+    const scheduleLayout = () => {
+      window.clearTimeout(layoutTimer);
+      layoutTimer = window.setTimeout(layoutDisplay, 50);
+    };
+
+    display.onresize = scheduleLayout;
 
     const mouse = new Guacamole.Mouse(displayElement);
-    // The `true` flag makes the client divide coordinates by the current
-    // display scale, so clicks land correctly on the scaled-to-fit display.
     mouse.onEach(["mousedown", "mouseup", "mousemove"], (event: { state: unknown }) => {
-      client.sendMouseState(event.state, true);
+      client.sendMouseState(event.state, isRdp);
     });
 
     const keyboard = new Guacamole.Keyboard(container);
     keyboard.onkeydown = (keysym: number) => client.sendKeyEvent(1, keysym);
     keyboard.onkeyup = (keysym: number) => client.sendKeyEvent(0, keysym);
 
-    // Remote -> local clipboard. Only works in a secure context (HTTPS or
-    // localhost); over plain HTTP the write is a harmless no-op.
     client.onclipboard = (stream: unknown, mimetype: string) => {
       if (!mimetype.startsWith("text/")) {
         return;
@@ -148,7 +192,7 @@ export function GuacamoleDisplay({
 
     const resizeObserver = new ResizeObserver(() => {
       window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(requestRemoteSize, 200);
+      resizeTimer = window.setTimeout(requestRemoteSize, RESIZE_DEBOUNCE_MS);
     });
     resizeObserver.observe(container);
 
@@ -203,14 +247,16 @@ export function GuacamoleDisplay({
 
     return () => {
       window.clearTimeout(resizeTimer);
+      window.clearTimeout(layoutTimer);
       resizeObserver.disconnect();
       keyboard.onkeydown = null;
       keyboard.onkeyup = null;
       clientRef.current = null;
       client.disconnect();
       displayElement.remove();
+      container.classList.remove("guac-display-rdp", "guac-display-ssh");
     };
-  }, [websocketPath]);
+  }, [websocketPath, protocol]);
 
   function sendText(text: string) {
     const client = clientRef.current;
@@ -249,7 +295,7 @@ export function GuacamoleDisplay({
   const live = state === "connected";
 
   return (
-    <section className="session-stage" aria-label={displayName}>
+    <section className={`session-stage session-stage-${protocol}`} aria-label={displayName}>
       <div className="session-toolbar">
         <div className="session-toolbar-title">
           <span className={`session-state-dot dot-${stateClass}`} />

@@ -559,25 +559,18 @@ export function AccessManager({
           </div>
 
           <div className="access-session-stage">
-            {tabs.map((tab) =>
-              tab.session ? (
-                <div
-                  className={`access-session-pane ${tab.id === activeTab?.id ? "is-active" : ""}`}
-                  key={tab.session.websocketPath}
-                >
-                  <GuacamoleDisplay
-                    websocketPath={tab.session.websocketPath}
-                    displayName={tab.title}
-                    protocol={tab.protocol}
-                    sessionHistoryId={tab.id}
-                    onConnected={markSessionConnected}
-                    onFailed={markSessionFailed}
-                    onToggleFullscreen={() => toggleFullscreen(tab.id)}
-                  />
-                </div>
-              ) : null
-            )}
-            {activeTab && !activeTab.session ? (
+            {activeTab?.session ? (
+              <GuacamoleDisplay
+                key={activeTab.session.websocketPath}
+                websocketPath={activeTab.session.websocketPath}
+                displayName={activeTab.title}
+                protocol={activeTab.protocol}
+                sessionHistoryId={activeTab.id}
+                onConnected={markSessionConnected}
+                onFailed={markSessionFailed}
+                onToggleFullscreen={() => toggleFullscreen(activeTab.id)}
+              />
+            ) : activeTab ? (
               <div className="empty-state access-session-empty">
                 <ProtocolIcon protocol={activeTab.protocol} size={42} />
                 <h2>{sessionStatusLabel(activeTab.state)}</h2>
@@ -610,13 +603,13 @@ export function AccessManager({
                   </div>
                 ) : null}
               </div>
-            ) : !activeTab ? (
+            ) : (
               <div className="empty-state access-session-empty">
                 <ProtocolIcon protocol="ssh" size={42} />
                 <h2>No active session</h2>
                 <p>Select a device on the left to connect.</p>
               </div>
-            ) : null}
+            )}
           </div>
         </div>
       </section>

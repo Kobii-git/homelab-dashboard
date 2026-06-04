@@ -1815,11 +1815,11 @@ label {
   border-radius: 0;
 }
 
-.access-page-remote .access-session-pane,
-.access-page-remote .access-session-pane .session-stage,
 .access-page-remote .access-session-stage .session-stage {
   height: 100%;
   min-height: 0;
+  border: 0;
+  border-radius: 0;
 }
 
 .access-toolbar {
@@ -2493,12 +2493,29 @@ label {
   outline: none;
 }
 
-/* The Guacamole display element sizes itself to the (scaled) remote canvas;
-   don't force it to 100% or the canvas distorts. */
-.guac-display > div {
+.guac-display-ssh > div {
   position: absolute;
   top: 0;
   left: 0;
+}
+
+.guac-display-rdp {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a1014;
+}
+
+.guac-display-rdp > div {
+  position: relative;
+  top: auto;
+  left: auto;
+}
+
+/* The Guacamole display element sizes itself to the (scaled) remote canvas;
+   don't force it to 100% or the canvas distorts. */
+.guac-display > div {
+  transform-origin: top left;
 }
 
 .session-toolbar-title,

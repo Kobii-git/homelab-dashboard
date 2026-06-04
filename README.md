@@ -2,7 +2,7 @@
 
 A private, self-hosted command centre for your homelab. Launch SSH/RDP sessions in the browser, monitor service health, manage an encrypted credential vault, and get alerted when things break.
 
-![Version](https://img.shields.io/badge/version-0.2.13-2dd4bf)
+![Version](https://img.shields.io/badge/version-0.2.14-2dd4bf)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -171,7 +171,7 @@ docker compose -f docker-compose.build.yml up -d --build
 
 Releases follow [Semantic Versioning](https://semver.org). See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
-Current: **v0.2.13**
+Current: **v0.2.14**
 
 ### Verify your running build
 
