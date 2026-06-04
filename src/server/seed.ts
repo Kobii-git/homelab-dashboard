@@ -91,7 +91,10 @@ async function findOrCreateTag(prisma: PrismaClient, input: { name: string; type
 }
 
 async function findOrCreateWidget(prisma: PrismaClient, widget: DemoWidget) {
-  const existing = await prisma.dashboardWidget.findFirst({ where: { title: widget.title, type: widget.type } });
+  const existing = await prisma.dashboardWidget.findFirst({
+    where: { type: widget.type },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+  });
   const data = { type: widget.type, title: widget.title, configJson: JSON.stringify({ demo: true }), x: widget.x, y: widget.y, w: widget.w, h: widget.h, sortOrder: widget.sortOrder, enabled: true };
   if (existing) return prisma.dashboardWidget.update({ where: { id: existing.id }, data });
   return prisma.dashboardWidget.create({ data });

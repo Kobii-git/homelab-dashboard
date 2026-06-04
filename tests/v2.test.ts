@@ -45,7 +45,21 @@ describe("v2 pro console routes", () => {
       headers: { cookie }
     });
     expect(widgets.statusCode).toBe(200);
-    expect(widgets.json<Array<{ type: string }>>().some((widget) => widget.type === "incidents")).toBe(true);
+    const widgetList = widgets.json<Array<{ id: string; type: string; w: number; sortOrder: number }>>();
+    expect(widgetList.map((widget) => widget.type)).toEqual(
+      expect.arrayContaining(["serviceStatus", "incidents", "favorites", "failingChecks", "recentSessions", "vaultHealth", "notes"])
+    );
+
+    const serviceStatusWidget = widgetList.find((widget) => widget.type === "serviceStatus");
+    expect(serviceStatusWidget).toBeTruthy();
+    const resizedWidget = await app.inject({
+      method: "PATCH",
+      url: `/api/dashboard/widgets/${serviceStatusWidget?.id}`,
+      headers: { cookie },
+      payload: { w: 12, sortOrder: 99 }
+    });
+    expect(resizedWidget.statusCode).toBe(200);
+    expect(resizedWidget.json<{ w: number; sortOrder: number }>()).toEqual(expect.objectContaining({ w: 12, sortOrder: 99 }));
 
     const resource = await app.inject({
       method: "POST",

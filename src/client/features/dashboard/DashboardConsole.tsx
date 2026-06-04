@@ -18,9 +18,9 @@ import {
   Wifi,
   WifiOff
 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useMemo, useState } from "react";
-import type { ConnectionDto } from "../../lib/api";
+import type { ConnectionDto, DashboardWidgetDto } from "../../lib/api";
 import type { DashboardResource } from "../../../shared/types";
 import { ProtocolIcon } from "../access/accessUtils";
 import { WidgetSettings } from "../../components/WidgetSettings";
@@ -116,9 +116,28 @@ function ResourceTile({
   );
 }
 
-function WidgetCard({ title, children, wide = false }: { title: string; children: ReactNode; wide?: boolean }) {
+function widgetSpanStyle(widget: DashboardWidgetDto): CSSProperties {
+  const span = Math.min(12, Math.max(3, widget.w || 4));
+  return { "--widget-span": String(span) } as CSSProperties;
+}
+
+function orderedUniqueWidgets(widgets: DashboardWidgetDto[]) {
+  const seen = new Set<string>();
+  return [...widgets]
+    .filter((widget) => widget.enabled)
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.title.localeCompare(right.title))
+    .filter((widget) => {
+      if (seen.has(widget.type)) {
+        return false;
+      }
+      seen.add(widget.type);
+      return true;
+    });
+}
+
+function WidgetCard({ title, children, widget }: { title: string; children: ReactNode; widget: DashboardWidgetDto }) {
   return (
-    <section className={`widget-card ${wide ? "widget-wide" : ""}`}>
+    <section className="widget-card" style={widgetSpanStyle(widget)}>
       <div className="widget-header">
         <h3>{title}</h3>
       </div>
@@ -163,14 +182,19 @@ export function DashboardConsole({
     }
     return map;
   }, [data.connections]);
-  const enabledWidgets = useMemo(
-    () => new Set(data.widgets.filter((widget) => widget.enabled).map((widget) => widget.type)),
+  const orderedWidgets = useMemo(
+    () => orderedUniqueWidgets(data.widgets),
     [data.widgets]
   );
   const totals = summarizeResourceStatus(resources);
   const favoriteResources = resources.filter((resource) => resource.favorite).slice(0, 6);
   const failingChecks = data.checks.filter((check) => check.latestStatus === "offline").slice(0, 8);
   const openIncidents = data.incidents.filter((incident) => incident.status !== "resolved").slice(0, 8);
+  const pinnedNotes = data.notes.filter((note) => note.pinned).slice(0, 4);
+  const usedCredentialIds = new Set(data.connections.map((connection) => connection.credentialId).filter(Boolean));
+  const unusedCredentials = data.credentials.filter((credential) => !usedCredentialIds.has(credential.id));
+  const neverUsedCredentials = data.credentials.filter((credential) => !credential.lastUsedAt);
+  const credentialBackedConnections = data.connections.filter((connection) => connection.credentialId).length;
   const filteredGroups = data.dashboard.groups
     .map((group) => ({
       ...group,
@@ -205,6 +229,139 @@ export function DashboardConsole({
     );
   }
 
+  function renderDashboardWidget(widget: DashboardWidgetDto) {
+    switch (widget.type) {
+      case "serviceStatus":
+        return (
+          <WidgetCard key={widget.id} title={widget.title} widget={widget}>
+            <div className="dashboard-overview widget-metrics">
+              <MetricCard icon={<Wifi size={18} />} label="Online" value={totals.online} tone="online" />
+              <MetricCard icon={<WifiOff size={18} />} label="Offline" value={totals.offline} tone="offline" />
+              <MetricCard icon={<Activity size={18} />} label="Unknown" value={totals.unknown} />
+              <MetricCard icon={<TerminalSquare size={18} />} label="Connections" value={totals.connections} tone="accent" />
+            </div>
+          </WidgetCard>
+        );
+      case "incidents":
+        return (
+          <WidgetCard key={widget.id} title={widget.title} widget={widget}>
+            <div className="compact-list">
+              {openIncidents.map((incident) => (
+                <button className="compact-row" key={incident.id} type="button" onClick={() => onOpenIncident(incident.id)}>
+                  <span className={`severity-dot severity-${incident.severity}`} />
+                  <span>
+                    <strong>{incident.title}</strong>
+                    <small>{incident.status} · {formatDateTime(incident.openedAt)}</small>
+                  </span>
+                </button>
+              ))}
+              {openIncidents.length === 0 ? <p className="muted-copy">No active incidents.</p> : null}
+            </div>
+          </WidgetCard>
+        );
+      case "favorites":
+        return (
+          <WidgetCard key={widget.id} title={widget.title} widget={widget}>
+            <div className="compact-list">
+              {favoriteResources.map((resource) => (
+                <button
+                  className="compact-row"
+                  key={resource.id}
+                  type="button"
+                  onClick={() => (resource.url ? openResource(resource) : onInspectResource(resource))}
+                >
+                  <span className="resource-icon" style={{ color: resource.color ?? "#2dd4bf" }}>
+                    {icons[resource.kind] ?? icons.other}
+                  </span>
+                  <span>
+                    <strong>{resource.name}</strong>
+                    <small>{resource.url ?? resource.host ?? resource.kind}</small>
+                  </span>
+                  <StatusBadge status={statusFor(resource)} />
+                </button>
+              ))}
+              {favoriteResources.length === 0 ? <p className="muted-copy">Mark resources as favorites to pin them here.</p> : null}
+            </div>
+          </WidgetCard>
+        );
+      case "failingChecks":
+        return (
+          <WidgetCard key={widget.id} title={widget.title} widget={widget}>
+            <div className="compact-list">
+              {failingChecks.map((check) => (
+                <div className="compact-row" key={check.id}>
+                  <Activity size={16} />
+                  <span>
+                    <strong>{check.resource?.name ?? check.target}</strong>
+                    <small>{check.latestError ?? check.target}</small>
+                  </span>
+                </div>
+              ))}
+              {failingChecks.length === 0 ? <p className="muted-copy">No failing checks.</p> : null}
+            </div>
+          </WidgetCard>
+        );
+      case "recentSessions":
+        return (
+          <WidgetCard key={widget.id} title={widget.title} widget={widget}>
+            <div className="compact-list">
+              {data.sessionHistory.slice(0, 6).map((session) => (
+                <div className="compact-row" key={session.id}>
+                  <TerminalSquare size={16} />
+                  <span>
+                    <strong>{session.resourceName}</strong>
+                    <small>{session.protocol.toUpperCase()} · {session.status} · {formatDateTime(session.startedAt)}</small>
+                  </span>
+                </div>
+              ))}
+              {data.sessionHistory.length === 0 ? <p className="muted-copy">No remote sessions yet.</p> : null}
+            </div>
+          </WidgetCard>
+        );
+      case "vaultHealth":
+        return (
+          <WidgetCard key={widget.id} title={widget.title} widget={widget}>
+            <div className="compact-list">
+              <div className="compact-row">
+                <KeyRound size={16} />
+                <span>
+                  <strong>{data.credentials.length} saved credentials</strong>
+                  <small>{credentialBackedConnections} remote connections use stored credentials</small>
+                </span>
+              </div>
+              <div className="compact-row">
+                <Info size={16} />
+                <span>
+                  <strong>{unusedCredentials.length} unused credentials</strong>
+                  <small>{neverUsedCredentials.length} have never launched a session</small>
+                </span>
+              </div>
+              {data.credentials.length === 0 ? <p className="muted-copy">Add credentials in Vault or Inventory to protect remote access details.</p> : null}
+            </div>
+          </WidgetCard>
+        );
+      case "notes":
+        return (
+          <WidgetCard key={widget.id} title={widget.title} widget={widget}>
+            <div className="compact-list">
+              {pinnedNotes.map((note) => (
+                <div className="compact-row" key={note.id}>
+                  <Clock3 size={16} />
+                  <span>
+                    <strong>{note.title}</strong>
+                    <small>{note.body}</small>
+                  </span>
+                </div>
+              ))}
+              {pinnedNotes.length === 0 ? <p className="muted-copy">No pinned notes.</p> : null}
+            </div>
+          </WidgetCard>
+        );
+      default:
+        return null;
+    }
+  }
+
   return (
     <main className="view-shell pro-dashboard">
       <header className="view-header">
@@ -230,82 +387,8 @@ export function DashboardConsole({
 
       <WidgetSettings widgets={data.widgets} onRefresh={onRefresh} />
 
-      <section className="dashboard-overview">
-        <MetricCard icon={<Wifi size={18} />} label="Online" value={totals.online} tone="online" />
-        <MetricCard icon={<WifiOff size={18} />} label="Offline" value={totals.offline} tone="offline" />
-        <MetricCard icon={<Activity size={18} />} label="Unknown" value={totals.unknown} />
-        <MetricCard icon={<TerminalSquare size={18} />} label="Connections" value={totals.connections} tone="accent" />
-        <MetricCard icon={<KeyRound size={18} />} label="Vault Items" value={data.credentials.length} />
-      </section>
-
       <section className="widget-grid">
-        {enabledWidgets.has("incidents") ? (
-          <WidgetCard title="Incidents">
-            <div className="compact-list">
-              {openIncidents.map((incident) => (
-                <button className="compact-row" key={incident.id} type="button" onClick={() => onOpenIncident(incident.id)}>
-                  <span className={`severity-dot severity-${incident.severity}`} />
-                  <span>
-                    <strong>{incident.title}</strong>
-                    <small>{incident.status} · {formatDateTime(incident.openedAt)}</small>
-                  </span>
-                </button>
-              ))}
-              {openIncidents.length === 0 ? <p className="muted-copy">No active incidents.</p> : null}
-            </div>
-          </WidgetCard>
-        ) : null}
-
-        {enabledWidgets.has("failingChecks") ? (
-          <WidgetCard title="Failing Checks">
-            <div className="compact-list">
-              {failingChecks.map((check) => (
-                <div className="compact-row" key={check.id}>
-                  <Activity size={16} />
-                  <span>
-                    <strong>{check.resource?.name ?? check.target}</strong>
-                    <small>{check.latestError ?? check.target}</small>
-                  </span>
-                </div>
-              ))}
-              {failingChecks.length === 0 ? <p className="muted-copy">No failing checks.</p> : null}
-            </div>
-          </WidgetCard>
-        ) : null}
-
-        {enabledWidgets.has("recentSessions") ? (
-          <WidgetCard title="Recent Sessions">
-            <div className="compact-list">
-              {data.sessionHistory.slice(0, 6).map((session) => (
-                <div className="compact-row" key={session.id}>
-                  <TerminalSquare size={16} />
-                  <span>
-                    <strong>{session.resourceName}</strong>
-                    <small>{session.protocol.toUpperCase()} · {session.status} · {formatDateTime(session.startedAt)}</small>
-                  </span>
-                </div>
-              ))}
-              {data.sessionHistory.length === 0 ? <p className="muted-copy">No remote sessions yet.</p> : null}
-            </div>
-          </WidgetCard>
-        ) : null}
-
-        {enabledWidgets.has("notes") ? (
-          <WidgetCard title="Pinned Notes">
-            <div className="compact-list">
-              {data.notes.filter((note) => note.pinned).slice(0, 4).map((note) => (
-                <div className="compact-row" key={note.id}>
-                  <Clock3 size={16} />
-                  <span>
-                    <strong>{note.title}</strong>
-                    <small>{note.body}</small>
-                  </span>
-                </div>
-              ))}
-              {data.notes.filter((note) => note.pinned).length === 0 ? <p className="muted-copy">No pinned notes.</p> : null}
-            </div>
-          </WidgetCard>
-        ) : null}
+        {orderedWidgets.map(renderDashboardWidget)}
       </section>
 
       {resources.length === 0 ? (
@@ -320,16 +403,6 @@ export function DashboardConsole({
             </button>
           }
         />
-      ) : null}
-
-      {enabledWidgets.has("favorites") && favoriteResources.length > 0 ? (
-        <section className="resource-section">
-          <div className="section-heading">
-            <h3>Favorites</h3>
-            <span>{favoriteResources.length}</span>
-          </div>
-          <div className="tile-grid">{favoriteResources.map(renderResourceTile)}</div>
-        </section>
       ) : null}
 
       {filteredGroups.map((group) => (

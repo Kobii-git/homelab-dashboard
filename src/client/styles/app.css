@@ -526,15 +526,20 @@ label {
   margin-bottom: 22px;
 }
 
+.dashboard-overview.widget-metrics {
+  margin-bottom: 0;
+}
+
 .widget-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 24px;
 }
 
 .widget-card {
   display: grid;
+  grid-column: span var(--widget-span, 4);
   gap: 10px;
   min-height: 180px;
   padding: 15px;
@@ -2717,6 +2722,50 @@ label {
   margin-top: 10px;
 }
 
+.widget-settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  max-width: 720px;
+  padding: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.widget-settings-row .checkbox-row {
+  margin: 0;
+}
+
+.widget-settings-row .checkbox-row span,
+.widget-settings-row .checkbox-row strong,
+.widget-settings-row .checkbox-row small {
+  display: block;
+}
+
+.widget-settings-row .checkbox-row small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.widget-settings-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.icon-button:disabled:hover {
+  border-color: #334049;
+  color: #d7dde1;
+}
+
 .group-heading {
   align-items: center;
 }
@@ -2878,11 +2927,24 @@ label {
 
   .header-actions,
   .dashboard-overview,
+  .widget-grid,
   .inventory-tables,
   .split-grid,
   .vault-grid {
     grid-template-columns: 1fr;
     width: 100%;
+  }
+
+  .widget-card {
+    grid-column: 1 / -1;
+  }
+
+  .widget-settings-row {
+    grid-template-columns: 1fr;
+  }
+
+  .widget-settings-actions {
+    justify-content: flex-start;
   }
 
   .header-actions {

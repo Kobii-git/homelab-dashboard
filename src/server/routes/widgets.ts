@@ -12,21 +12,28 @@ const defaultWidgets = [
   { type: "favorites", title: "Favorites", x: 0, y: 3, w: 4, h: 3, sortOrder: 2 },
   { type: "failingChecks", title: "Failing Checks", x: 4, y: 3, w: 4, h: 3, sortOrder: 3 },
   { type: "recentSessions", title: "Recent Sessions", x: 8, y: 3, w: 4, h: 3, sortOrder: 4 },
-  { type: "vaultHealth", title: "Vault Health", x: 0, y: 6, w: 4, h: 2, sortOrder: 5 }
+  { type: "vaultHealth", title: "Vault Health", x: 0, y: 6, w: 4, h: 2, sortOrder: 5 },
+  { type: "notes", title: "Pinned Notes", x: 4, y: 6, w: 4, h: 2, sortOrder: 6 }
 ];
 
 async function ensureDefaultWidgets(prisma: RouteContext["prisma"]): Promise<void> {
-  const count = await prisma.dashboardWidget.count();
+  const existingWidgets = await prisma.dashboardWidget.findMany({
+    select: { type: true, sortOrder: true }
+  });
+  const existingTypes = new Set(existingWidgets.map((widget) => widget.type));
+  const missingWidgets = defaultWidgets.filter((widget) => !existingTypes.has(widget.type));
 
-  if (count > 0) {
+  if (missingWidgets.length === 0) {
     return;
   }
 
+  const maxSortOrder = existingWidgets.reduce((max, widget) => Math.max(max, widget.sortOrder), -1);
   await prisma.dashboardWidget.createMany({
-    data: defaultWidgets.map((widget) => ({
+    data: missingWidgets.map((widget, index) => ({
       ...widget,
       configJson: "{}",
-      enabled: true
+      enabled: true,
+      sortOrder: existingWidgets.length > 0 ? maxSortOrder + index + 1 : widget.sortOrder
     }))
   });
 }
