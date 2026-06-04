@@ -2296,6 +2296,41 @@ label {
   color: #ff9d9d;
 }
 
+.session-paste-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #11171a;
+}
+
+.session-paste-bar textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--panel-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+.session-paste-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.session-paste-actions .primary-button {
+  width: auto;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
 .session-error,
 .app-error,
 .form-error {

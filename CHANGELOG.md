@@ -6,6 +6,18 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.10] - 2026-06-04
+
+### Added
+- **Paste / send text to a session.** A clipboard button in the session toolbar opens a box where you can paste or type text that is then "typed" into the remote as keystrokes — works for SSH terminals and RDP fields, and crucially works over plain HTTP (where the browser clipboard API is blocked). Cmd/Ctrl+Enter sends, Esc closes.
+- **Ctrl+Alt+Del** button for RDP sessions.
+- **Best-effort clipboard sync** (remote → local) when served over HTTPS/localhost; a harmless no-op over plain HTTP.
+
+### Notes
+- Character→keysym mapping (including non-Latin Unicode and surrogate-pair emoji) is covered by unit tests.
+
+---
+
 ## [0.2.9] - 2026-06-04
 
 ### Added

@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
-import { Maximize2, RefreshCw } from "lucide-react";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { ClipboardPaste, Keyboard as KeyboardIcon, Maximize2, RefreshCw, Send, X } from "lucide-react";
 import Guacamole from "guacamole-common-js";
+import { KEYSYM, textToKeysyms } from "../lib/keysyms";
 
 type GuacamoleDisplayProps = {
   websocketPath: string;
   displayName: string;
+  protocol?: "ssh" | "rdp";
   sessionHistoryId?: string;
   onConnected?: (sessionHistoryId: string) => void;
   onFailed?: (sessionHistoryId: string, message: string) => void;
@@ -19,12 +21,14 @@ function websocketUrl(path: string): string {
 export function GuacamoleDisplay({
   websocketPath,
   displayName,
+  protocol,
   sessionHistoryId,
   onConnected,
   onFailed,
   onToggleFullscreen
 }: GuacamoleDisplayProps) {
   const displayRef = useRef<HTMLDivElement | null>(null);
+  const clientRef = useRef<{ sendKeyEvent: (state: number, keysym: number) => void } | null>(null);
   const connectedRef = useRef(false);
   const failedRef = useRef(false);
   const onConnectedRef = useRef(onConnected);
@@ -32,6 +36,8 @@ export function GuacamoleDisplay({
   const sessionIdRef = useRef(sessionHistoryId);
   const [state, setState] = useState("connecting");
   const [error, setError] = useState<string | null>(null);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteValue, setPasteValue] = useState("");
 
   useEffect(() => {
     onConnectedRef.current = onConnected;
@@ -63,6 +69,7 @@ export function GuacamoleDisplay({
 
     const tunnel = new Guacamole.WebSocketTunnel(websocketUrl(websocketPath));
     const client = new Guacamole.Client(tunnel);
+    clientRef.current = client;
     const display = client.getDisplay();
     const displayElement = display.getElement();
     displayElement.style.transformOrigin = "top left";
@@ -91,10 +98,7 @@ export function GuacamoleDisplay({
       const rect = container.getBoundingClientRect();
       const width = Math.floor(rect.width);
       const height = Math.floor(rect.height);
-      if (width < 10 || height < 10) {
-        return;
-      }
-      if (width === lastSentWidth && height === lastSentHeight) {
+      if (width < 10 || height < 10 || (width === lastSentWidth && height === lastSentHeight)) {
         return;
       }
       lastSentWidth = width;
@@ -119,6 +123,28 @@ export function GuacamoleDisplay({
     const keyboard = new Guacamole.Keyboard(container);
     keyboard.onkeydown = (keysym: number) => client.sendKeyEvent(1, keysym);
     keyboard.onkeyup = (keysym: number) => client.sendKeyEvent(0, keysym);
+
+    // Remote -> local clipboard. Only works in a secure context (HTTPS or
+    // localhost); over plain HTTP the write is a harmless no-op.
+    client.onclipboard = (stream: unknown, mimetype: string) => {
+      if (!mimetype.startsWith("text/")) {
+        return;
+      }
+      try {
+        const reader = new Guacamole.StringReader(stream);
+        let text = "";
+        reader.ontext = (chunk: string) => {
+          text += chunk;
+        };
+        reader.onend = () => {
+          if (window.isSecureContext && navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(text).catch(() => {});
+          }
+        };
+      } catch {
+        // Ignore unreadable clipboard streams.
+      }
+    };
 
     const resizeObserver = new ResizeObserver(() => {
       window.clearTimeout(resizeTimer);
@@ -155,7 +181,6 @@ export function GuacamoleDisplay({
       setState(label);
 
       if (label === "connected") {
-        // Match the remote to the panel once the session is live.
         requestRemoteSize();
         container.focus();
         if (
@@ -181,12 +206,47 @@ export function GuacamoleDisplay({
       resizeObserver.disconnect();
       keyboard.onkeydown = null;
       keyboard.onkeyup = null;
+      clientRef.current = null;
       client.disconnect();
       displayElement.remove();
     };
   }, [websocketPath]);
 
+  function sendText(text: string) {
+    const client = clientRef.current;
+    if (!client || !text) {
+      return;
+    }
+    for (const keysym of textToKeysyms(text)) {
+      client.sendKeyEvent(1, keysym);
+      client.sendKeyEvent(0, keysym);
+    }
+    displayRef.current?.focus();
+  }
+
+  function sendKeyCombo(...keysyms: number[]) {
+    const client = clientRef.current;
+    if (!client) {
+      return;
+    }
+    for (const keysym of keysyms) {
+      client.sendKeyEvent(1, keysym);
+    }
+    for (const keysym of [...keysyms].reverse()) {
+      client.sendKeyEvent(0, keysym);
+    }
+    displayRef.current?.focus();
+  }
+
+  function submitPaste(event: FormEvent) {
+    event.preventDefault();
+    sendText(pasteValue);
+    setPasteValue("");
+    setPasteOpen(false);
+  }
+
   const stateClass = state === "connected" ? "connected" : state === "error" ? "error" : "connecting";
+  const live = state === "connected";
 
   return (
     <section className="session-stage" aria-label={displayName}>
@@ -196,6 +256,28 @@ export function GuacamoleDisplay({
           <strong>{displayName}</strong>
         </div>
         <div className="session-toolbar-actions">
+          {live ? (
+            <>
+              <button
+                className={`icon-button ${pasteOpen ? "is-active" : ""}`}
+                type="button"
+                title="Paste / send text"
+                onClick={() => setPasteOpen((value) => !value)}
+              >
+                <ClipboardPaste size={14} />
+              </button>
+              {protocol === "rdp" ? (
+                <button
+                  className="icon-button"
+                  type="button"
+                  title="Send Ctrl+Alt+Del"
+                  onClick={() => sendKeyCombo(KEYSYM.ctrl, KEYSYM.alt, KEYSYM.delete)}
+                >
+                  <KeyboardIcon size={14} />
+                </button>
+              ) : null}
+            </>
+          ) : null}
           <span className={`session-state state-${stateClass}`}>
             {state === "connecting" || state === "waiting" ? <RefreshCw size={12} className="spin" /> : null}
             {state}
@@ -207,6 +289,43 @@ export function GuacamoleDisplay({
           ) : null}
         </div>
       </div>
+
+      {pasteOpen && live ? (
+        <form className="session-paste-bar" onSubmit={submitPaste}>
+          <textarea
+            autoFocus
+            value={pasteValue}
+            onChange={(event) => setPasteValue(event.target.value)}
+            placeholder="Paste or type text to send to the session…"
+            rows={2}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                submitPaste(event);
+              }
+              if (event.key === "Escape") {
+                setPasteOpen(false);
+              }
+            }}
+          />
+          <div className="session-paste-actions">
+            <button className="primary-button" type="submit" disabled={!pasteValue}>
+              <Send size={14} /> Send
+            </button>
+            <button
+              className="icon-button"
+              type="button"
+              title="Close"
+              onClick={() => {
+                setPasteOpen(false);
+                setPasteValue("");
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </form>
+      ) : null}
+
       {error ? <div className="session-error">{error}</div> : null}
       <div className="guac-display" ref={displayRef} />
     </section>

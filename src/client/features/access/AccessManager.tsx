@@ -650,6 +650,7 @@ export function AccessManager({
                   <GuacamoleDisplay
                     websocketPath={tab.session.websocketPath}
                     displayName={tab.title}
+                    protocol={tab.protocol}
                     sessionHistoryId={tab.id}
                     onConnected={markSessionConnected}
                     onFailed={markSessionFailed}
