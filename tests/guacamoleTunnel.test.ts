@@ -108,15 +108,16 @@ describe("wireGuacamoleTunnel (server-driven handshake)", () => {
     // 1. Server initiated the handshake with the correct protocol.
     expect(received.select).toEqual(["select", "ssh"]);
 
-    // 2. Server answered `args` with `connect`, echoing the version and
-    //    injecting the vault credentials + resolved host/port.
-    expect(received.connect).toEqual(["connect", "VERSION_1_5_0", "10.0.0.5", "22", "admin", "secret"]);
+    // 2. Server answered `args` with `connect`, negotiating the version down
+    //    to 1.1.0 and injecting the vault credentials + resolved host/port.
+    expect(received.connect).toEqual(["connect", "VERSION_1_1_0", "10.0.0.5", "22", "admin", "secret"]);
 
-    // 3. The render stream (ready + sync) reached the browser WebSocket.
+    // 3. The connection id (empty-opcode tunnel instruction) and the render
+    //    stream (sync) reached the browser WebSocket.
     for (let i = 0; i < 50 && !ws.receivedText().includes("sync"); i += 1) {
       await wait(10);
     }
-    expect(ws.receivedText()).toContain("ready");
+    expect(ws.receivedText()).toContain("$node-test"); // connection id relayed to the tunnel
     expect(ws.receivedText()).toContain("sync");
 
     // 4. Post-handshake client input is relayed through to guacd.

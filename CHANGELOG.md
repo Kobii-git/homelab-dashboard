@@ -6,6 +6,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.7] - 2026-06-04
+
+### Fixed
+- **SSH/RDP still timed out after 0.2.6.** Aligned the server-driven handshake with the reference `guacamole-lite` implementation:
+  - **Negotiate the protocol version down to 1.1.0** instead of echoing guacd's offered `VERSION_1_5_0` (the proxy only fully implements the 1.1.0 handshake), and send the `timezone` instruction for 1.1.0.
+  - On `ready`, relay guacd's connection id to the browser as the **empty-opcode tunnel instruction** `guacamole-common-js` expects, and consume `ready` rather than forwarding it.
+  - Forward render bytes that share guacd's `ready` TCP segment; declare audio mimetypes in the handshake.
+  - **Surface guacd's real error text** to the browser (so a failed target connection shows the actual reason instead of a generic timeout), and log each handshake stage to the container log for diagnosis.
+
+---
+
 ## [0.2.6] - 2026-06-04
 
 ### Fixed

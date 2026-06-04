@@ -216,20 +216,45 @@ export function rewriteConnectInstruction(
 }
 
 /**
- * Build the value to send for a single `connect` argument during the
- * server-driven guacd handshake. Version-negotiation pseudo-arguments
- * (e.g. "VERSION_1_5_0") are echoed back unchanged so guacd knows which
- * protocol version we support; everything else is resolved from the
- * session config (host, port, vault credentials, display options).
+ * Parse the first complete Guacamole instruction from the start of `str`.
+ * Returns the opcode, its arguments, and the character index immediately
+ * after the trailing `;`, or null if `str` does not yet contain a complete
+ * instruction. Only used for the (ASCII) handshake phase.
  */
-function connectValueForArg(config: GuacamoleSessionConfig, argName: string): string {
-  if (argName.startsWith("VERSION_")) {
-    return argName;
+function parseFirstInstruction(str: string): { opcode: string; args: string[]; end: number } | null {
+  const parts: string[] = [];
+  let i = 0;
+
+  while (i < str.length) {
+    const dot = str.indexOf(".", i);
+    if (dot === -1) {
+      return null;
+    }
+    const length = Number(str.slice(i, dot));
+    if (!Number.isFinite(length) || length < 0) {
+      return null;
+    }
+    const valueStart = dot + 1;
+    const valueEnd = valueStart + length;
+    if (str.length < valueEnd + 1) {
+      return null;
+    }
+    parts.push(str.slice(valueStart, valueEnd));
+    const terminator = str[valueEnd];
+    i = valueEnd + 1;
+    if (terminator === ";") {
+      const [opcode, ...args] = parts;
+      return { opcode, args, end: i };
+    }
+    if (terminator !== ",") {
+      return null;
+    }
   }
-  return valueForArgument(config, argName);
+
+  return null;
 }
 
-const HANDSHAKE_TIMEOUT_MS = 15_000;
+const HANDSHAKE_TIMEOUT_MS = 20_000;
 
 /**
  * Bridge a browser WebSocket (guacamole-common-js) to a guacd TCP socket.
@@ -239,32 +264,39 @@ const HANDSHAKE_TIMEOUT_MS = 15_000;
  * the full handshake with guacd, then relay the rendered session both ways:
  *
  *   server -> guacd : select,<protocol>
- *   guacd  -> server: args,<version>,<param>,...
- *   server -> guacd : size / audio / video / image
+ *   guacd  -> server: args,VERSION_x,<param>,...
+ *   server -> guacd : size / audio / video / image / timezone
  *   server -> guacd : connect,<value per param>   (vault creds injected here)
- *   guacd  -> server: ready,<id>                  (then render stream)
+ *   guacd  -> server: ready,<id>                  (then the render stream)
  *
- * Only the initial `args` instruction from guacd is parsed; everything after
- * the handshake is forwarded as raw bytes in both directions to avoid the
- * byte/char framing pitfalls of re-encoding the high-volume render stream.
+ * The protocol version is negotiated down to 1.1.0 (the highest this proxy
+ * fully implements — matching the reference guacamole-lite behaviour), and on
+ * `ready` the connection id is relayed to the browser as the empty-opcode
+ * tunnel instruction guacamole-common-js expects. Only the ASCII handshake is
+ * parsed; the render stream is relayed as raw bytes in both directions.
  */
 export function wireGuacamoleTunnel(
   ws: WebSocket,
   config: GuacamoleSessionConfig,
   options: { host: string; port: number }
 ): void {
+  const tag = `[guac ${config.protocol} ${config.host}:${config.port}]`;
+  const log = (message: string) => console.log(`${tag} ${message}`);
+  const logError = (message: string) => console.error(`${tag} ${message}`);
+
   const guacd = net.createConnection({ host: options.host, port: options.port });
   guacd.setNoDelay(true);
 
-  let guacdConnected = false;
-  let handshakeDone = false;
+  let open = false; // true once guacd has sent `ready`
   let closed = false;
+  let preBuffer = Buffer.alloc(0); // accumulates guacd handshake bytes
   const pendingClientMessages: Buffer[] = [];
 
   const wsOpen = () => ws.readyState === ws.OPEN;
 
   const handshakeTimer = setTimeout(() => {
-    if (!handshakeDone) {
+    if (!open) {
+      logError("handshake timed out (no `ready` from guacd)");
       if (wsOpen()) {
         ws.send(encodeInstruction("error", "guacd handshake timed out", "519"));
       }
@@ -291,41 +323,83 @@ export function wireGuacamoleTunnel(
   };
 
   const sendHandshakeReply = (argNames: string[]) => {
-    // Declare what the proxy will relay. Audio/video are disabled (empty);
-    // images cover what the browser display can render.
+    // Negotiate the protocol version down to what we fully support (1.1.0).
+    let protocolVersion = "1_0_0";
+    for (const name of argNames) {
+      if (name.startsWith("VERSION_")) {
+        const offered = name.slice("VERSION_".length);
+        protocolVersion = offered === "1_0_0" ? "1_0_0" : "1_1_0";
+        break;
+      }
+    }
+
     guacd.write(encodeInstruction("size", 1024, 768, 96));
-    guacd.write(encodeInstruction("audio"));
+    guacd.write(encodeInstruction("audio", "audio/L8", "audio/L16"));
     guacd.write(encodeInstruction("video"));
     guacd.write(encodeInstruction("image", "image/png", "image/jpeg", "image/webp"));
+    if (protocolVersion === "1_1_0") {
+      guacd.write(encodeInstruction("timezone"));
+    }
 
-    const values = argNames.map((name) => connectValueForArg(config, name));
+    const values = argNames.map((name) =>
+      name.startsWith("VERSION_") ? `VERSION_${protocolVersion}` : valueForArgument(config, name)
+    );
     guacd.write(encodeInstruction("connect", ...values));
-
-    handshakeDone = true;
-    clearTimeout(handshakeTimer);
-    flushPendingClientMessages();
+    log(`handshake reply sent (negotiated VERSION_${protocolVersion}, ${argNames.length} params)`);
   };
 
-  // Parses only the pre-`ready` handshake traffic from guacd. Once the `args`
-  // instruction is seen we send the reply and switch to raw passthrough.
-  const handshakeParser = new InstructionParser((instruction) => {
-    if (handshakeDone) {
-      return;
-    }
-    if (instruction.opcode === "args") {
-      sendHandshakeReply(instruction.args);
-      return;
-    }
-    if (instruction.opcode === "error") {
-      if (wsOpen()) {
-        ws.send(encodeInstruction("error", ...instruction.args));
+  const handleHandshakeData = (chunk: Buffer) => {
+    preBuffer = Buffer.concat([preBuffer, chunk]);
+    const text = preBuffer.toString("utf8"); // handshake traffic is ASCII
+    let consumed = 0;
+
+    for (;;) {
+      const parsed = parseFirstInstruction(text.slice(consumed));
+      if (!parsed) {
+        break;
       }
-      closeBoth();
+      consumed += parsed.end;
+
+      if (parsed.opcode === "args") {
+        log(`received args (${parsed.args.length} params, offered ${parsed.args[0] ?? "?"})`);
+        sendHandshakeReply(parsed.args);
+      } else if (parsed.opcode === "error") {
+        logError(`guacd error during handshake: ${parsed.args.join(" ")}`);
+        if (wsOpen()) {
+          ws.send(encodeInstruction("error", ...parsed.args));
+        }
+        closeBoth();
+        return;
+      } else if (parsed.opcode === "ready") {
+        const connectionId = parsed.args[0] ?? "";
+        log(`ready (${connectionId}) — relaying session`);
+        open = true;
+        clearTimeout(handshakeTimer);
+        // guacamole-common-js expects the connection id as the empty-opcode
+        // tunnel instruction before the render stream.
+        if (wsOpen()) {
+          ws.send(encodeInstruction("", connectionId));
+        }
+        flushPendingClientMessages();
+        // Forward any render bytes that arrived in the same TCP segment.
+        const consumedBytes = Buffer.byteLength(text.slice(0, consumed), "utf8");
+        const remainder = preBuffer.subarray(consumedBytes);
+        if (remainder.length > 0 && wsOpen()) {
+          ws.send(remainder);
+        }
+        preBuffer = Buffer.alloc(0);
+        return;
+      }
+      // Any other pre-ready opcode (e.g. nop) is ignored.
     }
-  });
+
+    // Retain unconsumed bytes for the next chunk.
+    const consumedBytes = Buffer.byteLength(text.slice(0, consumed), "utf8");
+    preBuffer = preBuffer.subarray(consumedBytes);
+  };
 
   guacd.once("connect", () => {
-    guacdConnected = true;
+    log("connected to guacd; selecting protocol");
     guacd.write(encodeInstruction("select", config.protocol));
   });
 
@@ -333,16 +407,13 @@ export function wireGuacamoleTunnel(
     if (closed) {
       return;
     }
-    if (handshakeDone) {
+    if (open) {
       if (wsOpen()) {
         ws.send(chunk);
       }
       return;
     }
-    // Pre-handshake guacd output is ASCII (args/error); parse to drive the
-    // handshake. guacd does not stream render data before we send `connect`,
-    // so there is nothing to lose to the parser's internal buffer here.
-    handshakeParser.push(chunk.toString("utf8"));
+    handleHandshakeData(chunk);
   });
 
   ws.on("message", (message) => {
@@ -350,7 +421,7 @@ export function wireGuacamoleTunnel(
       return;
     }
     const buffer = rawDataToBuffer(message);
-    if (!guacdConnected || !handshakeDone) {
+    if (!open) {
       pendingClientMessages.push(buffer);
       return;
     }
@@ -358,13 +429,19 @@ export function wireGuacamoleTunnel(
   });
 
   guacd.once("error", (error) => {
+    logError(`guacd socket error: ${error.message}`);
     if (wsOpen()) {
       ws.send(encodeInstruction("error", error.message, "519"));
     }
     closeBoth();
   });
 
-  guacd.once("close", closeBoth);
+  guacd.once("close", () => {
+    if (!closed) {
+      log(`guacd connection closed${open ? "" : " before session was ready"}`);
+    }
+    closeBoth();
+  });
   ws.once("close", closeBoth);
   ws.once("error", closeBoth);
 }
