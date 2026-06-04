@@ -2,7 +2,7 @@
 
 A private, self-hosted command centre for your homelab. Launch SSH/RDP sessions in the browser, monitor service health, manage an encrypted credential vault, and get alerted when things break.
 
-![Version](https://img.shields.io/badge/version-0.2.10-2dd4bf)
+![Version](https://img.shields.io/badge/version-0.2.11-2dd4bf)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -16,6 +16,9 @@ A private, self-hosted command centre for your homelab. Launch SSH/RDP sessions 
 - **Alerts** — webhook/email channels with rules, cooldowns, and delivery history
 - **Inventory** — full CRUD for resources, connections, checks, and credentials
 - **Command palette** — global search across everything (Ctrl K or `/`)
+
+> **New here?** See [HANDOVER.md](HANDOVER.md) for the full architecture, the
+> Guacamole tunnel gotchas, and how everything fits together.
 
 ---
 
@@ -168,13 +171,13 @@ docker compose -f docker-compose.build.yml up -d --build
 
 Releases follow [Semantic Versioning](https://semver.org). See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
-Current: **v0.2.10**
+Current: **v0.2.11**
 
 ### Verify your running build
 
 | Where | What to look for |
 |---|---|
-| **Sidebar** (bottom) | `v0.2.10 · abc1234` — click for GitHub release notes |
+| **Sidebar** (bottom) | `v0.2.11 · abc1234` — click for GitHub release notes |
 | **Login screen** | Same badge under the Unlock button |
 | **`/status` page** | Version line under the title |
 | **API** | `curl -s http://localhost:4173/api/version` |

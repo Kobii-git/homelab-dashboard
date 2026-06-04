@@ -6,6 +6,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.11] - 2026-06-04
+
+### Added
+- **HANDOVER.md** — a full handover document: architecture, deployment, the
+  Guacamole tunnel gotchas (the four bugs that made SSH/RDP "never work"), auth
+  & secrets, testing, the release process, known limitations, and next steps.
+  Linked from the README.
+
+---
+
 ## [0.2.10] - 2026-06-04
 
 ### Added
