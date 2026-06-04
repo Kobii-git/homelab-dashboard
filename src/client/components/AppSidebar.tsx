@@ -79,10 +79,10 @@ export function AppSidebar({
 
         {!compact ? (
           <div className="sidebar-stats" aria-label="Summary">
-            <span>{openIncidents} incidents</span>
-            <span>{failingChecks} failing</span>
-            <span>{liveSessionCount} live</span>
-            <span>{vaultCount} vault</span>
+            <span className="sidebar-stat">{openIncidents} incidents</span>
+            <span className="sidebar-stat">{failingChecks} failing</span>
+            <span className="sidebar-stat">{liveSessionCount} live</span>
+            <span className="sidebar-stat">{vaultCount} vault</span>
           </div>
         ) : null}
 

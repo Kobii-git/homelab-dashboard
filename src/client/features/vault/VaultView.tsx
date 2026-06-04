@@ -1,6 +1,6 @@
 import { AlertTriangle, Clipboard, Eye, EyeOff, FolderPlus, KeyRound, Plus, Save, Search, Shield, Tag, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { EmptyPanel, MetricCard } from "../../components/Primitives";
+import { EmptyPanel, MetricCard, PageHeader } from "../../components/Primitives";
 import type { CredentialDto } from "../../lib/api";
 import { apiSend, emptyToNull } from "../../lib/api";
 import { FormErrorBanner, runFormAction, runFormSubmit } from "../../lib/forms";
@@ -162,12 +162,10 @@ export function VaultView({
 
   return (
     <main className="view-shell vault-shell">
-      <header className="view-header">
-        <div>
-          <h2>Vault</h2>
-          <span>{data.credentials.length} credentials · {data.audit.length} audit events</span>
-        </div>
-        <div className="header-actions">
+      <PageHeader
+        title="Vault"
+        subtitle={`${data.credentials.length} credentials · ${data.audit.length} audit events`}
+        actions={
           <button
             className={`icon-text-button ${showNewCredential ? "is-active" : ""}`}
             type="button"
@@ -176,8 +174,8 @@ export function VaultView({
             <Plus size={16} />
             Add credential
           </button>
-        </div>
-      </header>
+        }
+      />
 
       <FormErrorBanner message={actionError} />
 
@@ -370,15 +368,22 @@ export function VaultView({
 
       <section className="table-panel">
         <h3>Audit Log</h3>
-        <div className="timeline-list">
+        <div className="audit-table">
+          <div className="audit-table-head">
+            <span>Time</span>
+            <span>Action</span>
+            <span>Summary</span>
+          </div>
           {data.audit.slice(0, 30).map((event) => (
-            <div className="timeline-row" key={event.id}>
+            <div className="audit-table-row" key={event.id}>
               <span>{formatDateTime(event.createdAt)}</span>
               <strong>{event.action}</strong>
-              <p>{event.summary}</p>
+              <p title={event.summary}>{event.summary}</p>
             </div>
           ))}
-          {data.audit.length === 0 ? <p className="muted-copy">No vault audit events yet.</p> : null}
+          {data.audit.length === 0 ? (
+            <EmptyPanel compact icon={<Shield size={18} />} title="No audit events" body="Vault activity will be logged here." />
+          ) : null}
         </div>
       </section>
     </main>

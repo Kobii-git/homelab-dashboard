@@ -13,6 +13,7 @@ import {
 import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { AppSidebar, settingsNavItem } from "./components/AppSidebar";
+import { InlineSpinner } from "./components/Primitives";
 import { CommandPalette } from "./components/CommandPalette";
 import { BuildBadge } from "./components/BuildBadge";
 import { DetailDrawer, type DrawerState } from "./components/DetailDrawer";
@@ -112,8 +113,8 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
         </label>
         {error ? <p className="form-error">{error}</p> : null}
         <button className="primary-button" type="submit" disabled={submitting}>
-          <KeyRound size={16} />
-          Unlock
+          {submitting ? <InlineSpinner size={16} /> : <KeyRound size={16} />}
+          {submitting ? "Unlocking…" : "Unlock"}
         </button>
         <BuildBadge className="login-build-badge" />
       </form>
@@ -609,7 +610,7 @@ export function App() {
       <div className="content-shell">
         <div className={`workspace-scroll ${view === "remote" ? "access-workspace" : ""}`}>
           {error ? <div className="app-error">{error}</div> : null}
-          {loading ? <div className="loading-strip"><RefreshCw className="spin" size={12} />Refreshing</div> : null}
+          {loading ? <div className="loading-strip"><InlineSpinner size={12} /> Syncing</div> : null}
           {view === "dashboard" ? (
             <DashboardConsole
               data={data}

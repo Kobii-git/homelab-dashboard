@@ -24,7 +24,7 @@ import type { ConnectionDto, DashboardWidgetDto } from "../../lib/api";
 import type { DashboardResource } from "../../../shared/types";
 import { ProtocolIcon } from "../access/accessUtils";
 import { WidgetSettings } from "../../components/WidgetSettings";
-import { EmptyPanel, MetricCard, StatusBadge } from "../../components/Primitives";
+import { EmptyPanel, MetricCard, PageHeader, StatusBadge } from "../../components/Primitives";
 import { dashboardResources, formatDateTime, statusFor, summarizeResourceStatus } from "../../lib/format";
 import type { V2Data } from "../types";
 
@@ -141,7 +141,7 @@ function WidgetCard({ title, children, widget }: { title: string; children: Reac
       <div className="widget-header">
         <h3>{title}</h3>
       </div>
-      {children}
+      <div className="widget-body">{children}</div>
     </section>
   );
 }
@@ -255,7 +255,9 @@ export function DashboardConsole({
                   </span>
                 </button>
               ))}
-              {openIncidents.length === 0 ? <p className="muted-copy">No active incidents.</p> : null}
+              {openIncidents.length === 0 ? (
+                <EmptyPanel compact icon={<Activity size={18} />} title="No active incidents" body="Open incidents will appear here." />
+              ) : null}
             </div>
           </WidgetCard>
         );
@@ -280,7 +282,9 @@ export function DashboardConsole({
                   <StatusBadge status={statusFor(resource)} />
                 </button>
               ))}
-              {favoriteResources.length === 0 ? <p className="muted-copy">Mark resources as favorites to pin them here.</p> : null}
+              {favoriteResources.length === 0 ? (
+                <EmptyPanel compact icon={<Star size={18} />} title="No favorites" body="Mark resources as favorites to pin them here." />
+              ) : null}
             </div>
           </WidgetCard>
         );
@@ -297,7 +301,9 @@ export function DashboardConsole({
                   </span>
                 </div>
               ))}
-              {failingChecks.length === 0 ? <p className="muted-copy">No failing checks.</p> : null}
+              {failingChecks.length === 0 ? (
+                <EmptyPanel compact icon={<Activity size={18} />} title="All checks passing" body="No failing checks right now." />
+              ) : null}
             </div>
           </WidgetCard>
         );
@@ -314,7 +320,9 @@ export function DashboardConsole({
                   </span>
                 </div>
               ))}
-              {data.sessionHistory.length === 0 ? <p className="muted-copy">No remote sessions yet.</p> : null}
+              {data.sessionHistory.length === 0 ? (
+                <EmptyPanel compact icon={<TerminalSquare size={18} />} title="No sessions yet" body="Remote sessions will show up here." />
+              ) : null}
             </div>
           </WidgetCard>
         );
@@ -336,7 +344,9 @@ export function DashboardConsole({
                   <small>{neverUsedCredentials.length} have never launched a session</small>
                 </span>
               </div>
-              {data.credentials.length === 0 ? <p className="muted-copy">Add credentials in Vault or Inventory to protect remote access details.</p> : null}
+              {data.credentials.length === 0 ? (
+                <EmptyPanel compact icon={<KeyRound size={18} />} title="No credentials" body="Add credentials in Vault or Inventory." />
+              ) : null}
             </div>
           </WidgetCard>
         );
@@ -353,7 +363,9 @@ export function DashboardConsole({
                   </span>
                 </div>
               ))}
-              {pinnedNotes.length === 0 ? <p className="muted-copy">No pinned notes.</p> : null}
+              {pinnedNotes.length === 0 ? (
+                <EmptyPanel compact icon={<Clock3 size={18} />} title="No pinned notes" body="Pin notes from Inventory to surface them here." />
+              ) : null}
             </div>
           </WidgetCard>
         );
@@ -364,26 +376,26 @@ export function DashboardConsole({
 
   return (
     <main className="view-shell pro-dashboard">
-      <header className="view-header">
-        <div>
-          <h2>Pro Console</h2>
-          <span>{resources.length} resources · {data.incidents.length} incidents · {data.sessionHistory.length} sessions</span>
-        </div>
-        <div className="header-actions">
-          <label className="search-box">
-            <Search size={16} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter resources" />
-          </label>
-          <button className="icon-text-button" type="button" onClick={onRefresh}>
-            <Activity size={16} />
-            Refresh
-          </button>
-          <button className="icon-text-button" type="button" onClick={onOpenInventory}>
-            <Plus size={16} />
-            Add
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        title="Dashboard"
+        subtitle={`${resources.length} resources · ${data.incidents.length} incidents · ${data.sessionHistory.length} sessions`}
+        actions={
+          <>
+            <label className="search-box">
+              <Search size={16} />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter resources" />
+            </label>
+            <button className="icon-text-button" type="button" onClick={onRefresh}>
+              <Activity size={16} />
+              Refresh
+            </button>
+            <button className="icon-text-button" type="button" onClick={onOpenInventory}>
+              <Plus size={16} />
+              Add
+            </button>
+          </>
+        }
+      />
 
       <WidgetSettings widgets={data.widgets} onRefresh={onRefresh} />
 

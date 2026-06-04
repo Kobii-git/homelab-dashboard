@@ -1,7 +1,7 @@
 import { Activity, ChevronDown, ChevronUp, Database, KeyRound, Pencil, Pin, Plus, Save, Server, Tag, TerminalSquare, Trash2, Wifi, X, Zap } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { CONNECTION_TYPES, HEALTH_CHECK_TYPES, RESOURCE_KINDS } from "../../../shared/types";
-import { MetricCard, StatusBadge } from "../../components/Primitives";
+import { MetricCard, PageHeader, StatusBadge } from "../../components/Primitives";
 import { TagPicker, readTagIds } from "../../components/TagPicker";
 import { BackupRestoreView } from "./BackupRestoreView";
 import type { HealthCheckDto, NoteDto } from "../../lib/api";
@@ -286,12 +286,10 @@ export function InventoryView({
 
   return (
     <main className="view-shell">
-      <header className="view-header">
-        <div>
-          <h2>Inventory</h2>
-          <span>{data.resources.length} resources · {data.connections.length} connections · {data.checks.length} checks</span>
-        </div>
-      </header>
+      <PageHeader
+        title="Inventory"
+        subtitle={`${data.resources.length} resources · ${data.connections.length} connections · ${data.checks.length} checks`}
+      />
 
       <FormErrorBanner message={actionError} />
 

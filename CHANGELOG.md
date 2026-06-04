@@ -6,6 +6,31 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.15] - 2026-06-03
+
+### Changed
+- **Design system (Phase 1)** — formal spacing, typography, radii, semantic color,
+  elevation, motion, and focus-ring tokens in `app.css` with full light/dark parity.
+- **Component primitives (Phase 2)** — shared `PageHeader`, `SectionHeader`, buttons,
+  fields, status pills, `MetricCard`, `EmptyPanel`, `TabChip`, and `InlineSpinner`.
+- **App shell (Phase 3)** — sidebar nav at 40px with accent active bar, tabular stat
+  chips, unified page headers across every view, consistent page padding rhythm.
+- **Dashboard** — renamed "Pro Console" to **Dashboard**; widget cards with top-aligned
+  titles, compact empty states, equal-height service status metric grid.
+- **Remote** — single-row fixed-height session tab chips (truncate + hover close);
+  toolbar and device rail density aligned to design tokens.
+- **Vault** — audit log as aligned three-column table; detail panel rhythm tightened.
+- **Inventory** — dense two-column forms; tab pills and field styling unified.
+- **Monitoring / Alerts / Settings** — `PageHeader`, metric rows, segmented filters,
+  and form layouts brought in line with the design system.
+- **Login / Setup** — polished card spacing, focus rings, loading spinner on submit.
+- **Interaction (Phase 5)** — secondary vs primary button distinction, hover/active
+  transitions, toast styling, syncing indicator, reduced-motion honored.
+- **Accessibility (Phase 6)** — `:focus-visible` rings on all interactive elements,
+  semantic status colors app-wide, responsive reflow for forms/tabs/sidebar.
+
+---
+
 ## [0.2.14] - 2026-06-05
 
 ### Fixed

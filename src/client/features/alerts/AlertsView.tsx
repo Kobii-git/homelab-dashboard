@@ -1,6 +1,6 @@
 import { Bell, Mail, Play, Plus, RadioTower, RefreshCw, RotateCcw, Trash2, Webhook, Zap } from "lucide-react";
 import { FormEvent, useState } from "react";
-import { MetricCard } from "../../components/Primitives";
+import { MetricCard, PageHeader } from "../../components/Primitives";
 import type { AlertChannelDto, AlertDeliveryDto, AlertRuleDto } from "../../lib/api";
 import { apiSend, emptyToNull } from "../../lib/api";
 import { FormErrorBanner, runFormAction } from "../../lib/forms";
@@ -96,16 +96,16 @@ export function AlertsView({ data, onRefresh }: { data: V2Data; onRefresh: () =>
 
   return (
     <main className="view-shell">
-      <header className="view-header">
-        <div>
-          <h2>Alerts</h2>
-          <span>{data.alertChannels.length} channels · {data.alertRules.length} rules · {failedCount} failed</span>
-        </div>
-        <button className="icon-text-button" type="button" onClick={onRefresh}>
-          <RefreshCw size={16} />
-          Refresh
-        </button>
-      </header>
+      <PageHeader
+        title="Alerts"
+        subtitle={`${data.alertChannels.length} channels · ${data.alertRules.length} rules · ${failedCount} failed`}
+        actions={
+          <button className="icon-text-button" type="button" onClick={onRefresh}>
+            <RefreshCw size={16} />
+            Refresh
+          </button>
+        }
+      />
 
       <FormErrorBanner message={actionError} />
 
@@ -117,7 +117,7 @@ export function AlertsView({ data, onRefresh }: { data: V2Data; onRefresh: () =>
       </section>
 
       <section className="split-grid">
-        <form className="tool-panel" onSubmit={createChannel}>
+        <form className="tool-panel tool-panel-dense" onSubmit={createChannel}>
           <h3>New channel</h3>
           <label>
             Name
@@ -169,7 +169,7 @@ export function AlertsView({ data, onRefresh }: { data: V2Data; onRefresh: () =>
           </button>
         </form>
 
-        <form className="tool-panel" onSubmit={createRule}>
+        <form className="tool-panel tool-panel-dense" onSubmit={createRule}>
           <h3>New rule</h3>
           <label>Name<input name="name" required /></label>
           <label>

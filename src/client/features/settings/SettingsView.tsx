@@ -1,5 +1,6 @@
 import { Download, ExternalLink, Gauge, RefreshCw, Save, User } from "lucide-react";
 import { FormEvent, useState } from "react";
+import { PageHeader } from "../../components/Primitives";
 import { FormErrorBanner, runFormAction } from "../../lib/forms";
 import { apiSend } from "../../lib/api";
 
@@ -36,12 +37,7 @@ export function SettingsView({
 
   return (
     <main className="view-shell">
-      <header className="view-header">
-        <div>
-          <h2>Settings</h2>
-          <span>Account, data, and system tools</span>
-        </div>
-      </header>
+      <PageHeader title="Settings" subtitle="Account, data, and system tools" />
 
       <FormErrorBanner message={actionError} />
 
@@ -53,7 +49,7 @@ export function SettingsView({
             <span><span>Auth</span><strong>{authSource === "env" ? "Server env (ADMIN_PASSWORD)" : "Database"}</strong></span>
           </div>
           {authSource === "database" ? (
-            <form className="inline-form" onSubmit={changePassword}>
+            <form className="inline-form settings-form-grid" onSubmit={changePassword}>
               <label>Current password<input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required /></label>
               <label>New password<input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8} /></label>
               <label>Confirm new password<input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required minLength={8} /></label>

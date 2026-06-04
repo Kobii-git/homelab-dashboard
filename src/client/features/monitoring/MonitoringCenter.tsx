@@ -19,7 +19,7 @@ import {
   WifiOff
 } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
-import { EmptyPanel, MetricCard, StatusBadge } from "../../components/Primitives";
+import { EmptyPanel, MetricCard, PageHeader, StatusBadge } from "../../components/Primitives";
 import type { HealthCheckDto, HealthResultDto, IncidentDto } from "../../lib/api";
 import { apiSend, emptyToNull } from "../../lib/api";
 import { FormErrorBanner, runFormAction } from "../../lib/forms";
@@ -192,22 +192,22 @@ export function MonitoringCenter({
 
   return (
     <main className="view-shell">
-      <header className="view-header">
-        <div>
-          <h2>Monitoring</h2>
-          <span>{data.checks.length} checks · {openIncidents.length} active incidents · {disabledCount} paused</span>
-        </div>
-        <div className="header-actions">
-          <label className="search-box">
-            <Search size={16} />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filter checks" />
-          </label>
-          <button className="icon-text-button" type="button" onClick={onRefresh}>
-            <RefreshCw size={16} />
-            Refresh
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        title="Monitoring"
+        subtitle={`${data.checks.length} checks · ${openIncidents.length} active incidents · ${disabledCount} paused`}
+        actions={
+          <>
+            <label className="search-box">
+              <Search size={16} />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filter checks" />
+            </label>
+            <button className="icon-text-button" type="button" onClick={onRefresh}>
+              <RefreshCw size={16} />
+              Refresh
+            </button>
+          </>
+        }
+      />
 
       <FormErrorBanner message={actionError} />
 
@@ -280,7 +280,9 @@ export function MonitoringCenter({
                 </button>
               </div>
             ))}
-            {openIncidents.length === 0 ? <p className="muted-copy">No active incidents.</p> : null}
+            {openIncidents.length === 0 ? (
+              <EmptyPanel compact icon={<CheckCircle2 size={18} />} title="No active incidents" body="All clear — incidents will appear here when checks fail." />
+            ) : null}
           </div>
         </section>
 

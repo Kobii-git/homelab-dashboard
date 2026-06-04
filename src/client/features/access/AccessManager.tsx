@@ -14,6 +14,7 @@ import {
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { CONNECTION_TYPES, RESOURCE_KINDS } from "../../../shared/types";
 import { GuacamoleDisplay } from "../../components/GuacamoleDisplay";
+import { TabChip, PageHeader } from "../../components/Primitives";
 import { AccessDeviceRail } from "./AccessDeviceRail";
 import { ProtocolIcon, sessionStatusLabel, type Protocol } from "./accessUtils";
 import type { RemoteTab } from "./useRemoteSessions";
@@ -361,21 +362,21 @@ export function AccessManager({
   return (
     <main className={`access-page access-page-remote ${fullscreen ? "is-fullscreen" : ""}`}>
       {!fullscreen ? (
-        <header className="access-header access-header-compact">
-          <div>
-            <h2>Remote</h2>
-            <span>SSH and RDP sessions in one place</span>
-          </div>
-          <div className="access-header-actions">
-            {guacdReachable === null ? null : (
-              <span className={`guacd-status ${guacdReachable ? "online" : "offline"}`}>
-                {guacdReachable ? <Wifi size={14} /> : <WifiOff size={14} />}
-                guacd {guacdReachable ? "online" : "offline"}
-              </span>
-            )}
-            <button
-              className={`icon-text-button ${showHistory ? "is-active" : ""}`}
-              type="button"
+        <PageHeader
+          className="access-header access-header-compact"
+          title="Remote"
+          subtitle="SSH and RDP sessions in one place"
+          actions={
+            <>
+              {guacdReachable === null ? null : (
+                <span className={`guacd-status ${guacdReachable ? "online" : "offline"}`}>
+                  {guacdReachable ? <Wifi size={14} /> : <WifiOff size={14} />}
+                  guacd {guacdReachable ? "online" : "offline"}
+                </span>
+              )}
+              <button
+                className={`icon-text-button ${showHistory ? "is-active" : ""}`}
+                type="button"
               onClick={() => setShowHistory((value) => !value)}
             >
               <History size={15} />
@@ -393,8 +394,9 @@ export function AccessManager({
               <Plus size={15} />
               Add device
             </button>
-          </div>
-        </header>
+            </>
+          }
+        />
       ) : null}
 
       {!fullscreen && guacdReachable === false ? (
@@ -531,24 +533,16 @@ export function AccessManager({
           <div className="access-session-tabs">
             <div className="access-session-tab-strip">
               {tabs.map((tab) => (
-                <button
-                  className={`access-session-tab ${tab.id === activeTab?.id ? "active" : ""} state-${tab.state}`}
-                  type="button"
+                <TabChip
                   key={tab.id}
-                  onClick={() => setActiveTabId(tab.id)}
-                >
-                  <ProtocolIcon protocol={tab.protocol} size={14} />
-                  <span className={`session-state-dot dot-${tab.state === "connected" ? "connected" : tab.state === "failed" ? "error" : "connecting"}`} />
-                  <span className="access-session-tab-title">{tab.title}</span>
-                  <small>{sessionStatusLabel(tab.state)}</small>
-                  <X
-                    size={14}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void closeTab(tab);
-                    }}
-                  />
-                </button>
+                  active={tab.id === activeTab?.id}
+                  failed={tab.state === "failed"}
+                  icon={<ProtocolIcon protocol={tab.protocol} size={14} />}
+                  title={tab.title}
+                  statusLabel={sessionStatusLabel(tab.state)}
+                  onSelect={() => setActiveTabId(tab.id)}
+                  onClose={() => void closeTab(tab)}
+                />
               ))}
             </div>
             {tabs.some((tab) => tab.state === "failed" || tab.state === "closed") ? (
