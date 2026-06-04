@@ -158,6 +158,11 @@ export function valueForArgument(config: GuacamoleSessionConfig, argument: strin
   const username = credential.username ?? config.usernameHint ?? "";
   const password = credential.password ?? "";
 
+  // RDP with no password can't complete Network Level Authentication, so use
+  // legacy RDP security to present the Windows login screen instead of failing.
+  // When a password is supplied, "any" lets guacd negotiate NLA/TLS as needed.
+  const rdpSecurity = config.protocol === "rdp" && !password ? "rdp" : "any";
+
   const common: Record<string, string> = {
     hostname: config.host,
     port: String(config.port),
@@ -165,7 +170,7 @@ export function valueForArgument(config: GuacamoleSessionConfig, argument: strin
     password,
     domain: credential.domain ?? "",
     "ignore-cert": "true",
-    security: "any",
+    security: rdpSecurity,
     "server-layout": "en-us-qwerty",
     "color-depth": "32",
     "resize-method": "display-update",

@@ -1697,7 +1697,28 @@ label {
   align-items: center;
   gap: 8px;
   min-height: 42px;
+}
+
+.access-session-tab-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.icon-text-button.subtle {
+  flex: 0 0 auto;
+  border-color: var(--line);
+  color: var(--muted);
+  background: transparent;
+}
+
+.icon-text-button.subtle:hover {
+  color: var(--text);
+  background: var(--panel-strong);
 }
 
 .access-session-tab {
@@ -1770,6 +1791,14 @@ label {
 .access-session-empty {
   height: 100%;
   min-height: 320px;
+}
+
+.access-session-empty-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .access-history-panel {
@@ -2196,14 +2225,75 @@ label {
 }
 
 .guac-display {
+  position: relative;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
-}
-
-.guac-display > div {
   width: 100%;
   height: 100%;
+  overflow: hidden;
+  background: #000;
+  cursor: default;
+  outline: none;
+}
+
+/* The Guacamole display element sizes itself to the (scaled) remote canvas;
+   don't force it to 100% or the canvas distorts. */
+.guac-display > div {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.session-toolbar-title,
+.session-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.session-toolbar-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-state-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: var(--muted);
+}
+
+.session-state-dot.dot-connected {
+  background: var(--green);
+  box-shadow: 0 0 0 3px rgba(39, 215, 155, 0.18);
+}
+
+.session-state-dot.dot-connecting {
+  background: var(--amber);
+  box-shadow: 0 0 0 3px rgba(240, 184, 74, 0.18);
+}
+
+.session-state-dot.dot-error {
+  background: var(--red);
+  box-shadow: 0 0 0 3px rgba(242, 100, 100, 0.18);
+}
+
+.session-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  text-transform: capitalize;
+}
+
+.session-state.state-connected {
+  color: #8af0c1;
+}
+
+.session-state.state-error {
+  color: #ff9d9d;
 }
 
 .session-error,

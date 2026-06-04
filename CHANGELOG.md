@@ -6,6 +6,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.9] - 2026-06-04
+
+### Added
+- **Remote session display now fills the panel and resizes dynamically.** The SSH terminal / RDP desktop scales to fit the session area and asks the remote to match the container size on launch and on window resize (no more fixed 1024×768 with wasted black space). Mouse input is scale-corrected via `sendMouseState(state, true)`.
+- **Cleaner session toolbar** with a live status dot (connecting/connected/error), a connecting spinner, and an in-display fullscreen toggle.
+- **"Clear ended" action** on the session tab bar to dismiss all failed/closed tabs at once.
+
+### Changed
+- **Relaunching a device replaces its stale tab** instead of stacking duplicate "Failed" tabs.
+- **RDP with no password** now uses legacy RDP security to present the Windows login screen instead of failing NLA outright; with a password, guacd negotiates NLA/TLS as before.
+- **Failed sessions** show a credential hint for auth errors plus an **Edit device** shortcut to fix the attached credential.
+
+---
+
 ## [0.2.8] - 2026-06-04
 
 ### Fixed

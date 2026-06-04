@@ -1,9 +1,7 @@
 import {
-  Activity,
   History,
   LayoutGrid,
   List,
-  Maximize2,
   Pencil,
   Play,
   Plus,
@@ -194,7 +192,12 @@ export function AccessManager({
       fullscreen: false,
       startedAt: new Date().toISOString()
     };
-    setTabs((current) => [...current, pendingTab]);
+    // Replace any stale (failed / launching / closed) tab for this device so
+    // repeated launches don't pile up duplicate tabs.
+    setTabs((current) => [
+      ...current.filter((tab) => !(tab.protocol === protocol && tab.connectionId === connection.id)),
+      pendingTab
+    ]);
     setActiveTabId(tempId);
 
     try {
@@ -246,6 +249,26 @@ export function AccessManager({
     if (!session.connectionId) return;
     const connection = data.connections.find((item) => item.id === session.connectionId);
     if (connection) await launch(connection);
+  }
+
+  function toggleFullscreen(tabId: string) {
+    setTabs((current) =>
+      current.map((tab) => (tab.id === tabId ? { ...tab, fullscreen: !tab.fullscreen } : tab))
+    );
+  }
+
+  function closeEndedTabs() {
+    const ended = protocolTabs.filter((tab) => tab.state === "failed" || tab.state === "closed");
+    if (ended.length === 0) return;
+    const endedIds = new Set(ended.map((tab) => tab.id));
+    setTabs((current) => {
+      const next = current.filter((tab) => !endedIds.has(tab.id));
+      if (activeTabId && endedIds.has(activeTabId)) {
+        const nextForProtocol = next.filter((tab) => tab.protocol === protocol);
+        setActiveTabId(nextForProtocol[0]?.id ?? null);
+      }
+      return next;
+    });
   }
 
   async function addDevice(event: FormEvent<HTMLFormElement>) {
@@ -589,39 +612,30 @@ export function AccessManager({
       {fullscreen || view === "sessions" ? (
         <section className="access-sessions-panel">
           <div className="access-session-tabs">
-            {protocolTabs.map((tab) => (
-              <button
-                className={`access-session-tab ${tab.id === activeTab?.id ? "active" : ""} state-${tab.state}`}
-                type="button"
-                key={tab.id}
-                onClick={() => setActiveTabId(tab.id)}
-              >
-                <ProtocolIcon protocol={tab.protocol} size={14} />
-                <span className="access-session-tab-title">{tab.title}</span>
-                <small>{sessionStatusLabel(tab.state)}</small>
-                <X
-                  size={14}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void closeTab(tab);
-                  }}
-                />
-              </button>
-            ))}
-            {activeTab ? (
-              <button
-                className="icon-button"
-                type="button"
-                title="Toggle fullscreen"
-                onClick={() =>
-                  setTabs((current) =>
-                    current.map((tab) =>
-                      tab.id === activeTab.id ? { ...tab, fullscreen: !tab.fullscreen } : tab
-                    )
-                  )
-                }
-              >
-                <Maximize2 size={15} />
+            <div className="access-session-tab-strip">
+              {protocolTabs.map((tab) => (
+                <button
+                  className={`access-session-tab ${tab.id === activeTab?.id ? "active" : ""} state-${tab.state}`}
+                  type="button"
+                  key={tab.id}
+                  onClick={() => setActiveTabId(tab.id)}
+                >
+                  <span className={`session-state-dot dot-${tab.state === "connected" ? "connected" : tab.state === "failed" ? "error" : "connecting"}`} />
+                  <span className="access-session-tab-title">{tab.title}</span>
+                  <small>{sessionStatusLabel(tab.state)}</small>
+                  <X
+                    size={14}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void closeTab(tab);
+                    }}
+                  />
+                </button>
+              ))}
+            </div>
+            {protocolTabs.some((tab) => tab.state === "failed" || tab.state === "closed") ? (
+              <button className="icon-text-button subtle" type="button" onClick={closeEndedTabs} title="Close failed and closed tabs">
+                <X size={14} /> Clear ended
               </button>
             ) : null}
           </div>
@@ -639,6 +653,7 @@ export function AccessManager({
                     sessionHistoryId={tab.id}
                     onConnected={markSessionConnected}
                     onFailed={markSessionFailed}
+                    onToggleFullscreen={() => toggleFullscreen(tab.id)}
                   />
                 </div>
               ) : null
@@ -648,17 +663,40 @@ export function AccessManager({
                 <ProtocolIcon protocol={activeTab.protocol} size={42} />
                 <h2>{sessionStatusLabel(activeTab.state)}</h2>
                 <p>{activeTab.error ?? `Started ${formatDateTime(activeTab.startedAt)}`}</p>
+                {activeTab.state === "failed" && /auth|credential|password|login/i.test(activeTab.error ?? "") ? (
+                  <p className="muted-copy">
+                    {protocol === "rdp"
+                      ? "RDP usually needs a credential. Attach one to this device, or check the username and password."
+                      : "Check the credential attached to this device, or set a username/password."}
+                  </p>
+                ) : null}
                 {activeTab.state === "failed" ? (
-                  <button
-                    className="icon-text-button"
-                    type="button"
-                    onClick={() => {
-                      const connection = data.connections.find((item) => item.id === activeTab.connectionId);
-                      if (connection) void launch(connection);
-                    }}
-                  >
-                    <RotateCcw size={15} /> Retry connection
-                  </button>
+                  <div className="access-session-empty-actions">
+                    <button
+                      className="icon-text-button"
+                      type="button"
+                      onClick={() => {
+                        const connection = data.connections.find((item) => item.id === activeTab.connectionId);
+                        if (connection) void launch(connection);
+                      }}
+                    >
+                      <RotateCcw size={15} /> Retry connection
+                    </button>
+                    <button
+                      className="icon-text-button subtle"
+                      type="button"
+                      onClick={() => {
+                        const connection = data.connections.find((item) => item.id === activeTab.connectionId);
+                        if (connection) {
+                          setEditingConnection(connection);
+                          setShowQuickAdd(false);
+                          setView("devices");
+                        }
+                      }}
+                    >
+                      <Pencil size={15} /> Edit device
+                    </button>
+                  </div>
                 ) : null}
               </div>
             ) : !activeTab ? (
