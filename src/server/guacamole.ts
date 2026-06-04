@@ -294,12 +294,24 @@ export function wireGuacamoleTunnel(
 
   const wsOpen = () => ws.readyState === ws.OPEN;
 
+  // The Guacamole protocol is text. guacamole-common-js's WebSocketTunnel only
+  // parses TEXT frames — a binary frame is silently ignored, leaving the client
+  // stuck on "Waiting". guacd output is valid UTF-8, so always send text frames.
+  const sendToClient = (data: string | Buffer) => {
+    if (!wsOpen()) {
+      return;
+    }
+    if (typeof data === "string") {
+      ws.send(data);
+    } else {
+      ws.send(data, { binary: false });
+    }
+  };
+
   const handshakeTimer = setTimeout(() => {
     if (!open) {
       logError("handshake timed out (no `ready` from guacd)");
-      if (wsOpen()) {
-        ws.send(encodeInstruction("error", "guacd handshake timed out", "519"));
-      }
+      sendToClient(encodeInstruction("error", "guacd handshake timed out", "519"));
       closeBoth();
     }
   }, HANDSHAKE_TIMEOUT_MS);
@@ -365,9 +377,7 @@ export function wireGuacamoleTunnel(
         sendHandshakeReply(parsed.args);
       } else if (parsed.opcode === "error") {
         logError(`guacd error during handshake: ${parsed.args.join(" ")}`);
-        if (wsOpen()) {
-          ws.send(encodeInstruction("error", ...parsed.args));
-        }
+        sendToClient(encodeInstruction("error", ...parsed.args));
         closeBoth();
         return;
       } else if (parsed.opcode === "ready") {
@@ -377,15 +387,13 @@ export function wireGuacamoleTunnel(
         clearTimeout(handshakeTimer);
         // guacamole-common-js expects the connection id as the empty-opcode
         // tunnel instruction before the render stream.
-        if (wsOpen()) {
-          ws.send(encodeInstruction("", connectionId));
-        }
+        sendToClient(encodeInstruction("", connectionId));
         flushPendingClientMessages();
         // Forward any render bytes that arrived in the same TCP segment.
         const consumedBytes = Buffer.byteLength(text.slice(0, consumed), "utf8");
         const remainder = preBuffer.subarray(consumedBytes);
-        if (remainder.length > 0 && wsOpen()) {
-          ws.send(remainder);
+        if (remainder.length > 0) {
+          sendToClient(remainder);
         }
         preBuffer = Buffer.alloc(0);
         return;
@@ -408,9 +416,7 @@ export function wireGuacamoleTunnel(
       return;
     }
     if (open) {
-      if (wsOpen()) {
-        ws.send(chunk);
-      }
+      sendToClient(chunk);
       return;
     }
     handleHandshakeData(chunk);
@@ -430,9 +436,7 @@ export function wireGuacamoleTunnel(
 
   guacd.once("error", (error) => {
     logError(`guacd socket error: ${error.message}`);
-    if (wsOpen()) {
-      ws.send(encodeInstruction("error", error.message, "519"));
-    }
+    sendToClient(encodeInstruction("error", error.message, "519"));
     closeBoth();
   });
 

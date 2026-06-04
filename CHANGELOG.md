@@ -6,6 +6,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.8] - 2026-06-04
+
+### Fixed
+- **SSH/RDP showed a blank screen stuck on "Waiting" (no terminal, no login prompt).** The guacd handshake was completing (guacd reported the session as established), but the render stream was being forwarded to the browser as **binary** WebSocket frames. `guacamole-common-js` only parses **text** frames and silently discards binary ones, so nothing ever rendered — including guacd's interactive SSH login prompt and the RDP login screen. All guacd→browser traffic is now sent as text frames. SSH connections without a stored credential now correctly show guacd's interactive `Login as:` / `Password:` prompt; RDP shows the remote login screen.
+
+---
+
 ## [0.2.7] - 2026-06-04
 
 ### Fixed

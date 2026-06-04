@@ -12,8 +12,13 @@ class FakeWebSocket extends EventEmitter {
   readyState = 1;
   readonly OPEN = 1;
   readonly sent: Buffer[] = [];
+  readonly frames: Array<{ text: boolean }> = [];
 
-  send(data: unknown): void {
+  // Mirrors `ws`: a string is a text frame; a Buffer is a binary frame unless
+  // `{ binary: false }` is passed. guacamole-common-js only parses text frames.
+  send(data: unknown, options?: { binary?: boolean }): void {
+    const text = typeof data === "string" || options?.binary === false;
+    this.frames.push({ text });
     this.sent.push(Buffer.isBuffer(data) ? data : Buffer.from(String(data)));
   }
 
@@ -119,6 +124,11 @@ describe("wireGuacamoleTunnel (server-driven handshake)", () => {
     }
     expect(ws.receivedText()).toContain("$node-test"); // connection id relayed to the tunnel
     expect(ws.receivedText()).toContain("sync");
+
+    // Every frame sent to the browser MUST be a text frame — guacamole-common-js
+    // silently drops binary frames, which leaves the client stuck on "Waiting".
+    expect(ws.frames.length).toBeGreaterThan(0);
+    expect(ws.frames.every((frame) => frame.text)).toBe(true);
 
     // 4. Post-handshake client input is relayed through to guacd.
     ws.emit("message", Buffer.from(encodeInstruction("key", "65", "1")));
