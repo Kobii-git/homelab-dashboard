@@ -369,13 +369,16 @@ button:disabled {
 .workspace-scroll.access-workspace {
   display: flex;
   flex-direction: column;
-  overflow: auto;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
 }
 
 .access-workspace .access-page {
   flex: 1;
   min-height: 0;
-  padding: 18px 22px;
+  padding: 14px 18px;
+  overflow: hidden;
 }
 
 .command-button {
@@ -1270,38 +1273,262 @@ label {
 .access-page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   min-height: 0;
-  padding: 22px;
+  height: 100%;
+  padding: 14px 18px;
+  overflow: hidden;
 }
 
 .access-page:not(.is-fullscreen) {
-  flex: 1 0 auto;
-  overflow: visible;
+  flex: 1;
 }
 
 .access-page.is-fullscreen {
-  height: 100%;
-  overflow: hidden;
   padding: 0;
   gap: 0;
 }
 
-.access-page.is-fullscreen .access-sessions-panel {
-  height: 100%;
-}
-
-.access-page.is-fullscreen .access-session-tabs {
-  margin: 0;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--line-soft);
-  background: #101415;
-}
-
-.access-page.is-fullscreen .access-session-stage {
+.access-page.is-fullscreen .access-console {
   flex: 1;
   min-height: 0;
   border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.access-page.is-fullscreen .access-rail-scroll {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.access-header-compact h2 {
+  margin: 0 0 2px;
+  font-size: 18px;
+}
+
+.access-console {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0d1112;
+}
+
+.access-rail-column {
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  min-width: 280px;
+  border-right: 1px solid var(--line-soft);
+  background: #101415;
+  min-height: 0;
+}
+
+.access-rail-column.is-collapsed {
+  width: 52px;
+  min-width: 52px;
+}
+
+.access-rail-search {
+  margin: 10px;
+  flex: 0 0 auto;
+}
+
+.access-device-rail {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.access-device-rail.is-collapsed {
+  align-items: center;
+  padding: 8px 0;
+}
+
+.access-rail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  flex: 0 0 auto;
+}
+
+.access-rail-head strong {
+  flex: 1;
+  font-size: 13px;
+}
+
+.access-rail-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.access-rail-collapse {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.access-rail-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px;
+}
+
+.access-rail-empty {
+  margin: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.access-rail-group {
+  margin-bottom: 8px;
+}
+
+.access-rail-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: transparent;
+}
+
+.access-rail-group-head small {
+  margin-left: auto;
+  opacity: 0.7;
+}
+
+.access-rail-group-items {
+  display: grid;
+  gap: 4px;
+}
+
+.access-rail-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+
+.access-rail-item.active {
+  border-color: rgba(45, 212, 191, 0.45);
+  background: rgba(45, 212, 191, 0.08);
+}
+
+.access-rail-item-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+}
+
+.access-rail-item-main:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.access-rail-item-copy {
+  display: grid;
+  min-width: 0;
+}
+
+.access-rail-item-copy strong,
+.access-rail-item-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-rail-item-copy strong {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.access-rail-item-copy small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.access-rail-item .access-device-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+}
+
+.access-rail-edit,
+.access-rail-connect {
+  width: 28px;
+  height: 28px;
+  opacity: 0;
+}
+
+.access-rail-item:hover .access-rail-edit,
+.access-rail-item:hover .access-rail-connect {
+  opacity: 1;
+}
+
+.access-rail-spin {
+  color: var(--accent);
+}
+
+.access-rail-collapsed-list {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+}
+
+.access-rail-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #101415;
+  color: inherit;
+}
+
+.access-rail-icon-btn.active {
+  border-color: rgba(45, 212, 191, 0.5);
+  background: rgba(45, 212, 191, 0.1);
+}
+
+.access-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .access-header {
@@ -1573,6 +1800,28 @@ label {
   min-height: 0;
 }
 
+.access-page-remote .access-session-tabs {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  background: #101415;
+}
+
+.access-page-remote .access-session-stage {
+  flex: 1;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.access-page-remote .access-session-pane,
+.access-page-remote .access-session-pane .session-stage,
+.access-page-remote .access-session-stage .session-stage {
+  height: 100%;
+  min-height: 0;
+}
+
 .access-toolbar {
   display: grid;
   gap: 10px;
@@ -1811,13 +2060,15 @@ label {
   gap: 10px;
   padding-top: 4px;
   border-top: 1px solid var(--line-soft);
+  max-height: 240px;
+  overflow: hidden;
 }
 
 .access-history-list {
   display: grid;
   gap: 8px;
-  max-height: 220px;
-  overflow: auto;
+  max-height: 180px;
+  overflow-y: auto;
 }
 
 .access-history-row {
@@ -2212,7 +2463,8 @@ label {
 .session-stage {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  height: calc(100vh - 36px);
+  height: 100%;
+  min-height: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;

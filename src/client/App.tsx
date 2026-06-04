@@ -8,8 +8,7 @@ import {
   Plus,
   RefreshCw,
   Server,
-  Shield,
-  TerminalSquare
+  Shield
 } from "lucide-react";
 import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 
@@ -54,8 +53,7 @@ import type { DashboardGroupDto, DashboardResource } from "../shared/types";
 
 const navItems: Array<{ id: AppView; label: string; icon: ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <Home size={18} /> },
-  { id: "ssh", label: "SSH", icon: <TerminalSquare size={18} /> },
-  { id: "rdp", label: "Remote Desktop", icon: <Monitor size={18} /> },
+  { id: "remote", label: "Remote", icon: <Monitor size={18} /> },
   { id: "monitoring", label: "Monitoring", icon: <Activity size={18} /> },
   { id: "vault", label: "Vault", icon: <KeyRound size={18} /> },
   { id: "alerts", label: "Alerts", icon: <Bell size={18} /> },
@@ -456,7 +454,7 @@ export function App() {
 
   function openConnection(connection: ConnectionDto) {
     setLaunchConnectionId(connection.id);
-    setView(connection.type);
+    setView("remote");
   }
 
   function inspectResource(resource: DashboardResource) {
@@ -532,7 +530,7 @@ export function App() {
         const connection = data.connections.find((item) => item.id === connectionId);
         if (connection) {
           setLaunchConnectionId(connection.id);
-          setView(connection.type);
+          setView("remote");
         }
       }
       return;
@@ -609,7 +607,7 @@ export function App() {
         vaultCount={data.credentials.length}
       />
       <div className="content-shell">
-        <div className={`workspace-scroll ${view === "ssh" || view === "rdp" ? "access-workspace" : ""}`}>
+        <div className={`workspace-scroll ${view === "remote" ? "access-workspace" : ""}`}>
           {error ? <div className="app-error">{error}</div> : null}
           {loading ? <div className="loading-strip"><RefreshCw className="spin" size={12} />Refreshing</div> : null}
           {view === "dashboard" ? (
@@ -629,28 +627,14 @@ export function App() {
               onConnect={openConnection}
             />
           ) : null}
-          {view === "ssh" ? (
+          {view === "remote" ? (
             <AccessManager
-              protocol="ssh"
               data={data}
               onRefresh={loadData}
               tabs={remoteSessions.tabs}
               setTabs={remoteSessions.setTabs}
-              activeTabId={remoteSessions.getActiveTabId("ssh")}
-              setActiveTabId={(tabId) => remoteSessions.setActiveTabId("ssh", tabId)}
-              launchConnectionId={launchConnectionId}
-              onLaunchHandled={() => setLaunchConnectionId(null)}
-            />
-          ) : null}
-          {view === "rdp" ? (
-            <AccessManager
-              protocol="rdp"
-              data={data}
-              onRefresh={loadData}
-              tabs={remoteSessions.tabs}
-              setTabs={remoteSessions.setTabs}
-              activeTabId={remoteSessions.getActiveTabId("rdp")}
-              setActiveTabId={(tabId) => remoteSessions.setActiveTabId("rdp", tabId)}
+              activeTabId={remoteSessions.activeTabId}
+              setActiveTabId={remoteSessions.setActiveTabId}
               launchConnectionId={launchConnectionId}
               onLaunchHandled={() => setLaunchConnectionId(null)}
             />

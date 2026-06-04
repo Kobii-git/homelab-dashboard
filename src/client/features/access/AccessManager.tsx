@@ -1,45 +1,30 @@
 import {
+  ChevronDown,
   History,
-  LayoutGrid,
-  List,
   Pencil,
-  Play,
   Plus,
   RefreshCw,
   RotateCcw,
   Save,
   Search,
-  Server,
   Wifi,
   WifiOff,
   X
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { RESOURCE_KINDS } from "../../../shared/types";
-import { EmptyPanel, MetricCard } from "../../components/Primitives";
+import { CONNECTION_TYPES, RESOURCE_KINDS } from "../../../shared/types";
 import { GuacamoleDisplay } from "../../components/GuacamoleDisplay";
-import { AccessDeviceCard, type ReachabilityState } from "./AccessDeviceCard";
-import { AccessDeviceList } from "./AccessDeviceList";
+import { AccessDeviceRail } from "./AccessDeviceRail";
 import { ProtocolIcon, sessionStatusLabel, type Protocol } from "./accessUtils";
 import type { RemoteTab } from "./useRemoteSessions";
 import type { ConnectionDto, SessionHistoryDto, SessionLaunchDto } from "../../lib/api";
 import { apiGet, apiSend, emptyToNull } from "../../lib/api";
-import { FormErrorBanner, runFormAction, runFormSubmit } from "../../lib/forms";
+import { FormErrorBanner, runFormSubmit } from "../../lib/forms";
 import { formatDateTime } from "../../lib/format";
-import { pushToast } from "../../lib/toast";
-import type { V2Data } from "../types";
 import type { DashboardResource } from "../../../shared/types";
-
-type AccessView = "devices" | "sessions";
-type DeviceLayout = "grid" | "list";
-
-const PAGE_COPY: Record<Protocol, { title: string; subtitle: string }> = {
-  ssh: { title: "SSH", subtitle: "Terminal access to servers and VMs" },
-  rdp: { title: "Remote Desktop", subtitle: "Browser RDP sessions for Windows VMs" }
-};
+import type { V2Data } from "../types";
 
 export function AccessManager({
-  protocol,
   data,
   onRefresh,
   tabs,
@@ -49,7 +34,6 @@ export function AccessManager({
   launchConnectionId,
   onLaunchHandled
 }: {
-  protocol: Protocol;
   data: V2Data;
   onRefresh: () => Promise<void>;
   tabs: RemoteTab[];
@@ -59,56 +43,47 @@ export function AccessManager({
   launchConnectionId?: string | null;
   onLaunchHandled?: () => void;
 }) {
-  const [view, setView] = useState<AccessView>("devices");
-  const [deviceLayout, setDeviceLayout] = useState<DeviceLayout>("list");
   const [query, setQuery] = useState("");
-  const [folderFilter, setFolderFilter] = useState<string | null>(null);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [editingConnection, setEditingConnection] = useState<ConnectionDto | null>(null);
   const [launchingId, setLaunchingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [guacdReachable, setGuacdReachable] = useState<boolean | null>(null);
-  const [reachability, setReachability] = useState<Record<string, ReachabilityState>>({});
+  const [railCollapsed, setRailCollapsed] = useState(false);
   const launchHandledRef = useRef<string | null>(null);
 
-  const copy = PAGE_COPY[protocol];
   const folders = data.folders.filter((folder) => folder.type === "connection" || folder.type === "mixed");
-  const protocolConnections = useMemo(
-    () => data.connections.filter((connection) => connection.type === protocol),
-    [data.connections, protocol]
-  );
+  const allConnections = useMemo(() => data.connections, [data.connections]);
 
   const filteredDevices = useMemo(
     () =>
-      protocolConnections
+      allConnections
         .filter((connection) => {
-          const haystack = `${connection.name ?? ""} ${connection.resource?.name ?? ""} ${connection.host} ${connection.usernameHint ?? ""}`;
-          const matchesQuery = haystack.toLowerCase().includes(query.toLowerCase());
-          const matchesFolder = !folderFilter || connection.folderId === folderFilter;
-          return matchesQuery && matchesFolder;
+          const haystack = `${connection.name ?? ""} ${connection.resource?.name ?? ""} ${connection.host} ${connection.type} ${connection.usernameHint ?? ""}`;
+          return haystack.toLowerCase().includes(query.toLowerCase());
         })
         .sort((a, b) => {
+          const typeOrder = a.type.localeCompare(b.type);
+          if (typeOrder !== 0) return typeOrder;
           const fav = Number(Boolean(b.favorite)) - Number(Boolean(a.favorite));
           if (fav !== 0) return fav;
           const aTime = a.lastLaunchedAt ? new Date(a.lastLaunchedAt).getTime() : 0;
           const bTime = b.lastLaunchedAt ? new Date(b.lastLaunchedAt).getTime() : 0;
           return bTime - aTime;
         }),
-    [protocolConnections, query, folderFilter]
+    [allConnections, query]
   );
 
-  const protocolTabs = useMemo(() => tabs.filter((tab) => tab.protocol === protocol), [tabs, protocol]);
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0] ?? null;
+  const activeConnectionId = activeTab?.connectionId ?? null;
+  const fullscreen = activeTab?.fullscreen ?? false;
 
-  const activeTab =
-    protocolTabs.find((tab) => tab.id === activeTabId) ?? protocolTabs[0] ?? null;
-
-  const protocolHistory = useMemo(
-    () => data.sessionHistory.filter((session) => session.protocol === protocol),
-    [data.sessionHistory, protocol]
+  const sessionHistory = useMemo(
+    () => [...data.sessionHistory].sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt))),
+    [data.sessionHistory]
   );
-
-  const liveSessionCount = protocolTabs.filter((tab) => tab.state !== "closed").length;
 
   useEffect(() => {
     void refreshGuacd();
@@ -126,15 +101,14 @@ export function AccessManager({
     }
 
     const connection = data.connections.find((item) => item.id === launchConnectionId);
-    if (!connection || connection.type !== protocol) {
+    if (!connection) {
       return;
     }
 
     launchHandledRef.current = launchConnectionId;
     onLaunchHandled?.();
-    setView("sessions");
-    void launch(connection);
-  }, [launchConnectionId, protocol, data.connections]);
+    void selectConnection(connection);
+  }, [launchConnectionId, data.connections]);
 
   async function refreshGuacd() {
     try {
@@ -145,8 +119,12 @@ export function AccessManager({
     }
   }
 
+  function connectionTitle(connection: ConnectionDto): string {
+    return connection.name ?? connection.resource?.name ?? connection.host;
+  }
+
   async function launch(connection: ConnectionDto) {
-    if (connection.type !== protocol) return;
+    const protocol = connection.type as Protocol;
 
     let reachable = guacdReachable;
     if (reachable !== true) {
@@ -162,40 +140,40 @@ export function AccessManager({
 
     if (!reachable) {
       setActionError("guacd is offline — remote sessions cannot start until the tunnel service is reachable.");
-      setView("sessions");
       return;
     }
 
     const existing = tabs.find(
-      (tab) =>
-        tab.protocol === protocol &&
-        tab.connectionId === connection.id &&
-        tab.state === "connected" &&
-        tab.session
+      (tab) => tab.connectionId === connection.id && tab.state === "connected" && tab.session
     );
     if (existing) {
-      setView("sessions");
       setActiveTabId(existing.id);
       return;
     }
 
+    const inFlight = tabs.find(
+      (tab) => tab.connectionId === connection.id && tab.state === "launching" && tab.session
+    );
+    if (inFlight) {
+      setActiveTabId(inFlight.id);
+      return;
+    }
+
     setLaunchingId(connection.id);
-    setView("sessions");
 
     const tempId = `pending-${connection.id}-${Date.now()}`;
     const pendingTab: RemoteTab = {
       id: tempId,
       connectionId: connection.id,
-      protocol: connection.type,
+      protocol,
       title: connectionTitle(connection),
       state: "launching",
       fullscreen: false,
       startedAt: new Date().toISOString()
     };
-    // Replace any stale (failed / launching / closed) tab for this device so
-    // repeated launches don't pile up duplicate tabs.
+
     setTabs((current) => [
-      ...current.filter((tab) => !(tab.protocol === protocol && tab.connectionId === connection.id)),
+      ...current.filter((tab) => tab.connectionId !== connection.id),
       pendingTab
     ]);
     setActiveTabId(tempId);
@@ -229,6 +207,18 @@ export function AccessManager({
     }
   }
 
+  function selectConnection(connection: ConnectionDto) {
+    const existing = tabs.find((tab) => tab.connectionId === connection.id);
+    if (existing) {
+      setActiveTabId(existing.id);
+      if (existing.state === "failed" || !existing.session) {
+        void launch(connection);
+      }
+      return;
+    }
+    void launch(connection);
+  }
+
   async function closeTab(tab: RemoteTab) {
     if (!tab.id.startsWith("pending-")) {
       await apiSend(`/api/sessions/history/${tab.id}`, "PATCH", {
@@ -238,8 +228,7 @@ export function AccessManager({
     }
     setTabs((current) => {
       const nextTabs = current.filter((item) => item.id !== tab.id);
-      const nextForProtocol = nextTabs.filter((item) => item.protocol === protocol);
-      setActiveTabId(nextForProtocol[0]?.id ?? null);
+      setActiveTabId(nextTabs[0]?.id ?? null);
       return nextTabs;
     });
     await onRefresh();
@@ -258,14 +247,14 @@ export function AccessManager({
   }
 
   function closeEndedTabs() {
-    const ended = protocolTabs.filter((tab) => tab.state === "failed" || tab.state === "closed");
-    if (ended.length === 0) return;
-    const endedIds = new Set(ended.map((tab) => tab.id));
+    const endedIds = new Set(
+      tabs.filter((tab) => tab.state === "failed" || tab.state === "closed").map((tab) => tab.id)
+    );
+    if (endedIds.size === 0) return;
     setTabs((current) => {
       const next = current.filter((tab) => !endedIds.has(tab.id));
       if (activeTabId && endedIds.has(activeTabId)) {
-        const nextForProtocol = next.filter((tab) => tab.protocol === protocol);
-        setActiveTabId(nextForProtocol[0]?.id ?? null);
+        setActiveTabId(next[0]?.id ?? null);
       }
       return next;
     });
@@ -273,6 +262,7 @@ export function AccessManager({
 
   async function addDevice(event: FormEvent<HTMLFormElement>) {
     await runFormSubmit(event, async (form) => {
+      const protocol = String(form.get("protocol") ?? "ssh") as Protocol;
       const name = String(form.get("name") ?? "").trim();
       const host = String(form.get("host") ?? "").trim();
       const port = Number(form.get("port") || (protocol === "ssh" ? 22 : 3389));
@@ -294,7 +284,7 @@ export function AccessManager({
         port,
         usernameHint: emptyToNull(form.get("usernameHint")),
         credentialId: emptyToNull(form.get("credentialId")),
-        folderId: emptyToNull(form.get("folderId")) ?? folderFilter,
+        folderId: emptyToNull(form.get("folderId")),
         favorite: true,
         notes: emptyToNull(form.get("notes"))
       });
@@ -308,7 +298,7 @@ export function AccessManager({
     if (!editingConnection) return;
     await runFormSubmit(event, async (form) => {
       const host = String(form.get("host") ?? "").trim();
-      const port = Number(form.get("port") || (protocol === "ssh" ? 22 : 3389));
+      const port = Number(form.get("port") || (editingConnection.type === "ssh" ? 22 : 3389));
       await apiSend(`/api/connections/${editingConnection.id}`, "PATCH", {
         name: emptyToNull(form.get("connectionName")),
         host,
@@ -329,72 +319,6 @@ export function AccessManager({
       setEditingConnection(null);
       await onRefresh();
     }, setActionError, setSubmitting, "Device updated");
-  }
-
-  function connectionMonitored(connection: ConnectionDto): boolean {
-    const target = `${connection.host}:${connection.port}`;
-    return data.checks.some(
-      (check) => check.resourceId === connection.resourceId && check.target === target && check.enabled
-    );
-  }
-
-  async function enableMonitoring(connection: ConnectionDto) {
-    const target = `${connection.host}:${connection.port}`;
-    const existing = data.checks.find(
-      (check) => check.resourceId === connection.resourceId && check.target === target
-    );
-    if (existing) {
-      if (!existing.enabled) {
-        await apiSend(`/api/health-checks/${existing.id}`, "PATCH", { enabled: true });
-        pushToast("Monitoring enabled");
-      } else {
-        pushToast("Already monitored");
-      }
-      await onRefresh();
-      return;
-    }
-    await runFormAction(async () => {
-      await apiSend("/api/health-checks", "POST", {
-        resourceId: connection.resourceId,
-        type: "tcp",
-        target,
-        intervalSeconds: 60,
-        timeoutMs: 3000,
-        failureThreshold: 2,
-        successThreshold: 1,
-        enabled: true
-      });
-      await onRefresh();
-    }, setActionError, setSubmitting, "Monitoring enabled");
-  }
-
-  async function testDevice(connection: ConnectionDto) {
-    setReachability((current) => ({ ...current, [connection.id]: { status: "testing" } }));
-    try {
-      const result = await apiSend<{ ok: boolean; latencyMs: number; error: string | null }>(
-        "/api/connections/test",
-        "POST",
-        { host: connection.host, port: connection.port, type: connection.type }
-      );
-      setReachability((current) => ({
-        ...current,
-        [connection.id]: result.ok
-          ? { status: "ok", latencyMs: result.latencyMs }
-          : { status: "fail", message: result.error ?? "Unreachable" }
-      }));
-    } catch (error) {
-      setReachability((current) => ({
-        ...current,
-        [connection.id]: {
-          status: "fail",
-          message: error instanceof Error ? error.message : "Test failed"
-        }
-      }));
-    }
-  }
-
-  function connectionTitle(connection: ConnectionDto): string {
-    return connection.name ?? connection.resource?.name ?? connection.host;
   }
 
   const markSessionConnected = useCallback(
@@ -434,20 +358,13 @@ export function AccessManager({
     [onRefresh, setTabs]
   );
 
-  const fullscreen = activeTab?.fullscreen ?? false;
-
-  const monitoredIds = useMemo(
-    () => new Set(protocolConnections.filter(connectionMonitored).map((c) => c.id)),
-    [protocolConnections, data.checks]
-  );
-
   return (
-    <main className={`access-page access-page-${protocol} ${fullscreen ? "is-fullscreen" : ""}`}>
+    <main className={`access-page access-page-remote ${fullscreen ? "is-fullscreen" : ""}`}>
       {!fullscreen ? (
-        <header className="access-header">
+        <header className="access-header access-header-compact">
           <div>
-            <h2>{copy.title}</h2>
-            <span>{copy.subtitle}</span>
+            <h2>Remote</h2>
+            <span>SSH and RDP sessions in one place</span>
           </div>
           <div className="access-header-actions">
             {guacdReachable === null ? null : (
@@ -456,6 +373,14 @@ export function AccessManager({
                 guacd {guacdReachable ? "online" : "offline"}
               </span>
             )}
+            <button
+              className={`icon-text-button ${showHistory ? "is-active" : ""}`}
+              type="button"
+              onClick={() => setShowHistory((value) => !value)}
+            >
+              <History size={15} />
+              History
+            </button>
             <button className="icon-text-button" type="button" onClick={() => void onRefresh()}>
               <RefreshCw size={15} />
               Sync
@@ -475,43 +400,8 @@ export function AccessManager({
       {!fullscreen && guacdReachable === false ? (
         <div className="access-guacd-banner">
           <WifiOff size={16} />
-          <span>guacd is offline. Start the guacd container before launching {protocol.toUpperCase()} sessions.</span>
+          <span>guacd is offline. Start the guacd container before launching remote sessions.</span>
         </div>
-      ) : null}
-
-      {!fullscreen ? (
-        <>
-          <section className="access-overview access-overview-compact">
-            <MetricCard icon={<ProtocolIcon protocol={protocol} size={18} />} label="Devices" value={protocolConnections.length} tone="accent" />
-            <MetricCard icon={<Play size={18} />} label="Live sessions" value={liveSessionCount} tone="online" />
-            <MetricCard icon={<History size={18} />} label="History" value={protocolHistory.length} />
-          </section>
-
-          <div className="access-view-tabs" role="tablist" aria-label={`${protocol.toUpperCase()} view`}>
-            <button
-              className={view === "devices" ? "active" : ""}
-              type="button"
-              role="tab"
-              aria-selected={view === "devices"}
-              onClick={() => setView("devices")}
-            >
-              <Server size={15} />
-              Devices
-              <span className="access-tab-count">{protocolConnections.length}</span>
-            </button>
-            <button
-              className={view === "sessions" ? "active" : ""}
-              type="button"
-              role="tab"
-              aria-selected={view === "sessions"}
-              onClick={() => setView("sessions")}
-            >
-              <ProtocolIcon protocol={protocol} size={15} />
-              Sessions
-              {liveSessionCount > 0 ? <span className="access-tab-count">{liveSessionCount}</span> : null}
-            </button>
-          </div>
-        </>
       ) : null}
 
       <FormErrorBanner message={actionError} />
@@ -519,30 +409,31 @@ export function AccessManager({
       {showQuickAdd && !fullscreen ? (
         <form className="access-quick-add" onSubmit={addDevice}>
           <div className="access-quick-add-head">
-            <ProtocolIcon protocol={protocol} size={18} />
-            <strong>Add {protocol.toUpperCase()} device</strong>
+            <strong>Add remote device</strong>
             <button className="icon-button" type="button" title="Close" onClick={() => setShowQuickAdd(false)}>
               <X size={15} />
             </button>
           </div>
           <div className="access-quick-add-grid">
-            <label>Name<input name="name" required placeholder={protocol === "ssh" ? "Ubuntu host" : "Windows VM"} /></label>
-            <label>Host<input name="host" required placeholder="192.168.1.20" /></label>
             <label>
-              Port
-              <input name="port" type="number" min="1" max="65535" placeholder={protocol === "ssh" ? "22" : "3389"} />
+              Protocol
+              <select name="protocol" defaultValue="ssh">
+                {CONNECTION_TYPES.map((type) => (
+                  <option key={type} value={type}>{type.toUpperCase()}</option>
+                ))}
+              </select>
             </label>
+            <label>Name<input name="name" required placeholder="Host name" /></label>
+            <label>Host<input name="host" required placeholder="192.168.1.20" /></label>
+            <label>Port<input name="port" type="number" min="1" max="65535" placeholder="22 / 3389" /></label>
             <label>
               Kind
               <select name="kind" defaultValue="server">
                 {RESOURCE_KINDS.map((kind) => <option key={kind} value={kind}>{kind}</option>)}
               </select>
             </label>
-            <label>Connection name<input name="connectionName" placeholder={`${protocol.toUpperCase()} session`} /></label>
-            <label>
-              Username hint
-              <input name="usernameHint" placeholder={protocol === "ssh" ? "root" : "DOMAIN\\admin"} />
-            </label>
+            <label>Connection name<input name="connectionName" placeholder="Optional display name" /></label>
+            <label>Username hint<input name="usernameHint" placeholder="root or DOMAIN\\admin" /></label>
             <label>
               Credential
               <select name="credentialId" defaultValue="">
@@ -552,13 +443,11 @@ export function AccessManager({
             </label>
             <label>
               Folder
-              <select name="folderId" defaultValue={folderFilter ?? ""}>
+              <select name="folderId" defaultValue="">
                 <option value="">Unfiled</option>
                 {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
               </select>
             </label>
-            <label>URL<input name="url" placeholder="Optional web console" /></label>
-            <label className="access-span-2">Description<textarea name="description" rows={2} /></label>
             <label className="access-span-2">Notes<textarea name="notes" rows={2} /></label>
           </div>
           <label className="checkbox-row">
@@ -600,7 +489,6 @@ export function AccessManager({
                 {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
               </select>
             </label>
-            <label className="access-span-2">Description<textarea name="description" rows={2} defaultValue={editingConnection.resource?.description ?? ""} /></label>
             <label className="access-span-2">Notes<textarea name="notes" rows={2} defaultValue={editingConnection.notes ?? ""} /></label>
           </div>
           <button className="primary-button" type="submit" disabled={submitting} style={{ maxWidth: 220 }}>
@@ -609,17 +497,47 @@ export function AccessManager({
         </form>
       ) : null}
 
-      {fullscreen || view === "sessions" ? (
-        <section className="access-sessions-panel">
+      <section className="access-console">
+        <div className={`access-rail-column ${railCollapsed ? "is-collapsed" : ""}`}>
+          {!fullscreen && !railCollapsed ? (
+            <label className="search-box access-rail-search">
+              <Search size={15} />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Filter devices"
+              />
+            </label>
+          ) : null}
+
+          <AccessDeviceRail
+            connections={filteredDevices}
+            folders={folders}
+            tabs={tabs}
+            activeConnectionId={activeConnectionId}
+            launchingId={launchingId}
+            connectDisabled={guacdReachable === false}
+            collapsed={railCollapsed}
+            onToggleCollapse={() => setRailCollapsed((value) => !value)}
+            onSelect={selectConnection}
+            onEdit={(connection) => {
+              setEditingConnection(connection);
+              setShowQuickAdd(false);
+            }}
+          />
+        </div>
+
+        <div className="access-main">
           <div className="access-session-tabs">
             <div className="access-session-tab-strip">
-              {protocolTabs.map((tab) => (
+              {tabs.map((tab) => (
                 <button
                   className={`access-session-tab ${tab.id === activeTab?.id ? "active" : ""} state-${tab.state}`}
                   type="button"
                   key={tab.id}
                   onClick={() => setActiveTabId(tab.id)}
                 >
+                  <ProtocolIcon protocol={tab.protocol} size={14} />
                   <span className={`session-state-dot dot-${tab.state === "connected" ? "connected" : tab.state === "failed" ? "error" : "connecting"}`} />
                   <span className="access-session-tab-title">{tab.title}</span>
                   <small>{sessionStatusLabel(tab.state)}</small>
@@ -633,7 +551,7 @@ export function AccessManager({
                 </button>
               ))}
             </div>
-            {protocolTabs.some((tab) => tab.state === "failed" || tab.state === "closed") ? (
+            {tabs.some((tab) => tab.state === "failed" || tab.state === "closed") ? (
               <button className="icon-text-button subtle" type="button" onClick={closeEndedTabs} title="Close failed and closed tabs">
                 <X size={14} /> Clear ended
               </button>
@@ -641,7 +559,7 @@ export function AccessManager({
           </div>
 
           <div className="access-session-stage">
-            {protocolTabs.map((tab) =>
+            {tabs.map((tab) =>
               tab.session ? (
                 <div
                   className={`access-session-pane ${tab.id === activeTab?.id ? "is-active" : ""}`}
@@ -664,13 +582,6 @@ export function AccessManager({
                 <ProtocolIcon protocol={activeTab.protocol} size={42} />
                 <h2>{sessionStatusLabel(activeTab.state)}</h2>
                 <p>{activeTab.error ?? `Started ${formatDateTime(activeTab.startedAt)}`}</p>
-                {activeTab.state === "failed" && /auth|credential|password|login/i.test(activeTab.error ?? "") ? (
-                  <p className="muted-copy">
-                    {protocol === "rdp"
-                      ? "RDP usually needs a credential. Attach one to this device, or check the username and password."
-                      : "Check the credential attached to this device, or set a username/password."}
-                  </p>
-                ) : null}
                 {activeTab.state === "failed" ? (
                   <div className="access-session-empty-actions">
                     <button
@@ -691,7 +602,6 @@ export function AccessManager({
                         if (connection) {
                           setEditingConnection(connection);
                           setShowQuickAdd(false);
-                          setView("devices");
                         }
                       }}
                     >
@@ -702,143 +612,52 @@ export function AccessManager({
               </div>
             ) : !activeTab ? (
               <div className="empty-state access-session-empty">
-                <ProtocolIcon protocol={protocol} size={42} />
-                <h2>No {protocol.toUpperCase()} session</h2>
-                <p>Pick a device from the Devices tab or reconnect from history below.</p>
-                <button className="icon-text-button" type="button" onClick={() => setView("devices")}>
-                  <Server size={15} /> Browse devices
-                </button>
+                <ProtocolIcon protocol="ssh" size={42} />
+                <h2>No active session</h2>
+                <p>Select a device on the left to connect.</p>
               </div>
             ) : null}
           </div>
+        </div>
+      </section>
 
-          {!fullscreen ? (
-            <section className="access-history-panel">
-              <div className="section-heading">
-                <h3><History size={16} /> {protocol.toUpperCase()} history</h3>
-                <span>{protocolHistory.length}</span>
-              </div>
-              {protocolHistory.length > 0 ? (
-                <div className="access-history-list">
-                  {protocolHistory.slice(0, 20).map((session) => (
-                    <div className="access-history-row" key={session.id}>
-                      <span className={`access-history-icon access-device-icon-${session.protocol}`}>
-                        <ProtocolIcon protocol={session.protocol} size={16} />
-                      </span>
-                      <span className="access-history-copy">
-                        <strong>{session.resourceName}</strong>
-                        <small>
-                          {session.connectionName ?? session.host}:{session.port}
-                          {" · "}{sessionStatusLabel(session.status)}
-                          {" · "}{formatDateTime(session.startedAt)}
-                          {session.hasCredential ? " · vault" : ""}
-                        </small>
-                      </span>
-                      <span className={`access-history-status status-${session.status}`}>{session.status}</span>
-                      {session.connectionId ? (
-                        <button className="icon-text-button" type="button" onClick={() => void relaunchFromHistory(session)}>
-                          <RotateCcw size={14} /> Reconnect
-                        </button>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="muted-copy">No {protocol.toUpperCase()} sessions recorded yet.</p>
-              )}
-            </section>
-          ) : null}
-        </section>
-      ) : (
-        <section className="access-devices-panel">
-          <div className="access-toolbar">
-            <label className="search-box access-search">
-              <Search size={15} />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={`Search ${filteredDevices.length} ${protocol.toUpperCase()} devices`}
-              />
-            </label>
-            <div className="access-toolbar-row">
-              <div className="folder-strip">
-                <span className={`folder-chip ${!folderFilter ? "active" : ""}`} onClick={() => setFolderFilter(null)}>All</span>
-                {folders.map((folder) => (
-                  <span
-                    key={folder.id}
-                    className={`folder-chip ${folderFilter === folder.id ? "active" : ""}`}
-                    onClick={() => setFolderFilter(folderFilter === folder.id ? null : folder.id)}
-                  >
-                    {folder.name}
-                  </span>
-                ))}
-              </div>
-              <div className="access-layout-toggle" role="group" aria-label="Device layout">
-                <button
-                  className={deviceLayout === "list" ? "active" : ""}
-                  type="button"
-                  title="List view"
-                  onClick={() => setDeviceLayout("list")}
-                >
-                  <List size={15} />
-                </button>
-                <button
-                  className={deviceLayout === "grid" ? "active" : ""}
-                  type="button"
-                  title="Grid view"
-                  onClick={() => setDeviceLayout("grid")}
-                >
-                  <LayoutGrid size={15} />
-                </button>
-              </div>
-            </div>
+      {showHistory && !fullscreen ? (
+        <section className="access-history-panel">
+          <div className="section-heading">
+            <h3><History size={16} /> Session history</h3>
+            <button className="icon-button" type="button" title="Close history" onClick={() => setShowHistory(false)}>
+              <ChevronDown size={15} />
+            </button>
           </div>
-
-          {filteredDevices.length > 0 ? (
-            deviceLayout === "list" ? (
-              <AccessDeviceList
-                connections={filteredDevices}
-                launchingId={launchingId}
-                reachability={reachability}
-                connectDisabled={guacdReachable === false}
-                monitoredIds={monitoredIds}
-                onConnect={(connection) => void launch(connection)}
-                onTest={(connection) => void testDevice(connection)}
-                onEdit={(connection) => { setEditingConnection(connection); setShowQuickAdd(false); }}
-                onMonitor={(connection) => void enableMonitoring(connection)}
-              />
-            ) : (
-              <div className="access-device-grid">
-                {filteredDevices.map((connection) => (
-                  <AccessDeviceCard
-                    key={connection.id}
-                    connection={connection}
-                    launching={launchingId === connection.id}
-                    reachability={reachability[connection.id] ?? { status: "idle" }}
-                    connectDisabled={guacdReachable === false}
-                    monitored={monitoredIds.has(connection.id)}
-                    onConnect={() => void launch(connection)}
-                    onTest={() => void testDevice(connection)}
-                    onEdit={() => { setEditingConnection(connection); setShowQuickAdd(false); }}
-                    onMonitor={() => void enableMonitoring(connection)}
-                  />
-                ))}
-              </div>
-            )
+          {sessionHistory.length > 0 ? (
+            <div className="access-history-list">
+              {sessionHistory.slice(0, 30).map((session) => (
+                <div className="access-history-row" key={session.id}>
+                  <span className={`access-history-icon access-device-icon-${session.protocol}`}>
+                    <ProtocolIcon protocol={session.protocol} size={16} />
+                  </span>
+                  <span className="access-history-copy">
+                    <strong>{session.resourceName}</strong>
+                    <small>
+                      {session.connectionName ?? session.host}:{session.port}
+                      {" · "}{sessionStatusLabel(session.status)}
+                      {" · "}{formatDateTime(session.startedAt)}
+                    </small>
+                  </span>
+                  <span className={`access-history-status status-${session.status}`}>{session.status}</span>
+                  {session.connectionId ? (
+                    <button className="icon-text-button" type="button" onClick={() => void relaunchFromHistory(session)}>
+                      <RotateCcw size={14} /> Reconnect
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
           ) : (
-            <EmptyPanel
-              icon={<ProtocolIcon protocol={protocol} size={36} />}
-              title={`No ${protocol.toUpperCase()} devices`}
-              body={`Add a ${protocol.toUpperCase()} connection here or in Inventory.`}
-              action={
-                <button className="icon-text-button" type="button" onClick={() => setShowQuickAdd(true)}>
-                  <Plus size={15} /> Add device
-                </button>
-              }
-            />
+            <p className="muted-copy">No sessions recorded yet.</p>
           )}
         </section>
-      )}
+      ) : null}
     </main>
   );
 }

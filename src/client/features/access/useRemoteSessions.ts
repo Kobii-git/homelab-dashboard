@@ -16,21 +16,12 @@ export type RemoteTab = {
 
 export function useRemoteSessions() {
   const [tabs, setTabs] = useState<RemoteTab[]>([]);
-  const [activeTabIds, setActiveTabIds] = useState<Record<Protocol, string | null>>({
-    ssh: null,
-    rdp: null
-  });
-
-  const getActiveTabId = useCallback((protocol: Protocol) => activeTabIds[protocol], [activeTabIds]);
-
-  const setActiveTabId = useCallback((protocol: Protocol, tabId: string | null) => {
-    setActiveTabIds((current) => ({ ...current, [protocol]: tabId }));
-  }, []);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
 
   const reset = useCallback(() => {
     setTabs([]);
-    setActiveTabIds({ ssh: null, rdp: null });
+    setActiveTabId(null);
   }, []);
 
-  return { tabs, setTabs, getActiveTabId, setActiveTabId, reset };
+  return { tabs, setTabs, activeTabId, setActiveTabId, reset };
 }

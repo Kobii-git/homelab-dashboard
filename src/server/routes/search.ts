@@ -119,8 +119,7 @@ export async function registerSearchRoutes({ app, prisma }: RouteContext): Promi
         payload: { credentialId: credential.id }
       })),
       { id: "nav-dashboard", type: "navigation", title: "Dashboard", subtitle: "Overview and resource tiles", action: "navigate", payload: { view: "dashboard" } },
-      { id: "nav-ssh", type: "navigation", title: "SSH", subtitle: "Terminal access to servers and VMs", action: "navigate", payload: { view: "ssh" } },
-      { id: "nav-rdp", type: "navigation", title: "Remote Desktop", subtitle: "Browser RDP sessions for Windows VMs", action: "navigate", payload: { view: "rdp" } },
+      { id: "nav-remote", type: "navigation", title: "Remote", subtitle: "SSH and RDP sessions", action: "navigate", payload: { view: "remote" } },
       { id: "nav-monitoring", type: "navigation", title: "Monitoring", subtitle: "Health checks and incidents", action: "navigate", payload: { view: "monitoring" } },
       { id: "nav-vault", type: "navigation", title: "Vault", subtitle: "Encrypted credential vault", action: "navigate", payload: { view: "vault" } },
       { id: "nav-alerts", type: "navigation", title: "Alerts", subtitle: "Alert channels and delivery rules", action: "navigate", payload: { view: "alerts" } },

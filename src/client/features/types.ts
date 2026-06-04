@@ -17,7 +17,7 @@ import type {
 } from "../lib/api";
 import type { DashboardGroupDto, DashboardResource } from "../../shared/types";
 
-export type AppView = "dashboard" | "ssh" | "rdp" | "inventory" | "monitoring" | "vault" | "alerts" | "settings";
+export type AppView = "dashboard" | "remote" | "inventory" | "monitoring" | "vault" | "alerts" | "settings";
 
 export type V2Data = {
   dashboard: DashboardDto;

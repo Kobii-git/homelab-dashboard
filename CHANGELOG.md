@@ -6,6 +6,25 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.13] - 2026-06-05
+
+### Added
+- **Unified Remote console** — SSH and RDP combined into one **Remote** view with a
+  Devolutions-style device rail on the left and session tabs on the right.
+- **Device rail** — compact, scrollable list grouped by protocol and folder; click
+  to connect or switch tabs; collapse to icon strip for more session space.
+- **Collapsible history panel** — session history tucked behind a toggle instead of
+  always consuming vertical space.
+
+### Changed
+- Sidebar navigation replaces separate **SSH** and **Remote Desktop** entries with
+  a single **Remote** item.
+- Remote sessions share one tab bar across SSH and RDP connections.
+- Fullscreen mode keeps the device rail accessible and fixes scroll/layout issues
+  in the session area.
+
+---
+
 ## [0.2.12] - 2026-06-04
 
 ### Added
