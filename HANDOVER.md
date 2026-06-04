@@ -92,6 +92,33 @@ Roughly in order, across the development sessions:
    best-effort clipboard sync.
 7. **Housekeeping.** Synced CHANGELOG/README versions, `.gh-bin/` gitignored,
    fixed flaky test suite.
+8. **v0.2.12 configurable dashboard widgets.** Dashboard widgets now render from
+   saved `DashboardWidget` records rather than a hardcoded partial set. The
+   settings drawer supports show/hide, move up/down ordering, and compact/medium/
+   wide/full-width layout cycling. Service Status, Favorite Launchers, Failing
+   Checks, Recent Sessions, Vault Health, and Pinned Notes all participate in the
+   grid.
+
+### Latest Codex session summary (v0.2.12)
+
+This session picked up from the handover's recommended "configurable dashboard
+widgets" work and completed that slice end-to-end:
+
+- Reworked `DashboardConsole` so enabled widgets are sorted by saved order and
+  rendered through a single widget dispatcher.
+- Added real widget cards for Service Status, Favorite Launchers, Vault Health,
+  and Pinned Notes.
+- Added widget settings controls for visibility, ordering, and width.
+- Added a responsive 12-column widget grid and settings-row polish.
+- Backfilled the missing default `notes` widget for existing installs.
+- Fixed demo seeding to update widgets by type so first-run demo data does not
+  duplicate default widgets.
+- Added defensive client de-duplication by widget type for older databases that
+  may already contain duplicates.
+- Extended API tests to assert all default widget types exist and widget
+  `w`/`sortOrder` updates work.
+- Verified with `npm run typecheck`, `npm test`, `npm run build`, and a browser
+  smoke test with demo data.
 
 ---
 
@@ -211,8 +238,6 @@ git push origin main && git push origin vX.Y.Z
 
 ## 9. Suggested next steps
 
-- **Configurable dashboard widgets** — the `DashboardWidget` model and a
-  `WidgetSettings` component exist, but the dashboard still renders a hardcoded set.
 - **Send a vault password straight into a session** (one-click "paste credential").
 - **Visual polish on non-session views** (Dashboard / Monitoring / Vault / Inventory).
 - **Real end-to-end remote-access test** with a guacd container + a test SSH/RDP

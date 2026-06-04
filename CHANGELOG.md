@@ -6,6 +6,31 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.12] - 2026-06-04
+
+### Added
+- **Configurable dashboard widget grid.** The dashboard now renders from saved
+  `DashboardWidget` records instead of a hardcoded partial set.
+- **Widget controls.** `Customize widgets` can show/hide widgets, move them
+  up/down, and cycle compact/medium/wide/full-width layouts.
+- **Service Status, Favorite Launchers, Vault Health, and Pinned Notes widgets**
+  now participate in the configurable dashboard grid.
+
+### Fixed
+- Default widget seeding now backfills missing widget types on existing installs.
+- Demo data now updates widgets by type to avoid duplicate cards when defaults
+  already exist.
+- Dashboard and widget settings defensively render one widget per type if an
+  older local database already contains duplicates.
+
+### Verified
+- `npm run typecheck`
+- `npm test` — 23 tests across 7 files
+- `npm run build`
+- Browser smoke test on the local dashboard with demo data and widget settings.
+
+---
+
 ## [0.2.11] - 2026-06-04
 
 ### Added
