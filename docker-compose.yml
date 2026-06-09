@@ -5,8 +5,6 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: file:/data/homelab.db
-      GUACD_HOST: guacd
-      GUACD_PORT: 4822
       # Optional overrides — leave unset and the app handles everything on first boot:
       # ADMIN_PASSWORD: your-password   # set to skip the web-based account creation
       # COOKIE_SECRET: random-32-chars  # set for persistent sessions across restarts
@@ -15,13 +13,6 @@ services:
       - "4173:4173"
     volumes:
       - homelab-dashboard-data:/data
-    depends_on:
-      - guacd
-
-  guacd:
-    image: guacamole/guacd:1.5.5
-    container_name: homelab-guacd
-    restart: unless-stopped
 
 volumes:
   homelab-dashboard-data:

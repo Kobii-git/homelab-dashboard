@@ -1,6 +1,6 @@
-import { Activity, ChevronDown, ChevronUp, Database, KeyRound, Pencil, Pin, Plus, Save, Server, Tag, TerminalSquare, Trash2, Wifi, X, Zap } from "lucide-react";
+import { Activity, ChevronDown, ChevronUp, Database, Pencil, Pin, Plus, Save, Server, Tag, Trash2, Wifi, X } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
-import { CONNECTION_TYPES, HEALTH_CHECK_TYPES, RESOURCE_KINDS } from "../../../shared/types";
+import { HEALTH_CHECK_TYPES, RESOURCE_KINDS } from "../../../shared/types";
 import { MetricCard, PageHeader, StatusBadge } from "../../components/Primitives";
 import { TagPicker, readTagIds } from "../../components/TagPicker";
 import { BackupRestoreView } from "./BackupRestoreView";
@@ -10,21 +10,18 @@ import { FormErrorBanner, runFormAction, runFormSubmit } from "../../lib/forms";
 import { formatDateTime } from "../../lib/format";
 import type { V2Data } from "../types";
 import type { DashboardResource } from "../../../shared/types";
-import type { ConnectionDto } from "../../lib/api";
 
-export type InventoryTab = "resource" | "connection" | "credential" | "check" | "notes" | "tags" | "backup";
+export type InventoryTab = "resource" | "check" | "notes" | "tags" | "backup";
 
 const inventoryTabs: Array<{ id: InventoryTab; label: string }> = [
   { id: "resource", label: "Resource" },
-  { id: "connection", label: "Connection" },
-  { id: "credential", label: "Credential" },
   { id: "check", label: "Health Check" },
   { id: "notes", label: "Notes" },
   { id: "tags", label: "Tags" },
   { id: "backup", label: "Backup" }
 ];
 
-type EditMode = "resource" | "connection" | "check" | null;
+type EditMode = "resource" | "check" | null;
 
 function Field({
   label,
@@ -62,26 +59,22 @@ export function InventoryView({
 }) {
   const [editMode, setEditMode] = useState<EditMode>(null);
   const [editResource, setEditResource] = useState<DashboardResource | null>(null);
-  const [editConnection, setEditConnection] = useState<ConnectionDto | null>(null);
   const [editCheck, setEditCheck] = useState<HealthCheckDto | null>(null);
   const [editNote, setEditNote] = useState<NoteDto | null>(null);
   const [noteTitle, setNoteTitle] = useState("");
   const [noteBody, setNoteBody] = useState("");
   const [noteResourceId, setNoteResourceId] = useState("");
-  const [connectionTestResult, setConnectionTestResult] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (editResource) onTabChange("resource");
-    if (editConnection) onTabChange("connection");
     if (editCheck) onTabChange("check");
-  }, [editResource, editConnection, editCheck, onTabChange]);
+  }, [editResource, editCheck, onTabChange]);
 
-  function startEditResource(r: DashboardResource) { setEditResource(r); setEditMode("resource"); setEditConnection(null); setEditCheck(null); }
-  function startEditConnection(c: ConnectionDto) { setEditConnection(c); setEditMode("connection"); setEditResource(null); setEditCheck(null); }
-  function startEditCheck(c: HealthCheckDto) { setEditCheck(c); setEditMode("check"); setEditResource(null); setEditConnection(null); }
-  function cancelEdit() { setEditMode(null); setEditResource(null); setEditConnection(null); setEditCheck(null); }
+  function startEditResource(r: DashboardResource) { setEditResource(r); setEditMode("resource"); setEditCheck(null); }
+  function startEditCheck(c: HealthCheckDto) { setEditCheck(c); setEditMode("check"); setEditResource(null); }
+  function cancelEdit() { setEditMode(null); setEditResource(null); setEditCheck(null); }
   function startEditNote(note: NoteDto) {
     setEditNote(note);
     setNoteTitle(note.title);
@@ -120,85 +113,6 @@ export function InventoryView({
       await apiSend("/api/resources", "POST", body);
       await onRefresh();
     }, setActionError, setSubmitting, editResource ? "Resource updated" : "Resource added");
-  }
-
-  async function submitConnection(event: FormEvent<HTMLFormElement>) {
-    await runFormSubmit(event, async (f) => {
-      const type = String(f.get("type"));
-      const resourceId = String(f.get("resourceId"));
-      const resource = data.resources.find((item) => item.id === resourceId);
-      const host =
-        emptyToNull(f.get("host")) ??
-        emptyToNull(resource?.host ?? null) ??
-        emptyToNull(resource?.url ?? null);
-
-      if (!host) {
-        throw new Error("Host is required — enter a host or pick a resource that has one");
-      }
-
-      const body = {
-        resourceId,
-        type,
-        name: emptyToNull(f.get("name")),
-        host,
-        port: Number(f.get("port") || (type === "ssh" ? 22 : 3389)),
-        usernameHint: emptyToNull(f.get("usernameHint")),
-        credentialId: emptyToNull(f.get("credentialId")),
-        folderId: emptyToNull(f.get("folderId")),
-        notes: emptyToNull(f.get("notes")),
-        favorite: f.get("favorite") === "on",
-        tagIds: readTagIds(f)
-      };
-      if (editConnection) {
-        await apiSend(`/api/connections/${editConnection.id}`, "PATCH", body);
-        cancelEdit();
-        setConnectionTestResult(null);
-        await onRefresh();
-        return "skip-reset";
-      }
-      await apiSend("/api/connections", "POST", body);
-      setConnectionTestResult(null);
-      await onRefresh();
-    }, setActionError, setSubmitting, editConnection ? "Connection updated" : "Connection added");
-  }
-
-  async function testConnection(form: HTMLFormElement) {
-    const f = new FormData(form);
-    const type = String(f.get("type"));
-    const host =
-      emptyToNull(f.get("host")) ??
-      emptyToNull(data.resources.find((item) => item.id === String(f.get("resourceId")))?.host ?? null);
-    if (!host) {
-      setConnectionTestResult("Enter a host or select a resource with a host first");
-      return;
-    }
-    try {
-      const result = await apiSend<{ ok: boolean; latencyMs: number; error: string | null }>("/api/connections/test", "POST", {
-        host,
-        port: Number(f.get("port") || (type === "ssh" ? 22 : 3389)),
-        type
-      });
-      setConnectionTestResult(result.ok ? `Reachable in ${result.latencyMs}ms` : result.error ?? "Unreachable");
-    } catch (error) {
-      setConnectionTestResult(error instanceof Error ? error.message : "Test failed");
-    }
-  }
-
-  async function submitCredential(event: FormEvent<HTMLFormElement>) {
-    await runFormSubmit(event, async (f) => {
-      await apiSend("/api/credentials", "POST", {
-        label: emptyToNull(f.get("label")),
-        username: emptyToNull(f.get("username")),
-        password: emptyToNull(f.get("password")),
-        domain: emptyToNull(f.get("domain")),
-        privateKey: emptyToNull(f.get("privateKey")),
-        passphrase: emptyToNull(f.get("passphrase")),
-        notes: emptyToNull(f.get("notes")),
-        folderId: emptyToNull(f.get("folderId")),
-        tagIds: readTagIds(f)
-      });
-      await onRefresh();
-    }, setActionError, setSubmitting, "Credential added");
   }
 
   async function submitCheck(event: FormEvent<HTMLFormElement>) {
@@ -281,23 +195,18 @@ export function InventoryView({
     await onRefresh();
   }
 
-  const credentialFolders = data.folders.filter((f) => f.type === "credential" || f.type === "mixed");
-  const connectionFolders = data.folders.filter((f) => f.type === "connection" || f.type === "mixed");
-
   return (
     <main className="view-shell">
       <PageHeader
         title="Inventory"
-        subtitle={`${data.resources.length} resources · ${data.connections.length} connections · ${data.checks.length} checks`}
+        subtitle={`${data.resources.length} resources · ${data.checks.length} checks`}
       />
 
       <FormErrorBanner message={actionError} />
 
       <section className="dashboard-overview">
         <MetricCard icon={<Server size={18} />} label="Resources" value={data.resources.length} tone="accent" />
-        <MetricCard icon={<TerminalSquare size={18} />} label="Connections" value={data.connections.length} />
         <MetricCard icon={<Activity size={18} />} label="Checks" value={data.checks.length} />
-        <MetricCard icon={<KeyRound size={18} />} label="Vault items" value={data.credentials.length} />
         <MetricCard icon={<Database size={18} />} label="Groups" value={data.groups.length} />
       </section>
 
@@ -364,80 +273,6 @@ export function InventoryView({
               </div>
             </form>
           </>
-        ) : null}
-
-        {activeTab === "connection" ? (
-          <form key={editConnection?.id ?? "new-connection"} className="tool-panel" onSubmit={submitConnection}>
-            <h3>{editConnection ? <><Pencil size={15} /> Edit connection</> : "Connection"}</h3>
-            {editConnection ? <p className="muted-copy" style={{ margin: 0 }}>Editing <strong>{editConnection.name ?? editConnection.host}</strong></p> : null}
-            <label>
-              Resource
-              <select name="resourceId" required defaultValue={editConnection?.resourceId ?? ""}>
-                <option value="">Select resource</option>
-                {data.resources.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-              </select>
-            </label>
-            <label>
-              Type
-              <select name="type" defaultValue={editConnection?.type ?? "rdp"}>
-                {CONNECTION_TYPES.map((t) => <option key={t} value={t}>{t.toUpperCase()}</option>)}
-              </select>
-            </label>
-            <Field label="Name" name="name" defaultValue={editConnection?.name ?? ""} />
-            <Field label="Host" name="host" placeholder="192.168.1.10 or leave blank to use resource host" defaultValue={editConnection?.host} required={Boolean(editConnection)} />
-            <Field label="Port" name="port" type="number" placeholder="3389" defaultValue={editConnection?.port?.toString()} />
-            <Field label="Username hint" name="usernameHint" defaultValue={editConnection?.usernameHint ?? ""} />
-            <label>
-              Folder
-              <select name="folderId" defaultValue={editConnection?.folderId ?? ""}>
-                <option value="">Unfiled</option>
-                {connectionFolders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-              </select>
-            </label>
-            <label>
-              Credential
-              <select name="credentialId" defaultValue={editConnection?.credentialId ?? ""}>
-                <option value="">Prompt or anonymous</option>
-                {data.credentials.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-              </select>
-            </label>
-            <label>Tags<TagPicker tags={data.tags} type="connection" defaultSelected={editConnection?.tags?.map((tag) => tag.id) ?? []} /></label>
-            <label>Notes<textarea name="notes" rows={2} defaultValue={editConnection?.notes ?? ""} /></label>
-            <label className="checkbox-row">
-              <input name="favorite" type="checkbox" defaultChecked={editConnection?.favorite} />
-              Favorite
-            </label>
-            {connectionTestResult ? <p className="muted-copy" style={{ margin: 0 }}>{connectionTestResult}</p> : null}
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="primary-button" type="submit" disabled={submitting}><Save size={16} /> {editConnection ? "Update" : "Add"}</button>
-              <button className="icon-text-button" type="button" onClick={(event) => testConnection(event.currentTarget.closest("form")!)}>
-                <Zap size={15} /> Test connection
-              </button>
-              {editConnection ? <button className="icon-button" type="button" title="Cancel" onClick={cancelEdit}><X size={16} /></button> : null}
-            </div>
-          </form>
-        ) : null}
-
-        {activeTab === "credential" ? (
-          <form className="tool-panel" onSubmit={submitCredential}>
-            <h3>Credential</h3>
-            <Field label="Label" name="label" placeholder="Lab admin" required />
-            <Field label="Username" name="username" placeholder="administrator" />
-            <Field label="Password" name="password" type="password" placeholder="Stored encrypted" />
-            <Field label="Domain" name="domain" placeholder="Optional" />
-            <label>
-              Folder
-              <select name="folderId" defaultValue="">
-                <option value="">Unfiled</option>
-                {credentialFolders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-              </select>
-            </label>
-            <label>Tags<TagPicker tags={data.tags} type="credential" /></label>
-            <label>Private key<textarea name="privateKey" rows={3} placeholder="Optional SSH private key" /></label>
-            <Field label="Passphrase" name="passphrase" type="password" placeholder="Optional" />
-            <label>Notes<textarea name="notes" rows={2} /></label>
-            <button className="primary-button" type="submit" disabled={submitting}><KeyRound size={16} /> Add credential</button>
-          </form>
         ) : null}
 
         {activeTab === "check" ? (
@@ -508,8 +343,6 @@ export function InventoryView({
               <select name="type" defaultValue="general">
                 <option value="general">General</option>
                 <option value="resource">Resource</option>
-                <option value="connection">Connection</option>
-                <option value="credential">Credential</option>
               </select>
             </label>
             <button className="primary-button" type="submit" disabled={submitting}><Plus size={16} /> Add tag</button>
@@ -558,56 +391,6 @@ export function InventoryView({
             {data.resources.length === 0 ? (
               <p className="muted-copy">
                 No resources saved yet. <button className="link-button" type="button" onClick={() => onTabChange("resource")}>Add one</button>
-              </p>
-            ) : null}
-          </div>
-        </section>
-
-        <section className="table-panel">
-          <h3>Connections</h3>
-          <div className="row-list">
-            {data.connections.map((connection) => (
-              <div className="data-row data-row-wide" key={connection.id}>
-                <span>
-                  <strong>{connection.name ?? connection.resource?.name ?? connection.host}</strong>
-                  <small>{connection.type.toUpperCase()} · {connection.host}:{connection.port}{connection.credential ? ` · ${connection.credential.label}` : ""}</small>
-                </span>
-                <button className="icon-button" type="button" title="Edit" onClick={() => startEditConnection(connection)}>
-                  <Pencil size={14} />
-                </button>
-                <button className="icon-button danger" type="button" title="Delete" onClick={() => remove(`/api/connections/${connection.id}`, connection.name ?? connection.host)}>
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-            {data.connections.length === 0 ? (
-              <p className="muted-copy">
-                No remote access records. <button className="link-button" type="button" onClick={() => onTabChange("connection")}>Add connection</button>
-              </p>
-            ) : null}
-          </div>
-        </section>
-
-        <section className="table-panel">
-          <h3>Credentials</h3>
-          <div className="row-list">
-            {data.credentials.map((credential) => (
-              <div className="data-row data-row-wide" key={credential.id}>
-                <span>
-                  <strong>{credential.label}</strong>
-                  <small>
-                    {credential.username ?? "No username"}
-                    {credential.folderId ? ` · ${credentialFolders.find((f) => f.id === credential.folderId)?.name ?? "Folder"}` : " · Unfiled"}
-                  </small>
-                </span>
-                <button className="icon-button danger" type="button" title="Delete" onClick={() => remove(`/api/credentials/${credential.id}`, credential.label)}>
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-            {data.credentials.length === 0 ? (
-              <p className="muted-copy">
-                No credentials saved yet. <button className="link-button" type="button" onClick={() => onTabChange("credential")}>Add credential</button>
               </p>
             ) : null}
           </div>

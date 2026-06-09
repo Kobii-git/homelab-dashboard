@@ -6,10 +6,8 @@ import { apiGet } from "../lib/api";
 
 const iconByType: Record<string, ReactNode> = {
   resource: <Server size={16} />,
-  connection: <TerminalSquare size={16} />,
   check: <Activity size={16} />,
   incident: <Activity size={16} />,
-  credential: <Shield size={16} />,
   navigation: <Monitor size={16} />,
   action: <ExternalLink size={16} />
 };
@@ -69,7 +67,7 @@ export function CommandPalette({
           <input
             autoFocus
             value={query}
-            placeholder="Search resources, sessions, checks, incidents..."
+            placeholder="Search resources, checks, incidents..."
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Escape") {

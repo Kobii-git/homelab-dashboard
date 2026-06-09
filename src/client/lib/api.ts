@@ -5,42 +5,11 @@ import type {
   AlertRuleDto,
   AuditEventDto,
   DashboardWidgetDto,
-  FolderDto,
   IncidentDto,
   NoteDto,
   SearchResultDto,
-  SessionHistoryDto,
   TagDto
 } from "../../shared/types";
-
-export type CredentialDto = {
-  id: string;
-  label: string;
-  username: string | null;
-  notes?: string | null;
-  folderId?: string | null;
-  lastUsedAt?: string | null;
-  tags?: TagDto[];
-};
-
-export type ConnectionDto = {
-  id: string;
-  resourceId: string;
-  type: "rdp" | "ssh";
-  name: string | null;
-  host: string;
-  port: number;
-  usernameHint: string | null;
-  credentialId: string | null;
-  notes?: string | null;
-  favorite?: boolean;
-  folderId?: string | null;
-  lastLaunchedAt?: string | null;
-  sortOrder: number;
-  tags?: TagDto[];
-  resource?: DashboardResource;
-  credential?: CredentialDto | null;
-};
 
 export type HealthCheckDto = {
   id: string;
@@ -90,24 +59,15 @@ export type DashboardDto = {
   layout: Record<string, unknown>;
 };
 
-export type SessionLaunchDto = {
-  token: string;
-  displayName: string;
-  websocketPath: string;
-  sessionHistory?: SessionHistoryDto;
-};
-
 export type {
   AlertChannelDto,
   AlertDeliveryDto,
   AlertRuleDto,
   AuditEventDto,
   DashboardWidgetDto,
-  FolderDto,
   IncidentDto,
   NoteDto,
   SearchResultDto,
-  SessionHistoryDto,
   TagDto
 };
 

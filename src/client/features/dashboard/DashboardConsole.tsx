@@ -7,22 +7,19 @@ import {
   ExternalLink,
   Globe2,
   Info,
-  KeyRound,
   Laptop,
   Monitor,
   Plus,
   Search,
   Server,
   Star,
-  TerminalSquare,
   Wifi,
   WifiOff
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { useMemo, useState } from "react";
-import type { ConnectionDto, DashboardWidgetDto } from "../../lib/api";
+import type { DashboardWidgetDto } from "../../lib/api";
 import type { DashboardResource } from "../../../shared/types";
-import { ProtocolIcon } from "../access/accessUtils";
 import { WidgetSettings } from "../../components/WidgetSettings";
 import { EmptyPanel, MetricCard, PageHeader, StatusBadge } from "../../components/Primitives";
 import { dashboardResources, formatDateTime, statusFor, summarizeResourceStatus } from "../../lib/format";
@@ -39,23 +36,18 @@ const icons: Record<string, ReactNode> = {
 
 function ResourceTile({
   resource,
-  connections,
   onOpen,
   onFavorite,
-  onInspect,
-  onConnect
+  onInspect
 }: {
   resource: DashboardResource;
-  connections: ConnectionDto[];
   onOpen: (resource: DashboardResource) => void;
   onFavorite: (resource: DashboardResource) => void;
   onInspect: (resource: DashboardResource) => void;
-  onConnect: (connection: ConnectionDto) => void;
 }) {
   const status = statusFor(resource);
   const color = resource.color ?? "#2dd4bf";
   const checks = resource.healthChecks ?? [];
-  const resourceConnections = resource.connections ?? [];
   const latestCheck = checks
     .filter((check) => check.latestCheckedAt)
     .sort((left, right) => String(right.latestCheckedAt).localeCompare(String(left.latestCheckedAt)))[0];
@@ -74,9 +66,6 @@ function ResourceTile({
       <div className="resource-meta">
         <span className="kind-chip">{resource.kind}</span>
         {resource.host ? <span>{resource.host}</span> : null}
-        {resourceConnections.length > 0 ? (
-          <span>{resourceConnections.map((item) => item.type.toUpperCase()).join(" + ")}</span>
-        ) : null}
         {resource.tags?.length ? <span>{resource.tags.map((tag) => tag.name).join(", ")}</span> : null}
       </div>
       {resource.description ? <p className="resource-description">{resource.description}</p> : null}
@@ -86,17 +75,6 @@ function ResourceTile({
       </div>
       <div className="resource-actions">
         <StatusBadge status={status} />
-        {connections.map((connection) => (
-          <button
-            className="icon-button is-active"
-            type="button"
-            title={`Connect ${connection.type.toUpperCase()}`}
-            key={connection.id}
-            onClick={() => onConnect(connection)}
-          >
-            <ProtocolIcon protocol={connection.type} size={16} />
-          </button>
-        ))}
         <button className="icon-button" type="button" title="Details" onClick={() => onInspect(resource)}>
           <Info size={16} />
         </button>
@@ -153,8 +131,7 @@ export function DashboardConsole({
   onPatchGroup,
   onOpenInventory,
   onInspectResource,
-  onOpenIncident,
-  onConnect
+  onOpenIncident
 }: {
   data: V2Data;
   onRefresh: () => Promise<void>;
@@ -163,25 +140,12 @@ export function DashboardConsole({
   onOpenInventory: () => void;
   onInspectResource: (resource: DashboardResource) => void;
   onOpenIncident: (id: string) => void;
-  onConnect: (connection: ConnectionDto) => void;
 }) {
   const [query, setQuery] = useState("");
   const resources = useMemo(
     () => dashboardResources(data.dashboard.groups, data.dashboard.ungroupedResources),
     [data.dashboard]
   );
-  const connectionsByResource = useMemo(() => {
-    const map = new Map<string, ConnectionDto[]>();
-    for (const connection of data.connections) {
-      const list = map.get(connection.resourceId) ?? [];
-      list.push(connection);
-      map.set(connection.resourceId, list);
-    }
-    for (const list of map.values()) {
-      list.sort((a, b) => a.type.localeCompare(b.type));
-    }
-    return map;
-  }, [data.connections]);
   const orderedWidgets = useMemo(
     () => orderedUniqueWidgets(data.widgets),
     [data.widgets]
@@ -191,10 +155,6 @@ export function DashboardConsole({
   const failingChecks = data.checks.filter((check) => check.latestStatus === "offline").slice(0, 8);
   const openIncidents = data.incidents.filter((incident) => incident.status !== "resolved").slice(0, 8);
   const pinnedNotes = data.notes.filter((note) => note.pinned).slice(0, 4);
-  const usedCredentialIds = new Set(data.connections.map((connection) => connection.credentialId).filter(Boolean));
-  const unusedCredentials = data.credentials.filter((credential) => !usedCredentialIds.has(credential.id));
-  const neverUsedCredentials = data.credentials.filter((credential) => !credential.lastUsedAt);
-  const credentialBackedConnections = data.connections.filter((connection) => connection.credentialId).length;
   const filteredGroups = data.dashboard.groups
     .map((group) => ({
       ...group,
@@ -220,10 +180,8 @@ export function DashboardConsole({
       <ResourceTile
         key={resource.id}
         resource={resource}
-        connections={connectionsByResource.get(resource.id) ?? []}
         onInspect={onInspectResource}
         onOpen={openResource}
-        onConnect={onConnect}
         onFavorite={(item) => onPatchResource(item.id, { favorite: !item.favorite })}
       />
     );
@@ -238,7 +196,7 @@ export function DashboardConsole({
               <MetricCard icon={<Wifi size={18} />} label="Online" value={totals.online} tone="online" />
               <MetricCard icon={<WifiOff size={18} />} label="Offline" value={totals.offline} tone="offline" />
               <MetricCard icon={<Activity size={18} />} label="Unknown" value={totals.unknown} />
-              <MetricCard icon={<TerminalSquare size={18} />} label="Connections" value={totals.connections} tone="accent" />
+              <MetricCard icon={<Server size={18} />} label="Total Services" value={resources.length} tone="accent" />
             </div>
           </WidgetCard>
         );
@@ -307,49 +265,6 @@ export function DashboardConsole({
             </div>
           </WidgetCard>
         );
-      case "recentSessions":
-        return (
-          <WidgetCard key={widget.id} title={widget.title} widget={widget}>
-            <div className="compact-list">
-              {data.sessionHistory.slice(0, 6).map((session) => (
-                <div className="compact-row" key={session.id}>
-                  <TerminalSquare size={16} />
-                  <span>
-                    <strong>{session.resourceName}</strong>
-                    <small>{session.protocol.toUpperCase()} · {session.status} · {formatDateTime(session.startedAt)}</small>
-                  </span>
-                </div>
-              ))}
-              {data.sessionHistory.length === 0 ? (
-                <EmptyPanel compact icon={<TerminalSquare size={18} />} title="No sessions yet" body="Remote sessions will show up here." />
-              ) : null}
-            </div>
-          </WidgetCard>
-        );
-      case "vaultHealth":
-        return (
-          <WidgetCard key={widget.id} title={widget.title} widget={widget}>
-            <div className="compact-list">
-              <div className="compact-row">
-                <KeyRound size={16} />
-                <span>
-                  <strong>{data.credentials.length} saved credentials</strong>
-                  <small>{credentialBackedConnections} remote connections use stored credentials</small>
-                </span>
-              </div>
-              <div className="compact-row">
-                <Info size={16} />
-                <span>
-                  <strong>{unusedCredentials.length} unused credentials</strong>
-                  <small>{neverUsedCredentials.length} have never launched a session</small>
-                </span>
-              </div>
-              {data.credentials.length === 0 ? (
-                <EmptyPanel compact icon={<KeyRound size={18} />} title="No credentials" body="Add credentials in Vault or Inventory." />
-              ) : null}
-            </div>
-          </WidgetCard>
-        );
       case "notes":
         return (
           <WidgetCard key={widget.id} title={widget.title} widget={widget}>
@@ -378,7 +293,7 @@ export function DashboardConsole({
     <main className="view-shell pro-dashboard">
       <PageHeader
         title="Dashboard"
-        subtitle={`${resources.length} resources · ${data.incidents.length} incidents · ${data.sessionHistory.length} sessions`}
+        subtitle={`${resources.length} resources · ${data.incidents.length} incidents`}
         actions={
           <>
             <label className="search-box">
@@ -407,7 +322,7 @@ export function DashboardConsole({
         <EmptyPanel
           icon={<Server size={36} />}
           title="No services yet"
-          body="Add your first app, VM, server, or website, then attach checks and remote access."
+          body="Add your first app, VM, server, or website, then attach checks."
           action={
             <button className="icon-text-button" type="button" onClick={onOpenInventory}>
               <Plus size={16} />

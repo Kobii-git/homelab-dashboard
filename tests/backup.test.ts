@@ -37,7 +37,7 @@ describe("backup import/export", () => {
     await app.close();
   });
 
-  it("exports encrypted credentials and round-trips replace import", async () => {
+  it("exports configurations and round-trips replace import", async () => {
     const cookie = await loginCookie();
 
     const resource = await app.inject({
@@ -46,44 +46,30 @@ describe("backup import/export", () => {
       headers: { cookie },
       payload: { name: "Backup Host", kind: "server", host: "10.0.0.5" }
     });
-    const resourceId = resource.json<{ id: string }>().id;
+    expect(resource.statusCode).toBe(201);
 
-    const credential = await app.inject({
+    const channel = await app.inject({
       method: "POST",
-      url: "/api/credentials",
+      url: "/api/alert-channels",
       headers: { cookie },
       payload: {
-        label: "Backup cred",
-        username: "root",
-        password: "backup-secret"
+        name: "Backup hook",
+        type: "webhook",
+        config: { url: "https://example.com/webhook" }
       }
     });
-    const credentialId = credential.json<{ id: string }>().id;
-
-    await app.inject({
-      method: "POST",
-      url: "/api/connections",
-      headers: { cookie },
-      payload: {
-        resourceId,
-        type: "ssh",
-        host: "10.0.0.5",
-        port: 22,
-        credentialId
-      }
-    });
+    expect(channel.statusCode).toBe(201);
 
     const exported = await app.inject({ method: "GET", url: "/api/export", headers: { cookie } });
     expect(exported.statusCode).toBe(200);
     const payload = exported.json<{
       version: string;
-      credentials: Array<{ encryptedBlob: string; label: string }>;
+      alertChannels: Array<{ name: string; type: string }>;
       resources: Array<{ name: string }>;
     }>();
     expect(payload.version).toBe("1.0.0");
-    expect(payload.credentials.some((item) => item.label === "Backup cred" && item.encryptedBlob)).toBe(true);
+    expect(payload.alertChannels.some((item) => item.name === "Backup hook")).toBe(true);
     expect(payload.resources.some((item) => item.name === "Backup Host")).toBe(true);
-    expect(exported.body).not.toContain("backup-secret");
 
     const preview = await app.inject({
       method: "POST",
@@ -107,15 +93,6 @@ describe("backup import/export", () => {
     });
     expect(imported.statusCode).toBe(200);
     expect(imported.json<{ applied: boolean }>().applied).toBe(true);
-
-    const reveal = await app.inject({
-      method: "POST",
-      url: "/api/vault/reveal",
-      headers: { cookie },
-      payload: { credentialId, password: "test-pass" }
-    });
-    expect(reveal.statusCode).toBe(200);
-    expect(reveal.json<{ password: string }>().password).toBe("backup-secret");
   });
 
   it("rejects invalid backup payloads", () => {

@@ -5,21 +5,14 @@ import { fileURLToPath } from "node:url";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import staticFiles from "@fastify/static";
-import websocket from "@fastify/websocket";
 import { PrismaClient } from "@prisma/client";
 import Fastify, { type FastifyInstance } from "fastify";
 import { z, ZodError } from "zod";
 import { isAuthenticated, createAuthToken, SESSION_COOKIE, verifyAdminPassword, verifyAdminLogin, hashPassword } from "./auth.js";
 import { getEnv, type AppEnv } from "./env.js";
-import { wireGuacamoleTunnel, SessionStore } from "./guacamole.js";
 import { getBuildInfo } from "../shared/version.js";
 import { runHealthCheck, startHealthScheduler } from "./healthChecks.js";
 import {
-  connectionPatchSchema,
-  connectionSchema,
-  connectionTestSchema,
-  credentialPatchSchema,
-  credentialSchema,
   dashboardGroupPatchSchema,
   dashboardGroupSchema,
   healthCheckPatchSchema,
@@ -28,23 +21,18 @@ import {
   layoutSchema,
   loginSchema,
   resourcePatchSchema,
-  resourceSchema,
-  sessionLaunchSchema
+  resourceSchema
 } from "./validation.js";
-import { decryptCredential, encryptCredential, type PlainCredential } from "./vault.js";
 import { seedDemo } from "./seed.js";
 import { createAuditEvent } from "./audit.js";
 import { registerAlertRoutes } from "./routes/alerts.js";
 import { registerIncidentRoutes } from "./routes/incidents.js";
 import { registerSearchRoutes } from "./routes/search.js";
-import { registerSessionRoutes } from "./routes/sessions.js";
-import { registerVaultRoutes } from "./routes/vault.js";
+import { registerTagRoutes } from "./routes/tags.js";
 import { registerExportRoutes } from "./routes/export.js";
 import { registerStatusRoutes } from "./routes/status.js";
 import { registerWidgetRoutes } from "./routes/widgets.js";
-import { testGuacdReachable, testTcpReachable } from "./connectivity.js";
 import { RateLimiter } from "./rateLimit.js";
-import { serializeSessionHistory } from "./serializers.js";
 
 type CreateAppOptions = {
   env?: AppEnv;
@@ -72,50 +60,7 @@ async function adminAccountExists(env: AppEnv, prisma: PrismaClient): Promise<bo
   return Boolean(account);
 }
 
-function sanitizeCredential(credential: {
-  id: string;
-  label: string;
-  username: string | null;
-  notes?: string | null;
-  folderId?: string | null;
-  lastUsedAt?: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-}) {
-  return {
-    id: credential.id,
-    label: credential.label,
-    username: credential.username,
-    notes: credential.notes ?? null,
-    folderId: credential.folderId ?? null,
-    lastUsedAt: credential.lastUsedAt ?? null,
-    createdAt: credential.createdAt,
-    updatedAt: credential.updatedAt
-  };
-}
 
-function sanitizeConnection(connection: any) {
-  return {
-    id: connection.id,
-    resourceId: connection.resourceId,
-    type: connection.type,
-    name: connection.name,
-    host: connection.host,
-    port: connection.port,
-    usernameHint: connection.usernameHint,
-    credentialId: connection.credentialId,
-    notes: connection.notes,
-    favorite: connection.favorite,
-    folderId: connection.folderId,
-    lastLaunchedAt: connection.lastLaunchedAt,
-    sortOrder: connection.sortOrder,
-    createdAt: connection.createdAt,
-    updatedAt: connection.updatedAt,
-    tags: connection.tags ?? [],
-    resource: connection.resource,
-    credential: connection.credential ? sanitizeCredential(connection.credential) : null
-  };
-}
 
 function routeId(request: { params: unknown }): string {
   return idParamSchema.parse(request.params).id;
@@ -142,7 +87,6 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     vaultKey: raw.vaultKey ?? crypto.randomBytes(32).toString("hex")
   };
   const prisma = options.prisma ?? new PrismaClient();
-  const sessions = new SessionStore();
   const loginLimiter = new RateLimiter(10, 60_000);
   const app = Fastify({ logger: options.logger ?? env.nodeEnv === "production" });
 
@@ -154,8 +98,6 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     origin: env.nodeEnv === "production" ? false : ["http://localhost:5173", "http://127.0.0.1:5173"],
     credentials: true
   });
-
-  await app.register(websocket);
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ZodError) {
@@ -187,8 +129,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       "/api/version",
       "/api/setup/status",
       "/api/setup",
-      "/api/status",
-      "/api/tunnel"
+      "/api/status"
     ]);
     if (publicRoutes.has(url.pathname)) {
       return;
@@ -200,12 +141,10 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   });
 
   app.get("/api/health", async () => {
-    const guacdReachable = await testGuacdReachable(env.guacdHost, env.guacdPort);
     return {
       ok: true,
       ...getBuildInfo(),
-      vaultConfigured: Boolean(env.vaultKey && env.vaultKey.length >= 16),
-      guacd: { host: env.guacdHost, port: env.guacdPort, reachable: guacdReachable }
+      vaultConfigured: Boolean(env.vaultKey && env.vaultKey.length >= 16)
     };
   });
 
@@ -352,10 +291,9 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const routeContext = { app, prisma, env };
   await registerSearchRoutes(routeContext);
   await registerWidgetRoutes(routeContext);
-  await registerVaultRoutes(routeContext);
+  await registerTagRoutes(routeContext);
   await registerIncidentRoutes(routeContext);
   await registerAlertRoutes(routeContext);
-  await registerSessionRoutes(routeContext);
   await registerExportRoutes(routeContext);
   await registerStatusRoutes(routeContext);
 
@@ -368,8 +306,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
             orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
             include: {
               tags: true,
-              healthChecks: true,
-              connections: { select: { id: true, type: true } }
+              healthChecks: true
             }
           }
         }
@@ -379,8 +316,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
         include: {
           tags: true,
-          healthChecks: true,
-          connections: { select: { id: true, type: true } }
+          healthChecks: true
         }
       }),
       prisma.dashboardLayout.upsert({
@@ -437,7 +373,6 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       include: {
         tags: true,
         healthChecks: true,
-        connections: { select: { id: true, type: true } },
         group: true
       }
     })
@@ -458,275 +393,13 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return prisma.resource.update({
       where: { id },
       data: { ...rest, ...tagSet(tagIds) },
-      include: { tags: true, healthChecks: true, connections: { select: { id: true, type: true } }, group: true }
+      include: { tags: true, healthChecks: true, group: true }
     });
   });
 
   app.delete("/api/resources/:id", async (request) => {
     const id = routeId(request);
     await prisma.resource.delete({ where: { id } });
-    return { ok: true };
-  });
-
-  app.get("/api/credentials", async () => {
-    const credentials = await prisma.credential.findMany({
-      orderBy: [{ label: "asc" }],
-      select: {
-        id: true,
-        label: true,
-        username: true,
-        notes: true,
-        folderId: true,
-        lastUsedAt: true,
-        createdAt: true,
-        updatedAt: true
-      }
-    });
-    return credentials.map(sanitizeCredential);
-  });
-
-  app.post("/api/credentials", async (request, reply) => {
-    const body = credentialSchema.parse(request.body);
-    const { rest, tagIds } = splitTagIds(body);
-    const encrypted = encryptCredential(
-      {
-        username: rest.username ?? undefined,
-        password: rest.password ?? undefined,
-        domain: rest.domain ?? undefined,
-        privateKey: rest.privateKey ?? undefined,
-        passphrase: rest.passphrase ?? undefined
-      },
-      env.vaultKey
-    );
-
-    const credential = await prisma.credential.create({
-      data: {
-        label: rest.label,
-        username: rest.username ?? null,
-        notes: rest.notes ?? null,
-        folderId: rest.folderId ?? null,
-        ...encrypted,
-        ...tagConnect(tagIds)
-      },
-      select: {
-        id: true,
-        label: true,
-        username: true,
-        notes: true,
-        folderId: true,
-        lastUsedAt: true,
-        createdAt: true,
-        updatedAt: true
-      }
-    });
-    await createAuditEvent(prisma, {
-      action: "credential.created",
-      entityType: "credential",
-      entityId: credential.id,
-      summary: `Created credential ${credential.label}`
-    });
-
-    reply.code(201);
-    return sanitizeCredential(credential);
-  });
-
-  app.patch("/api/credentials/:id", async (request) => {
-    const id = routeId(request);
-    const body = credentialPatchSchema.parse(request.body);
-    const { rest, tagIds } = splitTagIds(body);
-    const data: Record<string, unknown> = { ...tagSet(tagIds) };
-
-    if (rest.label !== undefined) {
-      data.label = rest.label;
-    }
-
-    if (rest.username !== undefined) {
-      data.username = rest.username;
-    }
-
-    if (rest.notes !== undefined) {
-      data.notes = rest.notes;
-    }
-
-    if (rest.folderId !== undefined) {
-      data.folderId = rest.folderId;
-    }
-
-    const hasSecretUpdate =
-      rest.password !== undefined ||
-      rest.domain !== undefined ||
-      rest.privateKey !== undefined ||
-      rest.passphrase !== undefined;
-    const usernameChanged = rest.username !== undefined;
-
-    if (hasSecretUpdate || usernameChanged) {
-      const existing = await prisma.credential.findUniqueOrThrow({
-        where: { id },
-        select: { encryptedBlob: true, iv: true, authTag: true }
-      });
-      const merged = decryptCredential(
-        {
-          encryptedBlob: existing.encryptedBlob,
-          iv: existing.iv,
-          authTag: existing.authTag
-        },
-        env.vaultKey
-      );
-
-      if (rest.password !== undefined) {
-        merged.password = rest.password || undefined;
-      }
-      if (rest.domain !== undefined) {
-        merged.domain = rest.domain || undefined;
-      }
-      if (rest.privateKey !== undefined) {
-        merged.privateKey = rest.privateKey || undefined;
-      }
-      if (rest.passphrase !== undefined) {
-        merged.passphrase = rest.passphrase || undefined;
-      }
-      if (rest.username !== undefined) {
-        merged.username = rest.username || undefined;
-      }
-
-      Object.assign(data, encryptCredential(merged, env.vaultKey));
-    }
-
-    const credential = await prisma.credential.update({
-      where: { id },
-      data,
-      select: {
-        id: true,
-        label: true,
-        username: true,
-        notes: true,
-        folderId: true,
-        lastUsedAt: true,
-        createdAt: true,
-        updatedAt: true
-      }
-    });
-    await createAuditEvent(prisma, {
-      action: "credential.updated",
-      entityType: "credential",
-      entityId: credential.id,
-      summary: `Updated credential ${credential.label}`
-    });
-
-    return sanitizeCredential(credential);
-  });
-
-  app.delete("/api/credentials/:id", async (request) => {
-    const id = routeId(request);
-    await prisma.credential.delete({ where: { id } });
-    return { ok: true };
-  });
-
-  app.get("/api/connections", async () => {
-    const connections = await prisma.connection.findMany({
-      orderBy: [{ sortOrder: "asc" }, { host: "asc" }],
-      include: {
-        tags: true,
-        resource: true,
-        credential: {
-          select: {
-            id: true,
-            label: true,
-            username: true,
-            notes: true,
-            folderId: true,
-            lastUsedAt: true,
-            createdAt: true,
-            updatedAt: true
-          }
-        }
-      }
-    });
-
-    return connections.map(sanitizeConnection);
-  });
-
-  app.post("/api/connections/test", async (request) => {
-    const body = connectionTestSchema.parse(request.body);
-    const result = await testTcpReachable(body.host, body.port);
-    return {
-      ok: result.ok,
-      latencyMs: result.latencyMs,
-      error: result.error ?? null,
-      type: body.type ?? null
-    };
-  });
-
-  app.post("/api/connections", async (request, reply) => {
-    const body = connectionSchema.parse(request.body);
-    const { rest, tagIds } = splitTagIds(body);
-    const connection = await prisma.connection.create({
-      data: { ...rest, ...tagConnect(tagIds) },
-      include: {
-        tags: true,
-        resource: true,
-        credential: {
-          select: {
-            id: true,
-            label: true,
-            username: true,
-            notes: true,
-            folderId: true,
-            lastUsedAt: true,
-            createdAt: true,
-            updatedAt: true
-          }
-        }
-      }
-    });
-    await createAuditEvent(prisma, {
-      action: "connection.created",
-      entityType: "connection",
-      entityId: connection.id,
-      summary: `Created ${connection.type.toUpperCase()} connection to ${connection.host}`
-    });
-
-    reply.code(201);
-    return sanitizeConnection(connection);
-  });
-
-  app.patch("/api/connections/:id", async (request) => {
-    const id = routeId(request);
-    const body = connectionPatchSchema.parse(request.body);
-    const { rest, tagIds } = splitTagIds(body);
-    const connection = await prisma.connection.update({
-      where: { id },
-      data: { ...rest, ...tagSet(tagIds) },
-      include: {
-        tags: true,
-        resource: true,
-        credential: {
-          select: {
-            id: true,
-            label: true,
-            username: true,
-            notes: true,
-            folderId: true,
-            lastUsedAt: true,
-            createdAt: true,
-            updatedAt: true
-          }
-        }
-      }
-    });
-    await createAuditEvent(prisma, {
-      action: "connection.updated",
-      entityType: "connection",
-      entityId: connection.id,
-      summary: `Updated ${connection.type.toUpperCase()} connection to ${connection.host}`
-    });
-
-    return sanitizeConnection(connection);
-  });
-
-  app.delete("/api/connections/:id", async (request) => {
-    const id = routeId(request);
-    await prisma.connection.delete({ where: { id } });
     return { ok: true };
   });
 
@@ -769,104 +442,6 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return { id, ...outcome };
   });
 
-  app.post("/api/sessions", async (request, reply) => {
-    const body = sessionLaunchSchema.parse(request.body);
-    const connection = await prisma.connection.findUnique({
-      where: { id: body.connectionId },
-      include: { resource: true, credential: true }
-    });
-
-    if (!connection) {
-      reply.code(404).send({ error: "Connection not found" });
-      return;
-    }
-
-    let credential: PlainCredential | undefined;
-
-    if (connection.credential) {
-      credential = decryptCredential(
-        {
-          encryptedBlob: connection.credential.encryptedBlob,
-          iv: connection.credential.iv,
-          authTag: connection.credential.authTag
-        },
-        env.vaultKey
-      );
-    }
-
-    const displayName =
-      connection.name ?? `${connection.resource.name} ${connection.type.toUpperCase()}`;
-    const history = await prisma.sessionHistory.create({
-      data: {
-        connectionId: connection.id,
-        credentialId: connection.credentialId ?? null,
-        resourceName: connection.resource.name,
-        connectionName: connection.name,
-        protocol: connection.type,
-        host: connection.host,
-        port: connection.port,
-        status: "launching",
-        hasCredential: Boolean(connection.credential)
-      }
-    });
-    await prisma.connection.update({
-      where: { id: connection.id },
-      data: { lastLaunchedAt: new Date() }
-    });
-    if (connection.credentialId) {
-      await prisma.credential.update({
-        where: { id: connection.credentialId },
-        data: { lastUsedAt: new Date() }
-      });
-    }
-    await createAuditEvent(prisma, {
-      action: "session.launched",
-      entityType: "session",
-      entityId: history.id,
-      summary: `Launched ${connection.type.toUpperCase()} session to ${connection.host}`,
-      metadata: { connectionId: connection.id, resourceId: connection.resourceId }
-    });
-    const token = sessions.create(
-      {
-        protocol: connection.type as "rdp" | "ssh",
-        host: connection.host,
-        port: connection.port,
-        displayName,
-        usernameHint: connection.usernameHint,
-        credential
-      },
-      history.id
-    );
-
-    return {
-      token,
-      sessionHistory: serializeSessionHistory(history),
-      displayName,
-      websocketPath: `/api/tunnel?token=${encodeURIComponent(token)}&session=${encodeURIComponent(history.id)}`
-    };
-  });
-
-  app.get("/api/tunnel", { websocket: true }, (socket, request) => {
-    const query = request.query as { token?: string; session?: string };
-    const url = new URL(request.raw.url ?? "/", "http://localhost");
-    const token = query.token ?? url.searchParams.get("token");
-    const sessionId = query.session ?? url.searchParams.get("session");
-
-    if (!token && !sessionId) {
-      socket.close(1008, "Missing session token");
-      return;
-    }
-
-    const session = sessions.resolve(token, sessionId);
-
-    if (!session) {
-      socket.close(1008, "Invalid or expired session token");
-      return;
-    }
-
-    wireGuacamoleTunnel(socket, session, { host: env.guacdHost, port: env.guacdPort });
-  });
-
   let stopScheduler: (() => void) | undefined;
   const shouldMonitor = options.monitor ?? env.nodeEnv !== "test";
 
@@ -874,11 +449,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     stopScheduler = startHealthScheduler(prisma);
   }
 
-  const sweepTimer = setInterval(() => sessions.sweep(), 60 * 1000);
-
   app.addHook("onClose", async () => {
     stopScheduler?.();
-    clearInterval(sweepTimer);
     if (!options.prisma) {
       await prisma.$disconnect();
     }

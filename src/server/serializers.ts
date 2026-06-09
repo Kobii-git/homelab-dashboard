@@ -6,8 +6,7 @@ import type {
   DashboardWidget,
   Incident,
   MaintenanceWindow,
-  Note,
-  SessionHistory
+  Note
 } from "@prisma/client";
 
 function parseJsonObject(value: string | null | undefined): Record<string, unknown> {
@@ -35,24 +34,6 @@ export function serializeWidget(widget: DashboardWidget) {
     h: widget.h,
     sortOrder: widget.sortOrder,
     enabled: widget.enabled
-  };
-}
-
-export function serializeSessionHistory(session: SessionHistory) {
-  return {
-    id: session.id,
-    connectionId: session.connectionId,
-    credentialId: session.credentialId,
-    resourceName: session.resourceName,
-    connectionName: session.connectionName,
-    protocol: session.protocol,
-    host: session.host,
-    port: session.port,
-    status: session.status,
-    error: session.error,
-    hasCredential: session.hasCredential,
-    startedAt: session.startedAt,
-    endedAt: session.endedAt
   };
 }
 

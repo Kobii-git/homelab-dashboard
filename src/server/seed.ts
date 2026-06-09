@@ -1,6 +1,5 @@
 import { fileURLToPath } from "node:url";
 import { PrismaClient, type DashboardGroup, type Resource } from "@prisma/client";
-import { encryptCredential } from "./vault.js";
 import { encryptAlertConfig, summarizeAlertConfig } from "./alerting.js";
 
 type DemoResource = {
@@ -41,29 +40,17 @@ const resources: DemoResource[] = [
   { name: "Backup API", kind: "website", url: "https://backup-api.lab.local/health", host: "192.168.40.15", description: "Backup controller health endpoint. Demo state: failing.", color: "#f87171", group: "External Sites", sortOrder: 0 }
 ];
 
-const folders = [
-  { name: "Infrastructure", type: "connection", sortOrder: 0 },
-  { name: "Application Hosts", type: "connection", sortOrder: 1 },
-  { name: "Admin Vault", type: "credential", sortOrder: 0 },
-  { name: "Break Glass", type: "credential", sortOrder: 1 }
-];
-
 const tags = [
   { name: "critical", type: "resource", color: "#f87171" },
-  { name: "docker", type: "resource", color: "#60a5fa" },
-  { name: "windows", type: "connection", color: "#38bdf8" },
-  { name: "ssh", type: "connection", color: "#2dd4bf" },
-  { name: "shared-admin", type: "credential", color: "#f0b84a" }
+  { name: "docker", type: "resource", color: "#60a5fa" }
 ];
 
 const widgets: DemoWidget[] = [
-  { type: "serviceStatus", title: "Service Status", x: 0, y: 0, w: 5, h: 3, sortOrder: 0 },
-  { type: "incidents", title: "Active Incidents", x: 5, y: 0, w: 4, h: 3, sortOrder: 1 },
-  { type: "favorites", title: "Favorite Launchers", x: 9, y: 0, w: 3, h: 3, sortOrder: 2 },
-  { type: "failingChecks", title: "Failing Checks", x: 0, y: 3, w: 4, h: 3, sortOrder: 3 },
-  { type: "recentSessions", title: "Recent Sessions", x: 4, y: 3, w: 4, h: 3, sortOrder: 4 },
-  { type: "vaultHealth", title: "Vault Health", x: 8, y: 3, w: 4, h: 3, sortOrder: 5 },
-  { type: "notes", title: "Pinned Notes", x: 0, y: 6, w: 6, h: 2, sortOrder: 6 }
+  { type: "serviceStatus", title: "Service Status", x: 0, y: 0, w: 6, h: 3, sortOrder: 0 },
+  { type: "incidents", title: "Active Incidents", x: 6, y: 0, w: 6, h: 3, sortOrder: 1 },
+  { type: "favorites", title: "Favorite Launchers", x: 0, y: 3, w: 6, h: 3, sortOrder: 2 },
+  { type: "failingChecks", title: "Failing Checks", x: 6, y: 3, w: 6, h: 3, sortOrder: 3 },
+  { type: "notes", title: "Pinned Notes", x: 0, y: 6, w: 12, h: 3, sortOrder: 4 }
 ];
 
 async function findOrCreateGroup(prisma: PrismaClient, name: string, sortOrder: number): Promise<DashboardGroup> {
@@ -79,13 +66,6 @@ async function findOrCreateResource(prisma: PrismaClient, resource: DemoResource
   return prisma.resource.create({ data: { name: resource.name, ...data } });
 }
 
-async function findOrCreateFolder(prisma: PrismaClient, input: { name: string; type: string; sortOrder: number }) {
-  const existing = await prisma.folder.findFirst({ where: { name: input.name, type: input.type } });
-  const data = { type: input.type, sortOrder: input.sortOrder };
-  if (existing) return prisma.folder.update({ where: { id: existing.id }, data });
-  return prisma.folder.create({ data: { name: input.name, ...data } });
-}
-
 async function findOrCreateTag(prisma: PrismaClient, input: { name: string; type: string; color: string }) {
   return prisma.tag.upsert({ where: { name_type: { name: input.name, type: input.type } }, update: { color: input.color }, create: input });
 }
@@ -98,21 +78,6 @@ async function findOrCreateWidget(prisma: PrismaClient, widget: DemoWidget) {
   const data = { type: widget.type, title: widget.title, configJson: JSON.stringify({ demo: true }), x: widget.x, y: widget.y, w: widget.w, h: widget.h, sortOrder: widget.sortOrder, enabled: true };
   if (existing) return prisma.dashboardWidget.update({ where: { id: existing.id }, data });
   return prisma.dashboardWidget.create({ data });
-}
-
-async function findOrCreateCredential(prisma: PrismaClient, vaultKey: string | undefined, label: string, username: string, password: string, folderId?: string) {
-  const existing = await prisma.credential.findFirst({ where: { label } });
-  const encrypted = encryptCredential({ username, password, domain: label.includes("Windows") ? "LAB" : undefined }, vaultKey);
-  const data = { username, folderId: folderId ?? null, notes: "Demo credential. Replace before real use.", ...encrypted };
-  if (existing) return prisma.credential.update({ where: { id: existing.id }, data });
-  return prisma.credential.create({ data: { label, ...data } });
-}
-
-async function findOrCreateConnection(prisma: PrismaClient, input: { resourceId: string; credentialId?: string; type: "ssh" | "rdp"; name: string; host: string; port: number; usernameHint: string; favorite?: boolean; folderId?: string }) {
-  const existing = await prisma.connection.findFirst({ where: { resourceId: input.resourceId, type: input.type, host: input.host, port: input.port } });
-  const data = { name: input.name, host: input.host, port: input.port, usernameHint: input.usernameHint, credentialId: input.credentialId ?? null, folderId: input.folderId ?? null, favorite: input.favorite ?? false, notes: "Demo remote connection.", lastLaunchedAt: input.favorite ? new Date(Date.now() - 1000 * 60 * 45) : null };
-  if (existing) return prisma.connection.update({ where: { id: existing.id }, data });
-  return prisma.connection.create({ data: { resourceId: input.resourceId, type: input.type, ...data } });
 }
 
 async function findOrCreateCheck(prisma: PrismaClient, input: { resourceId: string; type: "http" | "tcp" | "ping"; target: string; status: "online" | "offline" | "unknown"; latencyMs?: number; error?: string; enabled?: boolean }) {
@@ -150,11 +115,6 @@ export async function seedDemo(prisma: PrismaClient, vaultKey: string | undefine
     groupByName.set(group, await findOrCreateGroup(prisma, group, index));
   }
 
-  const folderByName = new Map<string, Awaited<ReturnType<typeof findOrCreateFolder>>>();
-  for (const folder of folders) {
-    folderByName.set(folder.name, await findOrCreateFolder(prisma, folder));
-  }
-
   for (const tag of tags) {
     await findOrCreateTag(prisma, tag);
   }
@@ -176,21 +136,7 @@ export async function seedDemo(prisma: PrismaClient, vaultKey: string | undefine
     resourceByName.set(resource.name, await findOrCreateResource(prisma, resource, group.id));
   }
 
-  const labAdmin = await findOrCreateCredential(prisma, vaultKey, "Lab Admin", "admin", "demo-admin-password", folderByName.get("Admin Vault")?.id);
-  const linuxRoot = await findOrCreateCredential(prisma, vaultKey, "Linux Root", "root", "demo-linux-password", folderByName.get("Break Glass")?.id);
-  const windowsAdmin = await findOrCreateCredential(prisma, vaultKey, "Windows Admin", "administrator", "demo-windows-password", folderByName.get("Admin Vault")?.id);
-
-  const proxmoxShell = await findOrCreateConnection(prisma, { resourceId: resourceByName.get("Proxmox Cluster")!.id, credentialId: linuxRoot.id, type: "ssh", name: "Proxmox Shell", host: "192.168.10.20", port: 22, usernameHint: "root", favorite: true, folderId: folderByName.get("Infrastructure")?.id });
-  const truenasShell = await findOrCreateConnection(prisma, { resourceId: resourceByName.get("TrueNAS Scale")!.id, credentialId: labAdmin.id, type: "ssh", name: "TrueNAS SSH", host: "192.168.10.30", port: 22, usernameHint: "admin", folderId: folderByName.get("Infrastructure")?.id });
-  const dockerShell = await findOrCreateConnection(prisma, { resourceId: resourceByName.get("Docker Host 01")!.id, credentialId: linuxRoot.id, type: "ssh", name: "Docker Host Shell", host: "192.168.30.11", port: 22, usernameHint: "root", favorite: true, folderId: folderByName.get("Application Hosts")?.id });
-  const windowsRdp = await findOrCreateConnection(prisma, { resourceId: resourceByName.get("Windows Admin VM")!.id, credentialId: windowsAdmin.id, type: "rdp", name: "Windows Admin RDP", host: "192.168.30.20", port: 3389, usernameHint: "LAB\\administrator", favorite: true, folderId: folderByName.get("Infrastructure")?.id });
-
   await Promise.all([
-    prisma.connection.update({ where: { id: proxmoxShell.id }, data: { tags: { set: [], connect: [{ name_type: { name: "ssh", type: "connection" } }] } } }),
-    prisma.connection.update({ where: { id: truenasShell.id }, data: { tags: { set: [], connect: [{ name_type: { name: "ssh", type: "connection" } }] } } }),
-    prisma.connection.update({ where: { id: dockerShell.id }, data: { tags: { set: [], connect: [{ name_type: { name: "ssh", type: "connection" } }] } } }),
-    prisma.connection.update({ where: { id: windowsRdp.id }, data: { tags: { set: [], connect: [{ name_type: { name: "windows", type: "connection" } }] } } }),
-    prisma.credential.update({ where: { id: labAdmin.id }, data: { tags: { set: [], connect: [{ name_type: { name: "shared-admin", type: "credential" } }] } } }),
     prisma.resource.update({ where: { id: resourceByName.get("Backup API")!.id }, data: { tags: { set: [], connect: [{ name_type: { name: "critical", type: "resource" } }] } } }),
     prisma.resource.update({ where: { id: resourceByName.get("Portainer")!.id }, data: { tags: { set: [], connect: [{ name_type: { name: "docker", type: "resource" } }] } } })
   ]);
@@ -232,20 +178,6 @@ export async function seedDemo(prisma: PrismaClient, vaultKey: string | undefine
     await prisma.alertDelivery.create({ data: alertDeliveryData });
   }
 
-  const sessionRows = [
-    { connectionId: dockerShell.id, credentialId: linuxRoot.id, resourceName: "Docker Host 01", connectionName: "Docker Host Shell", protocol: "ssh", host: "192.168.30.11", port: 22, status: "closed", error: null, hasCredential: true, startedAt: new Date(Date.now() - 1000 * 60 * 90), endedAt: new Date(Date.now() - 1000 * 60 * 75) },
-    { connectionId: windowsRdp.id, credentialId: windowsAdmin.id, resourceName: "Windows Admin VM", connectionName: "Windows Admin RDP", protocol: "rdp", host: "192.168.30.20", port: 3389, status: "closed", error: null, hasCredential: true, startedAt: new Date(Date.now() - 1000 * 60 * 180), endedAt: new Date(Date.now() - 1000 * 60 * 150) }
-  ];
-
-  for (const row of sessionRows) {
-    const existingSession = await prisma.sessionHistory.findFirst({ where: { resourceName: row.resourceName, connectionName: row.connectionName, protocol: row.protocol, host: row.host, port: row.port } });
-    if (existingSession) {
-      await prisma.sessionHistory.update({ where: { id: existingSession.id }, data: row });
-    } else {
-      await prisma.sessionHistory.create({ data: row });
-    }
-  }
-
   const noteData = { title: "Tonight: patch Docker Host 01", body: "Demo note: update containers, snapshot first, check Portainer after restart.", pinned: true, resourceId: resourceByName.get("Docker Host 01")!.id };
   const existingNote = await prisma.note.findFirst({ where: { title: noteData.title } });
   if (existingNote) {
@@ -263,8 +195,7 @@ export async function seedDemo(prisma: PrismaClient, vaultKey: string | undefine
   }
 
   const auditRows = [
-    { action: "demo.seeded", entityType: "system", entityId: null, summary: "Demo homelab data seeded", metadataJson: JSON.stringify({ resources: resources.length, widgets: widgets.length }) },
-    { action: "vault.reveal", entityType: "credential", entityId: labAdmin.id, summary: "Demo audit event: Lab Admin credential revealed", metadataJson: JSON.stringify({ demo: true }) }
+    { action: "demo.seeded", entityType: "system", entityId: null, summary: "Demo homelab data seeded", metadataJson: JSON.stringify({ resources: resources.length, widgets: widgets.length }) }
   ];
 
   for (const row of auditRows) {

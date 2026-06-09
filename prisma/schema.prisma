@@ -32,7 +32,6 @@ model Resource {
   groupId      String?
   group        DashboardGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   tags         Tag[]         @relation("ResourceTags")
-  connections  Connection[]
   healthChecks HealthCheck[]
   incidents    Incident[]
   notesList    Note[]
@@ -44,55 +43,7 @@ model Resource {
   @@index([favorite])
 }
 
-model Credential {
-  id            String       @id @default(cuid())
-  label         String
-  username      String?
-  notes         String?
-  folderId      String?
-  folder        Folder?      @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  tags          Tag[]        @relation("CredentialTags")
-  lastUsedAt    DateTime?
-  encryptedBlob String
-  iv            String
-  authTag       String
-  connections   Connection[]
-  sessionHistory SessionHistory[]
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
 
-  @@index([folderId])
-  @@index([lastUsedAt])
-}
-
-model Connection {
-  id           String      @id @default(cuid())
-  resourceId   String
-  resource     Resource    @relation(fields: [resourceId], references: [id], onDelete: Cascade)
-  type         String
-  name         String?
-  host         String
-  port         Int
-  usernameHint String?
-  credentialId String?
-  credential   Credential? @relation(fields: [credentialId], references: [id], onDelete: SetNull)
-  notes        String?
-  favorite     Boolean     @default(false)
-  folderId     String?
-  folder       Folder?     @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  tags         Tag[]       @relation("ConnectionTags")
-  lastLaunchedAt DateTime?
-  sessionHistory SessionHistory[]
-  sortOrder    Int         @default(0)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-
-  @@index([resourceId])
-  @@index([credentialId])
-  @@index([folderId])
-  @@index([type])
-  @@index([favorite])
-}
 
 model HealthCheck {
   id              String         @id @default(cuid())
@@ -160,22 +111,7 @@ model DashboardWidget {
   @@index([sortOrder])
 }
 
-model Folder {
-  id          String       @id @default(cuid())
-  name        String
-  type        String
-  parentId    String?
-  parent      Folder?      @relation("FolderTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children    Folder[]     @relation("FolderTree")
-  sortOrder   Int          @default(0)
-  credentials Credential[]
-  connections Connection[]
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
 
-  @@index([type])
-  @@index([parentId])
-}
 
 model Tag {
   id          String       @id @default(cuid())
@@ -183,38 +119,11 @@ model Tag {
   color       String?
   type        String       @default("general")
   resources   Resource[]   @relation("ResourceTags")
-  connections Connection[] @relation("ConnectionTags")
-  credentials Credential[] @relation("CredentialTags")
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
   @@unique([name, type])
   @@index([type])
-}
-
-model SessionHistory {
-  id           String      @id @default(cuid())
-  connectionId String?
-  connection   Connection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
-  credentialId String?
-  credential   Credential? @relation(fields: [credentialId], references: [id], onDelete: SetNull)
-  resourceName String
-  connectionName String?
-  protocol     String
-  host         String
-  port         Int
-  status       String      @default("launching")
-  error        String?
-  hasCredential Boolean    @default(false)
-  startedAt    DateTime    @default(now())
-  endedAt      DateTime?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-
-  @@index([connectionId])
-  @@index([credentialId])
-  @@index([status])
-  @@index([startedAt])
 }
 
 model AuditEvent {

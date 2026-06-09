@@ -1,5 +1,4 @@
 export const RESOURCE_KINDS = ["app", "website", "docker", "vm", "server", "other"] as const;
-export const CONNECTION_TYPES = ["rdp", "ssh"] as const;
 export const HEALTH_CHECK_TYPES = ["http", "tcp", "ping", "ssl"] as const;
 export const HEALTH_STATUSES = ["unknown", "online", "offline"] as const;
 export const INCIDENT_STATUSES = ["open", "acknowledged", "resolved", "muted"] as const;
@@ -10,13 +9,10 @@ export const WIDGET_TYPES = [
   "serviceStatus",
   "incidents",
   "failingChecks",
-  "recentSessions",
-  "vaultHealth",
   "notes"
 ] as const;
 
 export type ResourceKind = (typeof RESOURCE_KINDS)[number];
-export type ConnectionType = (typeof CONNECTION_TYPES)[number];
 export type HealthCheckType = (typeof HEALTH_CHECK_TYPES)[number];
 export type HealthStatus = (typeof HEALTH_STATUSES)[number];
 export type IncidentStatus = (typeof INCIDENT_STATUSES)[number];
@@ -38,7 +34,6 @@ export type DashboardResource = {
   sortOrder: number;
   groupId: string | null;
   tags?: TagDto[];
-  connections?: Array<{ id: string; type: ConnectionType }>;
   healthChecks?: Array<{
     id: string;
     type: HealthCheckType;
@@ -65,13 +60,7 @@ export type DashboardGroupDto = {
   resources: DashboardResource[];
 };
 
-export type FolderDto = {
-  id: string;
-  name: string;
-  type: "connection" | "credential" | "mixed";
-  parentId: string | null;
-  sortOrder: number;
-};
+
 
 export type TagDto = {
   id: string;
@@ -93,21 +82,7 @@ export type DashboardWidgetDto = {
   enabled: boolean;
 };
 
-export type SessionHistoryDto = {
-  id: string;
-  connectionId: string | null;
-  credentialId: string | null;
-  resourceName: string;
-  connectionName: string | null;
-  protocol: ConnectionType;
-  host: string;
-  port: number;
-  status: string;
-  error: string | null;
-  hasCredential: boolean;
-  startedAt: string;
-  endedAt: string | null;
-};
+
 
 export type IncidentDto = {
   id: string;
@@ -179,7 +154,7 @@ export type NoteDto = {
 
 export type SearchResultDto = {
   id: string;
-  type: "resource" | "connection" | "check" | "incident" | "credential" | "navigation" | "action";
+  type: "resource" | "check" | "incident" | "navigation" | "action";
   title: string;
   subtitle: string;
   action: string;

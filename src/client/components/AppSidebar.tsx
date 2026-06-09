@@ -27,10 +27,8 @@ export function AppSidebar({
   onOpenPalette,
   onOpenKeyboardHelp,
   onLogout,
-  liveSessionCount,
   openIncidents,
-  failingChecks,
-  vaultCount
+  failingChecks
 }: {
   navItems: NavItem[];
   view: AppView;
@@ -42,10 +40,8 @@ export function AppSidebar({
   onOpenPalette: () => void;
   onOpenKeyboardHelp: () => void;
   onLogout: () => void;
-  liveSessionCount: number;
   openIncidents: number;
   failingChecks: number;
-  vaultCount: number;
 }) {
   const compact = sidebarMode === "compact";
   const hidden = sidebarMode === "hidden";
@@ -81,8 +77,6 @@ export function AppSidebar({
           <div className="sidebar-stats" aria-label="Summary">
             <span className="sidebar-stat">{openIncidents} incidents</span>
             <span className="sidebar-stat">{failingChecks} failing</span>
-            <span className="sidebar-stat">{liveSessionCount} live</span>
-            <span className="sidebar-stat">{vaultCount} vault</span>
           </div>
         ) : null}
 

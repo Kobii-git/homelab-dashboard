@@ -2,7 +2,6 @@ import { z } from "zod";
 import {
   ALERT_CHANNEL_TYPES,
   ALERT_EVENTS,
-  CONNECTION_TYPES,
   HEALTH_CHECK_TYPES,
   INCIDENT_STATUSES,
   RESOURCE_KINDS,
@@ -44,36 +43,7 @@ export const resourceSchema = z.object({
 
 export const resourcePatchSchema = resourceSchema.partial();
 
-export const credentialSchema = z.object({
-  label: z.string().trim().min(1).max(160),
-  username: z.string().trim().max(200).optional().nullable(),
-  notes: nullableText,
-  folderId: z.string().cuid().optional().nullable(),
-  password: z.string().max(1000).optional().nullable(),
-  domain: z.string().trim().max(200).optional().nullable(),
-  privateKey: z.string().max(12000).optional().nullable(),
-  passphrase: z.string().max(1000).optional().nullable(),
-  tagIds: tagIdsField
-});
 
-export const credentialPatchSchema = credentialSchema.partial();
-
-export const connectionSchema = z.object({
-  resourceId: z.string().cuid(),
-  type: z.enum(CONNECTION_TYPES),
-  name: z.string().trim().min(1).max(160).optional().nullable(),
-  host: z.string().trim().min(1).max(255),
-  port: z.number().int().min(1).max(65535),
-  usernameHint: z.string().trim().max(200).optional().nullable(),
-  credentialId: z.string().cuid().optional().nullable(),
-  notes: nullableText,
-  favorite: z.boolean().optional(),
-  folderId: z.string().cuid().optional().nullable(),
-  sortOrder: z.number().int().min(0).optional(),
-  tagIds: tagIdsField
-});
-
-export const connectionPatchSchema = connectionSchema.partial();
 
 export const healthCheckSchema = z.object({
   resourceId: z.string().cuid(),
@@ -88,14 +58,7 @@ export const healthCheckSchema = z.object({
 
 export const healthCheckPatchSchema = healthCheckSchema.partial();
 
-export const sessionLaunchSchema = z.object({
-  connectionId: z.string().cuid()
-});
 
-export const sessionEndSchema = z.object({
-  status: z.string().trim().min(1).max(80).optional(),
-  error: z.string().trim().max(1000).optional().nullable()
-});
 
 export const layoutSchema = z.object({
   layout: z.record(z.string(), z.unknown())
@@ -124,14 +87,7 @@ export const dashboardWidgetSchema = z.object({
 
 export const dashboardWidgetPatchSchema = dashboardWidgetSchema.partial();
 
-export const folderSchema = z.object({
-  name: z.string().trim().min(1).max(120),
-  type: z.enum(["connection", "credential", "mixed"]),
-  parentId: z.string().cuid().optional().nullable(),
-  sortOrder: z.number().int().min(0).optional()
-});
 
-export const folderPatchSchema = folderSchema.partial();
 
 export const tagSchema = z.object({
   name: z.string().trim().min(1).max(80),
@@ -141,10 +97,7 @@ export const tagSchema = z.object({
 
 export const tagPatchSchema = tagSchema.partial();
 
-export const vaultRevealSchema = z.object({
-  credentialId: z.string().cuid(),
-  password: z.string().min(1)
-});
+
 
 export const incidentSchema = z.object({
   checkId: z.string().cuid().optional().nullable(),
@@ -202,11 +155,7 @@ export const noteSchema = z.object({
 
 export const notePatchSchema = noteSchema.partial();
 
-export const connectionTestSchema = z.object({
-  host: z.string().trim().min(1).max(255),
-  port: z.number().int().min(1).max(65535),
-  type: z.enum(CONNECTION_TYPES).optional()
-});
+
 
 export function nullishToUndefined<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(

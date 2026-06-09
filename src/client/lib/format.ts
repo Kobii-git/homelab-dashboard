@@ -37,12 +37,11 @@ export function summarizeResourceStatus(resources: DashboardResource[]) {
     (summary, resource) => {
       summary[statusFor(resource)] += 1;
       summary.checks += resource.healthChecks?.length ?? 0;
-      summary.connections += resource.connections?.length ?? 0;
       if (resource.favorite) {
         summary.favorites += 1;
       }
       return summary;
     },
-    { online: 0, offline: 0, unknown: 0, checks: 0, connections: 0, favorites: 0 }
+    { online: 0, offline: 0, unknown: 0, checks: 0, favorites: 0 }
   );
 }

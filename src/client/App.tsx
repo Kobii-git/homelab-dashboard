@@ -3,8 +3,6 @@ import {
   Bell,
   Gauge,
   Home,
-  KeyRound,
-  Monitor,
   Plus,
   RefreshCw,
   Server,
@@ -18,14 +16,11 @@ import { CommandPalette } from "./components/CommandPalette";
 import { BuildBadge } from "./components/BuildBadge";
 import { DetailDrawer, type DrawerState } from "./components/DetailDrawer";
 import { KeyboardHelp } from "./components/KeyboardHelp";
-import { AccessManager } from "./features/access/AccessManager";
-import { useRemoteSessions } from "./features/access/useRemoteSessions";
 import { AlertsView } from "./features/alerts/AlertsView";
 import { DashboardConsole } from "./features/dashboard/DashboardConsole";
 import { InventoryView, type InventoryTab } from "./features/inventory/InventoryView";
 import { MonitoringCenter } from "./features/monitoring/MonitoringCenter";
 import { emptyV2Data, type AppView, type V2Data } from "./features/types";
-import { VaultView } from "./features/vault/VaultView";
 import { SettingsView } from "./features/settings/SettingsView";
 import {
   apiGet,
@@ -33,30 +28,22 @@ import {
   type AlertChannelDto,
   type AlertDeliveryDto,
   type AlertRuleDto,
-  type AuditEventDto,
-  type ConnectionDto,
-  type CredentialDto,
   type DashboardDto,
   type DashboardWidgetDto,
-  type FolderDto,
   type HealthCheckDto,
   type IncidentDto,
   type MaintenanceWindowDto,
   type NoteDto,
   type SearchResultDto,
-  type SessionHistoryDto,
   type TagDto
 } from "./lib/api";
 import { formatDateTime } from "./lib/format";
 import { useAppChrome } from "./lib/appChrome";
-import { pushToast } from "./lib/toast";
 import type { DashboardGroupDto, DashboardResource } from "../shared/types";
 
 const navItems: Array<{ id: AppView; label: string; icon: ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <Home size={18} /> },
-  { id: "remote", label: "Remote", icon: <Monitor size={18} /> },
   { id: "monitoring", label: "Monitoring", icon: <Activity size={18} /> },
-  { id: "vault", label: "Vault", icon: <KeyRound size={18} /> },
   { id: "alerts", label: "Alerts", icon: <Bell size={18} /> },
   { id: "inventory", label: "Inventory", icon: <Server size={18} /> },
   settingsNavItem()
@@ -90,7 +77,7 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
           <Shield size={28} />
           <div>
             <h1>Homelab Dashboard</h1>
-            <span>Admin vault</span>
+            <span>Admin panel</span>
           </div>
         </div>
         <label>
@@ -113,7 +100,7 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
         </label>
         {error ? <p className="form-error">{error}</p> : null}
         <button className="primary-button" type="submit" disabled={submitting}>
-          {submitting ? <InlineSpinner size={16} /> : <KeyRound size={16} />}
+          {submitting ? <InlineSpinner size={16} /> : <Shield size={16} />}
           {submitting ? "Unlocking…" : "Unlock"}
         </button>
         <BuildBadge className="login-build-badge" />
@@ -204,8 +191,7 @@ function SetupScreen({
           <span>
             <strong>Load demo data</strong>
             <small>
-              Sample resources, SSH/RDP connections, health checks, an open incident, vault
-              credentials, and a pinned note
+              Sample resources, health checks, an open incident, and a pinned note
             </small>
           </span>
         </div>
@@ -252,10 +238,8 @@ export function App() {
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const [keyboardHelpOpen, setKeyboardHelpOpen] = useState(false);
   const [inventoryTab, setInventoryTab] = useState<InventoryTab>("resource");
-  const [launchConnectionId, setLaunchConnectionId] = useState<string | null>(null);
   const [username, setUsername] = useState("admin");
   const [authSource, setAuthSource] = useState<"env" | "database">("database");
-  const remoteSessions = useRemoteSessions();
   const { theme, toggleTheme, sidebarMode, cycleSidebar } = useAppChrome();
 
   const openIncidentMap = useMemo(
@@ -272,15 +256,10 @@ export function App() {
         dashboard,
         resources,
         groups,
-        credentials,
-        connections,
         checks,
         widgets,
         incidents,
-        sessionHistory,
-        folders,
         tags,
-        audit,
         alertChannels,
         alertRules,
         alertDeliveries,
@@ -290,15 +269,10 @@ export function App() {
         apiGet<DashboardDto>("/api/dashboard"),
         apiGet<DashboardResource[]>("/api/resources"),
         apiGet<DashboardGroupDto[]>("/api/groups"),
-        apiGet<CredentialDto[]>("/api/credentials"),
-        apiGet<ConnectionDto[]>("/api/connections"),
         apiGet<HealthCheckDto[]>("/api/health-checks"),
         apiGet<DashboardWidgetDto[]>("/api/dashboard/widgets"),
         apiGet<IncidentDto[]>("/api/incidents"),
-        apiGet<SessionHistoryDto[]>("/api/sessions/history"),
-        apiGet<FolderDto[]>("/api/vault/folders"),
         apiGet<TagDto[]>("/api/tags"),
-        apiGet<AuditEventDto[]>("/api/vault/audit"),
         apiGet<AlertChannelDto[]>("/api/alert-channels"),
         apiGet<AlertRuleDto[]>("/api/alert-rules"),
         apiGet<AlertDeliveryDto[]>("/api/alert-deliveries"),
@@ -310,15 +284,10 @@ export function App() {
         dashboard,
         resources,
         groups,
-        credentials,
-        connections,
         checks,
         widgets,
         incidents,
-        sessionHistory,
-        folders,
         tags,
-        audit,
         alertChannels,
         alertRules,
         alertDeliveries,
@@ -434,7 +403,6 @@ export function App() {
 
   async function logout() {
     await apiSend("/api/auth/logout", "POST");
-    remoteSessions.reset();
     setAuthenticated(false);
   }
 
@@ -446,16 +414,6 @@ export function App() {
   async function patchGroup(id: string, body: Record<string, unknown>) {
     await apiSend(`/api/groups/${id}`, "PATCH", body);
     await loadData();
-  }
-
-  async function exportInventory() {
-    setInventoryTab("backup");
-    setView("inventory");
-  }
-
-  function openConnection(connection: ConnectionDto) {
-    setLaunchConnectionId(connection.id);
-    setView("remote");
   }
 
   function inspectResource(resource: DashboardResource) {
@@ -470,23 +428,6 @@ export function App() {
             ["Host", resource.host],
             ["Favorite", resource.favorite ? "Yes" : "No"],
             ["Notes", resource.notes]
-          ]}
-        />
-      )
-    });
-  }
-
-  function inspectCredential(credential: CredentialDto) {
-    setDrawer({
-      type: "credential",
-      title: credential.label,
-      body: (
-        <DrawerBody
-          rows={[
-            ["Username", credential.username],
-            ["Folder", data.folders.find((folder) => folder.id === credential.folderId)?.name],
-            ["Last used", formatDateTime(credential.lastUsedAt)],
-            ["Notes", credential.notes]
           ]}
         />
       )
@@ -525,18 +466,6 @@ export function App() {
       return;
     }
 
-    if (result.action === "startSession") {
-      const connectionId = result.payload?.connectionId;
-      if (typeof connectionId === "string") {
-        const connection = data.connections.find((item) => item.id === connectionId);
-        if (connection) {
-          setLaunchConnectionId(connection.id);
-          setView("remote");
-        }
-      }
-      return;
-    }
-
     if (result.action === "runCheck" && typeof result.payload?.checkId === "string") {
       await apiSend(`/api/health-checks/${result.payload.checkId}/run`, "POST");
       await loadData();
@@ -551,10 +480,6 @@ export function App() {
       }
       setView("monitoring");
       return;
-    }
-
-    if (result.action === "openVault") {
-      setView("vault");
     }
   }
 
@@ -602,13 +527,11 @@ export function App() {
         onOpenPalette={() => setPaletteOpen(true)}
         onOpenKeyboardHelp={() => setKeyboardHelpOpen(true)}
         onLogout={logout}
-        liveSessionCount={remoteSessions.tabs.filter((tab) => tab.state === "connected" || tab.state === "launching").length}
         openIncidents={data.incidents.filter((incident) => incident.status !== "resolved").length}
         failingChecks={data.checks.filter((check) => check.latestStatus === "offline" && check.enabled).length}
-        vaultCount={data.credentials.length}
       />
       <div className="content-shell">
-        <div className={`workspace-scroll ${view === "remote" ? "access-workspace" : ""}`}>
+        <div className="workspace-scroll">
           {error ? <div className="app-error">{error}</div> : null}
           {loading ? <div className="loading-strip"><InlineSpinner size={12} /> Syncing</div> : null}
           {view === "dashboard" ? (
@@ -625,19 +548,6 @@ export function App() {
                   inspectIncident(incident);
                 }
               }}
-              onConnect={openConnection}
-            />
-          ) : null}
-          {view === "remote" ? (
-            <AccessManager
-              data={data}
-              onRefresh={loadData}
-              tabs={remoteSessions.tabs}
-              setTabs={remoteSessions.setTabs}
-              activeTabId={remoteSessions.activeTabId}
-              setActiveTabId={remoteSessions.setActiveTabId}
-              launchConnectionId={launchConnectionId}
-              onLaunchHandled={() => setLaunchConnectionId(null)}
             />
           ) : null}
           {view === "inventory" ? (
@@ -650,9 +560,6 @@ export function App() {
               onInspectIncident={inspectIncident}
               onOpenInventoryChecks={() => { setInventoryTab("check"); setView("inventory"); }}
             />
-          ) : null}
-          {view === "vault" ? (
-            <VaultView data={data} onRefresh={loadData} onInspectCredential={inspectCredential} />
           ) : null}
           {view === "alerts" ? <AlertsView data={data} onRefresh={loadData} /> : null}
           {view === "settings" ? (

@@ -3,26 +3,15 @@ export const BACKUP_FORMAT_VERSION = "1.0.0";
 export type BackupPayload = {
   version: string;
   exportedAt: string;
-  folders: BackupFolder[];
   tags: BackupTag[];
   groups: BackupGroup[];
   resources: BackupResource[];
-  credentials: BackupCredential[];
-  connections: BackupConnection[];
   checks: BackupCheck[];
   notes: BackupNote[];
   alertChannels: BackupAlertChannel[];
   alertRules: BackupAlertRule[];
   maintenanceWindows: BackupMaintenanceWindow[];
   widgets: BackupWidget[];
-};
-
-export type BackupFolder = {
-  id: string;
-  name: string;
-  type: string;
-  parentId: string | null;
-  sortOrder: number;
 };
 
 export type BackupTag = {
@@ -52,34 +41,6 @@ export type BackupResource = {
   favorite: boolean;
   sortOrder: number;
   groupId: string | null;
-  tagIds: string[];
-};
-
-export type BackupCredential = {
-  id: string;
-  label: string;
-  username: string | null;
-  notes: string | null;
-  folderId: string | null;
-  encryptedBlob: string;
-  iv: string;
-  authTag: string;
-  tagIds: string[];
-};
-
-export type BackupConnection = {
-  id: string;
-  resourceId: string;
-  type: string;
-  name: string | null;
-  host: string;
-  port: number;
-  usernameHint: string | null;
-  credentialId: string | null;
-  notes: string | null;
-  favorite: boolean;
-  folderId: string | null;
-  sortOrder: number;
   tagIds: string[];
 };
 

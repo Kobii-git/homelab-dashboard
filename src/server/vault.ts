@@ -1,13 +1,5 @@
 import crypto from "node:crypto";
 
-export type PlainCredential = {
-  username?: string;
-  password?: string;
-  domain?: string;
-  privateKey?: string;
-  passphrase?: string;
-};
-
 export type EncryptedCredential = {
   encryptedBlob: string;
   iv: string;
@@ -26,13 +18,6 @@ function deriveKey(vaultKey?: string): Buffer {
   return crypto.createHash("sha256").update(requireVaultKey(vaultKey)).digest();
 }
 
-export function encryptCredential(
-  credential: PlainCredential,
-  vaultKey?: string
-): EncryptedCredential {
-  return encryptJson(credential, vaultKey);
-}
-
 export function encryptJson(value: Record<string, unknown>, vaultKey?: string): EncryptedCredential {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", deriveKey(vaultKey), iv);
@@ -47,13 +32,6 @@ export function encryptJson(value: Record<string, unknown>, vaultKey?: string): 
     iv: iv.toString("base64"),
     authTag: authTag.toString("base64")
   };
-}
-
-export function decryptCredential(
-  encrypted: EncryptedCredential,
-  vaultKey?: string
-): PlainCredential {
-  return decryptJson<PlainCredential>(encrypted, vaultKey);
 }
 
 export function decryptJson<T extends Record<string, unknown>>(
