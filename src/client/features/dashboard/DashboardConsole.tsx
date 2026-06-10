@@ -124,18 +124,23 @@ function ServiceCard({
   resource,
   onOpen,
   onFavorite,
-  onInspect
+  onInspect,
+  onRunCheck,
+  checking
 }: {
   resource: DashboardResource;
   onOpen: (resource: DashboardResource) => void;
   onFavorite: (resource: DashboardResource) => void;
   onInspect: (resource: DashboardResource) => void;
+  onRunCheck: (resource: DashboardResource) => void;
+  checking: boolean;
 }) {
   const status = statusFor(resource);
   const color = resource.color ?? "#2dd4bf";
   const latency = latestLatency(resource);
   const address = serviceAddress(resource);
   const checkedAt = latestCheckTime(resource);
+  const hasChecks = (resource.healthChecks ?? []).length > 0;
 
   return (
     <article className={`service-card service-${status} ${resource.url ? "can-launch" : ""}`}>
@@ -158,8 +163,24 @@ function ServiceCard({
       {resource.description ? <p className="service-description">{resource.description}</p> : null}
 
       <div className="service-card-meta">
-        <StatusBadge status={status} />
-        <span>{formatLatency(latency)}</span>
+        <button
+          className="status-action"
+          type="button"
+          onClick={() => onRunCheck(resource)}
+          title={hasChecks ? `Run health check for ${resource.name}` : `Create and run a default health check for ${resource.name}`}
+          disabled={checking || (!resource.url && !resource.host)}
+        >
+          {checking ? <RefreshCw className="spin" size={14} /> : <StatusBadge status={status} />}
+        </button>
+        <button
+          className="latency-action"
+          type="button"
+          onClick={() => onRunCheck(resource)}
+          title={hasChecks ? `Run health check for ${resource.name}` : `Create and run a default health check for ${resource.name}`}
+          disabled={checking || (!resource.url && !resource.host)}
+        >
+          {checking ? "Checking..." : formatLatency(latency)}
+        </button>
         <span>{formatDateTime(checkedAt)}</span>
       </div>
 
@@ -173,8 +194,9 @@ function ServiceCard({
           type="button"
           title={resource.favorite ? "Remove favorite" : "Favorite"}
           onClick={() => onFavorite(resource)}
+          aria-pressed={resource.favorite}
         >
-          <Star size={15} />
+          <Star size={15} fill={resource.favorite ? "currentColor" : "none"} />
         </button>
         <button className="icon-button" type="button" title="Open service" disabled={!resource.url} onClick={() => onOpen(resource)}>
           <ExternalLink size={15} />
@@ -188,6 +210,7 @@ export function DashboardConsole({
   data,
   onRefresh,
   onPatchResource,
+  onRunCheck,
   onPatchGroup,
   onOpenServices,
   onInspectResource,
@@ -196,6 +219,7 @@ export function DashboardConsole({
   data: V2Data;
   onRefresh: () => Promise<void>;
   onPatchResource: (id: string, body: Record<string, unknown>) => Promise<void>;
+  onRunCheck: (resource: DashboardResource) => Promise<void>;
   onPatchGroup: (id: string, body: Record<string, unknown>) => Promise<void>;
   onOpenServices: () => void;
   onInspectResource: (resource: DashboardResource) => void;
@@ -203,6 +227,8 @@ export function DashboardConsole({
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [checkingResourceId, setCheckingResourceId] = useState<string | null>(null);
+  const [checkError, setCheckError] = useState<string | null>(null);
   const resources = useMemo(
     () => dashboardResources(data.dashboard.groups, data.dashboard.ungroupedResources),
     [data.dashboard]
@@ -249,6 +275,18 @@ export function DashboardConsole({
         onInspect={onInspectResource}
         onOpen={openResource}
         onFavorite={(item) => onPatchResource(item.id, { favorite: !item.favorite })}
+        onRunCheck={async (item) => {
+          setCheckingResourceId(item.id);
+          setCheckError(null);
+          try {
+            await onRunCheck(item);
+          } catch (error) {
+            setCheckError(error instanceof Error ? error.message : "Health check failed");
+          } finally {
+            setCheckingResourceId(null);
+          }
+        }}
+        checking={checkingResourceId === resource.id}
       />
     );
   }
@@ -282,6 +320,8 @@ export function DashboardConsole({
         <MetricCard icon={<Wifi size={18} />} label="Online" value={totals.online} tone="online" />
         <MetricCard icon={<WifiOff size={18} />} label="Offline" value={totals.offline} tone="offline" />
       </section>
+
+      {checkError ? <div className="app-error">{checkError}</div> : null}
 
       <section className="dashboard-signal-grid">
         <section className="dashboard-signal-panel">

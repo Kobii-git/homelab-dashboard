@@ -408,12 +408,64 @@ export function App() {
   }
 
   async function patchResource(id: string, body: Record<string, unknown>) {
+    if (typeof body.favorite === "boolean") {
+      setData((current) => ({
+        ...current,
+        resources: current.resources.map((resource) =>
+          resource.id === id ? { ...resource, favorite: body.favorite as boolean } : resource
+        ),
+        dashboard: {
+          ...current.dashboard,
+          groups: current.dashboard.groups.map((group) => ({
+            ...group,
+            resources: group.resources.map((resource) =>
+              resource.id === id ? { ...resource, favorite: body.favorite as boolean } : resource
+            )
+          })),
+          ungroupedResources: current.dashboard.ungroupedResources.map((resource) =>
+            resource.id === id ? { ...resource, favorite: body.favorite as boolean } : resource
+          )
+        }
+      }));
+    }
+
     await apiSend(`/api/resources/${id}`, "PATCH", body);
     await loadData();
   }
 
   async function patchGroup(id: string, body: Record<string, unknown>) {
     await apiSend(`/api/groups/${id}`, "PATCH", body);
+    await loadData();
+  }
+
+  async function runResourceHealthCheck(resource: DashboardResource) {
+    let checkId = resource.healthChecks?.[0]?.id;
+
+    if (!checkId) {
+      const url = resource.url?.trim();
+      const host = resource.host?.trim();
+      const target = url
+        ? (/^https?:\/\//i.test(url) ? url : `http://${url}`)
+        : host;
+
+      if (!target) {
+        throw new Error("Add a URL or host before running a health check.");
+      }
+
+      const created = await apiSend<HealthCheckDto>("/api/health-checks", "POST", {
+        resourceId: resource.id,
+        type: url ? "http" : "ping",
+        target,
+        intervalSeconds: 60,
+        timeoutMs: 3000,
+        failureThreshold: 1,
+        successThreshold: 1,
+        enabled: true
+      });
+      checkId = created.id;
+    }
+
+    await apiSend(`/api/health-checks/${checkId}/run`, "POST");
     await loadData();
   }
 
@@ -537,6 +589,7 @@ export function App() {
               data={data}
               onRefresh={loadData}
               onPatchResource={patchResource}
+              onRunCheck={runResourceHealthCheck}
               onPatchGroup={patchGroup}
               onOpenServices={() => { setServiceTab("resource"); setView("services"); }}
               onInspectResource={inspectResource}

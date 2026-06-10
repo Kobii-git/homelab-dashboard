@@ -5,7 +5,7 @@ continue without rediscovering the shape of the app.
 
 - **Repo:** https://github.com/Kobii-git/homelab-dashboard
 - **Image:** `ghcr.io/kobii-git/homelab-dashboard`
-- **Current version:** `0.4.3`
+- **Current version:** `0.4.4`
 - **Port:** `4173`
 - **Current branch:** `main`
 
@@ -182,6 +182,9 @@ Recent cleanup and redesign passes:
   compact service metric strip.
 - `0.4.3` fixed Docker startup on hosts where Prisma `db push` crashed with a
   blank schema-engine error unless `RUST_LOG=debug` was exported.
+- `0.4.4` made dashboard status/latency chips runnable, auto-creates a default
+  check from a service URL/host when needed, and makes favorite stars update
+  immediately with a clear selected state.
 
 ---
 

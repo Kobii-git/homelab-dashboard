@@ -6,6 +6,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.4] - 2026-06-10
+
+### Changed
+- Dashboard service cards now let you click status/latency to run a health check.
+  If a service has no checks yet, the dashboard creates a sensible default check
+  from its URL or host and runs it immediately.
+- Favorite stars now update optimistically and render as visibly selected.
+
 ## [0.4.3] - 2026-06-10
 
 ### Fixed
