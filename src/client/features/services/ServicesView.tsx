@@ -1,10 +1,10 @@
 import { Activity, ChevronDown, ChevronUp, Plus, Pencil, Save, Server, Trash2, Wifi } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
-import { HEALTH_CHECK_TYPES, RESOURCE_KINDS } from "../../../shared/types";
+import { HEALTH_CHECK_TYPES, HEALTH_STATUSES, MONITORING_MODES, RESOURCE_KINDS } from "../../../shared/types";
 import { MetricCard, PageHeader, StatusBadge } from "../../components/Primitives";
 import { FormErrorBanner, runFormAction, runFormSubmit } from "../../lib/forms";
 import { apiSend, emptyToNull } from "../../lib/api";
-import { formatDateTime } from "../../lib/format";
+import { formatDateTime, statusFor } from "../../lib/format";
 import type { AppData } from "../types";
 import type { DashboardResource } from "../../../shared/types";
 import type { HealthCheckDto } from "../../lib/api";
@@ -118,6 +118,8 @@ export function ServicesView({
         color: emptyToNull(form.get("color")),
         description: emptyToNull(form.get("description")),
         groupId: emptyToNull(form.get("groupId")),
+        monitoringMode: form.get("monitoringMode"),
+        manualStatus: emptyToNull(form.get("manualStatus")),
         favorite: form.get("favorite") === "on"
       };
 
@@ -173,6 +175,13 @@ export function ServicesView({
   async function toggleCheckEnabled(check: HealthCheckDto) {
     await apiSend(`/api/health-checks/${check.id}`, "PATCH", { enabled: !check.enabled });
     await onRefresh();
+  }
+
+  async function patchResource(resource: DashboardResource, body: Record<string, unknown>) {
+    await runFormAction(async () => {
+      await apiSend(`/api/resources/${resource.id}`, "PATCH", body);
+      await onRefresh();
+    }, setActionError, setSubmitting);
   }
 
   function beginCreate(mode: FormMode, tab: ServiceTab) {
@@ -282,6 +291,25 @@ export function ServicesView({
                   {data.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
                 </select>
               </label>
+              <label>
+                Monitoring
+                <select name="monitoringMode" defaultValue={editResource?.monitoringMode ?? "auto"}>
+                  {MONITORING_MODES.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {mode === "auto" ? "Automatic checks" : mode === "manual" ? "Manual status" : "Disabled"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Manual status
+                <select name="manualStatus" defaultValue={editResource?.manualStatus ?? ""}>
+                  <option value="">Unknown</option>
+                  {HEALTH_STATUSES.filter((status) => status !== "unknown").map((status) => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </label>
               <label>Notes</label>
               <textarea name="description" rows={2} defaultValue={editResource?.description ?? ""} />
               <label className="checkbox-row">
@@ -300,9 +328,37 @@ export function ServicesView({
               <div className="data-row data-row-wide service-data-row" key={resource.id}>
                 <span>
                   <strong>{resource.name}</strong>
-                  <small>{resource.kind}{resource.url ? ` · ${resource.url}` : ""}{resource.host ? ` · ${resource.host}` : ""}</small>
+                  <small>
+                    {resource.kind}{resource.url ? ` · ${resource.url}` : ""}{resource.host ? ` · ${resource.host}` : ""}
+                    {resource.monitoringMode !== "auto" ? ` · ${resource.monitoringMode}` : ""}
+                  </small>
                 </span>
-                <StatusBadge status={resource.healthChecks?.some((check) => check.latestStatus === "offline") ? "offline" : resource.healthChecks?.length ? "online" : "unknown"} />
+                <StatusBadge status={statusFor(resource)} />
+                <select
+                  className="inline-row-select"
+                  value={resource.monitoringMode}
+                  title="Monitoring mode"
+                  onChange={(event) => void patchResource(resource, {
+                    monitoringMode: event.target.value,
+                    manualStatus: event.target.value === "auto" ? null : resource.manualStatus ?? "unknown"
+                  })}
+                >
+                  <option value="auto">Auto</option>
+                  <option value="manual">Manual</option>
+                  <option value="disabled">Off</option>
+                </select>
+                <select
+                  className="inline-row-select"
+                  value={resource.manualStatus ?? "unknown"}
+                  title="Manual status"
+                  disabled={resource.monitoringMode === "auto"}
+                  onChange={(event) => void patchResource(resource, {
+                    monitoringMode: resource.monitoringMode === "auto" ? "manual" : resource.monitoringMode,
+                    manualStatus: event.target.value
+                  })}
+                >
+                  {HEALTH_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                </select>
                 <button className="icon-button" type="button" title="Move up" disabled={index === 0} onClick={() => void moveResource(resource, -1)}>
                   <ChevronUp size={14} />
                 </button>

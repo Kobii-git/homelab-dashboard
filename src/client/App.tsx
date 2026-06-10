@@ -375,6 +375,10 @@ export function App() {
   }
 
   async function runResourceHealthCheck(resource: DashboardResource) {
+    if (resource.monitoringMode !== "auto") {
+      throw new Error("Set this service to automatic monitoring before running checks.");
+    }
+
     let checkId = resource.healthChecks?.[0]?.id;
 
     if (!checkId) {
@@ -490,8 +494,8 @@ export function App() {
         </div>
       </div>
 
-      <button className="sign-out-sticky" type="button" onClick={() => void logout()}>
-        Logout
+      <button className="sign-out-sticky" type="button" onClick={() => void logout()} title="Log out">
+        Log out
       </button>
     </div>
   );

@@ -77,7 +77,15 @@ function routeId(request: { params: unknown }): string {
   return idParamSchema.parse(request.params).id;
 }
 
-function normalizedAutoPingTarget(resource: { url: string | null; host: string | null }): { type: "http" | "ping"; target: string } | null {
+function normalizedAutoPingTarget(resource: {
+  url: string | null;
+  host: string | null;
+  monitoringMode?: string | null;
+}): { type: "http" | "ping"; target: string } | null {
+  if (resource.monitoringMode === "manual" || resource.monitoringMode === "disabled") {
+    return null;
+  }
+
   const url = resource.url?.trim();
   if (url) {
     const hasScheme = /^https?:\/\//i.test(url);
@@ -429,7 +437,25 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.patch("/api/resources/:id", async (request) => {
     const id = routeId(request);
     const body = resourcePatchSchema.parse(request.body);
-    return prisma.resource.update({ where: { id }, data: body, include: { healthChecks: true, group: true } });
+    const data = { ...body };
+
+    if (data.monitoringMode === "auto") {
+      data.manualStatus = null;
+    }
+
+    const resource = await prisma.resource.update({ where: { id }, data, include: { healthChecks: true, group: true } });
+
+    if (resource.monitoringMode === "disabled") {
+      await prisma.healthCheck.updateMany({ where: { resourceId: id }, data: { enabled: false } });
+      return prisma.resource.findUniqueOrThrow({ where: { id }, include: { healthChecks: true, group: true } });
+    }
+
+    if (body.monitoringMode === "auto") {
+      await prisma.healthCheck.updateMany({ where: { resourceId: id }, data: { enabled: true } });
+      return prisma.resource.findUniqueOrThrow({ where: { id }, include: { healthChecks: true, group: true } });
+    }
+
+    return resource;
   });
 
   app.delete("/api/resources/:id", async (request) => {
@@ -472,7 +498,16 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   app.post("/api/health-checks/:id/run", async (request) => {
     const id = routeId(request);
-    const check = await prisma.healthCheck.findUniqueOrThrow({ where: { id } });
+    const check = await prisma.healthCheck.findUniqueOrThrow({ where: { id }, include: { resource: true } });
+
+    if (check.resource.monitoringMode === "manual" || check.resource.monitoringMode === "disabled") {
+      return {
+        id,
+        status: check.resource.manualStatus ?? "unknown",
+        error: "Monitoring is not set to automatic for this service."
+      };
+    }
+
     const outcome = await runHealthCheck(prisma, check);
     return { id, ...outcome };
   });

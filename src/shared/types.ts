@@ -1,10 +1,12 @@
 export const RESOURCE_KINDS = ["app", "website", "docker", "vm", "server", "other"] as const;
 export const HEALTH_CHECK_TYPES = ["http", "tcp", "ping", "ssl"] as const;
 export const HEALTH_STATUSES = ["unknown", "online", "offline"] as const;
+export const MONITORING_MODES = ["auto", "manual", "disabled"] as const;
 
 export type ResourceKind = (typeof RESOURCE_KINDS)[number];
 export type HealthCheckType = (typeof HEALTH_CHECK_TYPES)[number];
 export type HealthStatus = (typeof HEALTH_STATUSES)[number];
+export type MonitoringMode = (typeof MONITORING_MODES)[number];
 
 export type DashboardResource = {
   id: string;
@@ -17,6 +19,8 @@ export type DashboardResource = {
   host: string | null;
   notes: string | null;
   favorite: boolean;
+  monitoringMode: MonitoringMode;
+  manualStatus: HealthStatus | null;
   sortOrder: number;
   groupId: string | null;
   healthChecks?: Array<{

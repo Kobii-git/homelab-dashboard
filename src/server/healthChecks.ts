@@ -202,7 +202,14 @@ export function startHealthScheduler(prisma: PrismaClient, intervalMs = 15000): 
 
     running = true;
     try {
-      const checks = await prisma.healthCheck.findMany({ where: { enabled: true } });
+      const checks = await prisma.healthCheck.findMany({
+        where: {
+          enabled: true,
+          resource: {
+            monitoringMode: "auto"
+          }
+        }
+      });
       const now = Date.now();
       const due = checks.filter((check) => {
         if (!check.latestCheckedAt) {

@@ -3,34 +3,50 @@ import { getBuildInfo } from "../../shared/version.js";
 
 export async function registerStatusRoutes({ app, prisma }: RouteContext): Promise<void> {
   app.get("/api/status", async () => {
-    const [resources, checks] = await Promise.all([
-      prisma.resource.findMany({
-        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-        select: {
-          id: true,
-          name: true,
-          kind: true,
-          url: true,
-          host: true,
-          healthChecks: {
-            select: {
-              id: true,
-              type: true,
-              target: true,
-              latestStatus: true,
-              latestLatencyMs: true,
-              latestCheckedAt: true,
-              latestError: true
-            }
+    const resources = await prisma.resource.findMany({
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        kind: true,
+        url: true,
+        host: true,
+        monitoringMode: true,
+        manualStatus: true,
+        healthChecks: {
+          select: {
+            id: true,
+            type: true,
+            target: true,
+            enabled: true,
+            latestStatus: true,
+            latestLatencyMs: true,
+            latestCheckedAt: true,
+            latestError: true
           }
         }
-      }),
-      prisma.healthCheck.findMany({ where: { enabled: true }, select: { latestStatus: true } })
-    ]);
+      }
+    });
 
-    const online = checks.filter((check) => check.latestStatus === "online").length;
-    const offline = checks.filter((check) => check.latestStatus === "offline").length;
-    const unknown = checks.length - online - offline;
+    function resourceStatus(resource: (typeof resources)[number]): "online" | "offline" | "unknown" {
+      if (resource.monitoringMode === "manual" || resource.monitoringMode === "disabled") {
+        return resource.manualStatus === "online" || resource.manualStatus === "offline" ? resource.manualStatus : "unknown";
+      }
+
+      const enabledChecks = resource.healthChecks.filter((check) => check.enabled);
+      if (enabledChecks.some((check) => check.latestStatus === "offline")) return "offline";
+      if (enabledChecks.some((check) => check.latestStatus === "online")) return "online";
+      return "unknown";
+    }
+
+    const statuses = resources.map(resourceStatus);
+    const checks = resources.flatMap((resource) =>
+      resource.monitoringMode === "auto" ? resource.healthChecks.filter((check) => check.enabled) : []
+    );
+
+    const online = statuses.filter((status) => status === "online").length;
+    const offline = statuses.filter((status) => status === "offline").length;
+    const unknown = statuses.length - online - offline;
 
     return {
       ok: offline === 0,
@@ -48,11 +64,8 @@ export async function registerStatusRoutes({ app, prisma }: RouteContext): Promi
         kind: resource.kind,
         url: resource.url,
         host: resource.host,
-        status: resource.healthChecks.some((check) => check.latestStatus === "offline")
-          ? "offline"
-          : resource.healthChecks.some((check) => check.latestStatus === "online")
-            ? "online"
-            : "unknown",
+        status: resourceStatus(resource),
+        monitoringMode: resource.monitoringMode,
         checks: resource.healthChecks
       })),
       generatedAt: new Date().toISOString()

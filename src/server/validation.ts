@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { HEALTH_CHECK_TYPES, RESOURCE_KINDS } from "../shared/types.js";
+import { HEALTH_CHECK_TYPES, HEALTH_STATUSES, MONITORING_MODES, RESOURCE_KINDS } from "../shared/types.js";
 
 const nullableText = z.string().trim().min(1).max(2000).optional().nullable();
 
@@ -25,6 +25,8 @@ export const resourceSchema = z.object({
   color: nullableText,
   host: nullableText,
   favorite: z.boolean().optional(),
+  monitoringMode: z.enum(MONITORING_MODES).optional(),
+  manualStatus: z.enum(HEALTH_STATUSES).optional().nullable(),
   sortOrder: z.number().int().min(0).optional(),
   groupId: z.string().cuid().optional().nullable()
 });

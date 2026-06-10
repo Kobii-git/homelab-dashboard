@@ -28,6 +28,8 @@ model Resource {
   host         String?
   notes        String?
   favorite     Boolean       @default(false)
+  monitoringMode String      @default("auto")
+  manualStatus String?
   sortOrder    Int           @default(0)
   groupId      String?
   group        DashboardGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)

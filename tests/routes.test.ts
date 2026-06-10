@@ -136,4 +136,44 @@ describe("api routes", () => {
     expect(run.statusCode).toBe(200);
     expect(run.json<{ status: string }>().status).toBe("offline");
   });
+
+  it("supports device-level monitoring disable and manual status override", async () => {
+    const cookie = await loginCookie();
+
+    const resource = await app.inject({
+      method: "POST",
+      url: "/api/resources",
+      headers: { cookie },
+      payload: {
+        name: "Manual NAS",
+        kind: "server",
+        host: "192.168.50.10",
+        monitoringMode: "disabled",
+        manualStatus: "online"
+      }
+    });
+    expect(resource.statusCode).toBe(201);
+    const resourceId = resource.json<{ id: string }>().id;
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: `/api/resources/${resourceId}`,
+      headers: { cookie },
+      payload: {
+        monitoringMode: "manual",
+        manualStatus: "offline"
+      }
+    });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json<{ monitoringMode: string; manualStatus: string }>().monitoringMode).toBe("manual");
+    expect(patched.json<{ monitoringMode: string; manualStatus: string }>().manualStatus).toBe("offline");
+
+    const status = await app.inject({ method: "GET", url: "/api/status" });
+    expect(status.statusCode).toBe(200);
+    const body = status.json<{ resources: Array<{ id: string; status: string; monitoringMode: string }> }>();
+    expect(body.resources.find((item) => item.id === resourceId)).toMatchObject({
+      status: "offline",
+      monitoringMode: "manual"
+    });
+  });
 });

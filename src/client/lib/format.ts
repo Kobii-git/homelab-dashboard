@@ -19,6 +19,10 @@ export function formatDateTime(value: string | null | undefined): string {
 }
 
 export function statusFor(resource: DashboardResource): "unknown" | "online" | "offline" {
+  if (resource.monitoringMode === "manual" || resource.monitoringMode === "disabled") {
+    return resource.manualStatus ?? "unknown";
+  }
+
   const checks = resource.healthChecks ?? [];
 
   if (checks.length === 0) {

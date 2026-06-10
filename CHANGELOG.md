@@ -6,6 +6,18 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.2] - 2026-06-10
+
+### Added
+- Service-level monitoring mode: automatic, manual status, or disabled.
+- Manual online/offline/unknown status override for services.
+- Inline monitoring controls on the Services catalog.
+
+### Fixed
+- Logout button now has stable compact sizing across sidebar modes.
+- Public `/status` now respects manual/disabled service status instead of only
+  counting raw health-check rows.
+
 ## [0.5.0] - 2026-06-10
 
 ### Changed

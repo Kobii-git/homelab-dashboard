@@ -72,6 +72,18 @@ function formatLatency(value: number | null): string {
   return value == null ? "No latency" : `${value} ms`;
 }
 
+function monitoringLabel(resource: DashboardResource): string {
+  if (resource.monitoringMode === "disabled") {
+    return "Monitoring off";
+  }
+
+  if (resource.monitoringMode === "manual") {
+    return "Manual";
+  }
+
+  return formatLatency(latestLatency(resource));
+}
+
 function HealthMixBar({ online, offline, unknown }: { online: number; offline: number; unknown: number }) {
   const total = Math.max(1, online + offline + unknown);
   return (
@@ -128,10 +140,10 @@ function ServiceCard({
 }) {
   const status = statusFor(resource);
   const color = resource.color ?? "#2dd4bf";
-  const latency = latestLatency(resource);
   const address = serviceAddress(resource);
   const checkedAt = latestCheckTime(resource);
   const hasChecks = (resource.healthChecks ?? []).length > 0;
+  const automatic = resource.monitoringMode === "auto";
 
   return (
     <article className={`service-card service-${status} ${resource.url ? "can-launch" : ""}`}>
@@ -156,8 +168,10 @@ function ServiceCard({
           className="status-action"
           type="button"
           onClick={() => onRunCheck(resource)}
-          title={hasChecks ? `Run health check for ${resource.name}` : `Create and run a default health check for ${resource.name}`}
-          disabled={checking || (!resource.url && !resource.host)}
+          title={automatic
+            ? hasChecks ? `Run health check for ${resource.name}` : `Create and run a default health check for ${resource.name}`
+            : `${resource.name} is set to ${resource.monitoringMode} monitoring`}
+          disabled={!automatic || checking || (!resource.url && !resource.host)}
         >
           {checking ? <RefreshCw className="spin" size={14} /> : <StatusBadge status={status} />}
         </button>
@@ -165,10 +179,12 @@ function ServiceCard({
           className="latency-action"
           type="button"
           onClick={() => onRunCheck(resource)}
-          title={hasChecks ? `Run health check for ${resource.name}` : `Create and run a default health check for ${resource.name}`}
-          disabled={checking || (!resource.url && !resource.host)}
+          title={automatic
+            ? hasChecks ? `Run health check for ${resource.name}` : `Create and run a default health check for ${resource.name}`
+            : `${resource.name} is set to ${resource.monitoringMode} monitoring`}
+          disabled={!automatic || checking || (!resource.url && !resource.host)}
         >
-          {checking ? "Checking..." : formatLatency(latency)}
+          {checking ? "Checking..." : monitoringLabel(resource)}
         </button>
         <span>{formatDateTime(checkedAt)}</span>
       </div>
