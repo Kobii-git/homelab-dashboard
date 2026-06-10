@@ -1047,7 +1047,6 @@ label {
 }
 
 .compact-row,
-.vault-row,
 .palette-row {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr) auto;
@@ -1064,8 +1063,6 @@ label {
 
 .compact-row strong,
 .compact-row small,
-.vault-row strong,
-.vault-row small,
 .palette-row strong,
 .palette-row small {
   display: block;
@@ -1075,7 +1072,6 @@ label {
 }
 
 .compact-row small,
-.vault-row small,
 .palette-row small {
   margin-top: 3px;
   color: var(--muted);
@@ -2230,18 +2226,6 @@ label {
   transform: translateY(-1px);
 }
 
-.access-guacd-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border: 1px solid rgba(248, 113, 113, 0.45);
-  border-radius: 8px;
-  color: #fecaca;
-  background: rgba(248, 113, 113, 0.08);
-  font-size: 13px;
-}
-
 .access-protocol-tabs,
 .access-view-tabs {
   display: flex;
@@ -2330,28 +2314,6 @@ label {
   flex-direction: column;
   gap: 14px;
   min-height: 0;
-}
-
-.access-page-remote .access-session-tabs {
-  flex: 0 0 auto;
-  margin: 0;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--line-soft);
-  background: #101415;
-}
-
-.access-page-remote .access-session-stage {
-  flex: 1;
-  min-height: 0;
-  border: 0;
-  border-radius: 0;
-}
-
-.access-page-remote .access-session-stage .session-stage {
-  height: 100%;
-  min-height: 0;
-  border: 0;
-  border-radius: 0;
 }
 
 .access-toolbar {
@@ -2720,13 +2682,6 @@ label {
   white-space: nowrap;
 }
 
-.remote-window {
-  min-width: 0;
-  min-height: 0;
-  padding: 18px;
-  overflow: auto;
-}
-
 .session-tabs {
   display: flex;
   align-items: center;
@@ -2924,39 +2879,6 @@ label {
   font-size: 12px;
 }
 
-.vault-grid {
-  grid-template-columns: minmax(260px, 0.85fr) minmax(320px, 1.1fr) minmax(260px, 0.8fr);
-}
-
-.vault-grid-compact {
-  grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1fr);
-}
-
-.vault-new-panel .section-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-
-.vault-new-panel .section-heading h3 {
-  margin: 0;
-}
-
-.vault-row {
-  width: 100%;
-}
-
-.vault-row.active {
-  border-color: rgba(45, 212, 191, 0.5);
-  background: #142021;
-}
-
-.vault-detail {
-  align-self: start;
-}
-
 .panel-divider {
   height: 1px;
   margin: 18px 0;
@@ -2967,33 +2889,6 @@ label {
   display: grid;
   gap: 10px;
   margin: 14px 0;
-}
-
-.secret-panel {
-  display: grid;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.secret-row {
-  display: grid;
-  grid-template-columns: 92px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 9px;
-  border: 1px solid var(--line-soft);
-  border-radius: 8px;
-  background: #101415;
-}
-
-.secret-row code,
-.secret-row pre {
-  overflow: auto;
-  color: #d4f7ef;
-}
-
-.secret-row.stacked {
-  grid-template-columns: 1fr;
 }
 
 .timeline-row {
@@ -3059,43 +2954,6 @@ label {
   padding: 0 12px;
   border-bottom: 1px solid var(--line);
   background: #141819;
-}
-
-.guac-display {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: #000;
-  cursor: default;
-  outline: none;
-}
-
-.guac-display-ssh > div {
-  position: absolute;
-  top: 0;
-  left: 0;
-}
-
-.guac-display-rdp {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #0a1014;
-}
-
-.guac-display-rdp > div {
-  position: relative;
-  top: auto;
-  left: auto;
-}
-
-/* The Guacamole display element sizes itself to the (scaled) remote canvas;
-   don't force it to 100% or the canvas distorts. */
-.guac-display > div {
-  transform-origin: top left;
 }
 
 .session-toolbar-title,
@@ -3424,52 +3282,6 @@ label {
   gap: 6px;
 }
 
-/* Vault: vault row with actions overlay */
-.vault-row-wrap {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 4px;
-}
-
-.vault-row-wrap .vault-row {
-  width: 100%;
-}
-
-.vault-row-actions {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-/* Vault: orphaned tag */
-.orphan-tag {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  border: 1px solid rgba(242, 100, 100, 0.45);
-  color: #ff9d9d;
-  font-size: 10px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-/* Vault: secret countdown banner */
-.secret-countdown {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--line-soft);
-  background: #101415;
-  color: var(--muted);
-  font-size: 12px;
-}
-
 /* Monitoring: 5-column incident row */
 .incident-row-5 {
   grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
@@ -3722,22 +3534,6 @@ label {
   margin: 0;
 }
 
-.guacd-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: 8px;
-  font-size: 12px;
-}
-
-.guacd-status.online {
-  color: #7ce7c8;
-}
-
-.guacd-status.offline {
-  color: #ffb4b4;
-}
-
 .keyboard-help {
   width: min(460px, calc(100vw - 32px));
   margin: 10vh auto;
@@ -3866,8 +3662,7 @@ label {
   .dashboard-overview,
   .widget-grid,
   .inventory-tables,
-  .split-grid,
-  .vault-grid {
+  .split-grid {
     grid-template-columns: 1fr;
     width: 100%;
   }

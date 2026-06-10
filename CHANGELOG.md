@@ -6,6 +6,28 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.0] - 2026-06-10
+
+### Removed
+- **Breaking:** removed the SSH/RDP/VNC remote-access manager, Guacamole tunnel,
+  remote session UI, and user credential vault from the current app scope.
+
+### Fixed
+- First-run setup now works for env-managed or existing-admin installs after the
+  admin logs in, instead of dead-ending on the setup screen.
+- Default dashboard widget seeding no longer creates removed `recentSessions` or
+  `vaultHealth` widgets.
+- Backup/restore UI copy now describes encrypted alert configs rather than the
+  removed credential vault.
+
+### Changed
+- README and HANDOVER now document the current monitoring/inventory dashboard
+  instead of the previous remote-manager build.
+- Removed unused Guacamole environment/test fields from the active runtime shape.
+- Upgraded `@fastify/static` to `^9.1.3`.
+
+---
+
 ## [0.2.15] - 2026-06-03
 
 ### Changed

@@ -144,7 +144,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return {
       ok: true,
       ...getBuildInfo(),
-      vaultConfigured: Boolean(env.vaultKey && env.vaultKey.length >= 16)
+      alertSecretEncryptionConfigured: Boolean(env.vaultKey && env.vaultKey.length >= 16)
     };
   });
 
@@ -172,10 +172,6 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   });
 
   app.post("/api/setup", async (request, reply) => {
-    if (await adminAccountExists(env, prisma)) {
-      return reply.code(403).send({ error: "Setup already completed" });
-    }
-
     const body = z
       .object({
         username: z.string().trim().min(1).optional(),
@@ -184,8 +180,18 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       })
       .parse(request.body);
 
+    const hasAccount = await adminAccountExists(env, prisma);
+
+    if (hasAccount && !isAuthenticated(request, env)) {
+      return reply.code(401).send({ error: "Authentication required" });
+    }
+
+    if (!hasAccount && !body.password && !env.adminPassword) {
+      return reply.code(400).send({ error: "Password is required for first-run setup" });
+    }
+
     // Create admin account
-    if (body.password && !env.adminPassword) {
+    if (!hasAccount && body.password && !env.adminPassword) {
       const hash = hashPassword(body.password);
       await prisma.adminAccount.upsert({
         where: { id: "admin" },

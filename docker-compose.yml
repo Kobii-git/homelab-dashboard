@@ -8,7 +8,7 @@ services:
       # Optional overrides — leave unset and the app handles everything on first boot:
       # ADMIN_PASSWORD: your-password   # set to skip the web-based account creation
       # COOKIE_SECRET: random-32-chars  # set for persistent sessions across restarts
-      # HOMELAB_VAULT_KEY: random-key   # set to bring your own vault key
+      # HOMELAB_VAULT_KEY: random-key   # encrypts alert webhook/SMTP configs
     ports:
       - "4173:4173"
     volumes:

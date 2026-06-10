@@ -1,245 +1,238 @@
-# Homelab Dashboard — Handover
+# Homelab Dashboard - Handover
 
-This document captures the state of the project, the major work done, and the
-hard-won gotchas (especially around Apache Guacamole) so the next person — or
-future you — can pick it up without rediscovering everything.
+This document captures the current state of the project so the next session can
+continue without rediscovering the shape of the app.
 
-- **Repo:** https://github.com/Kobii-git/homelab-dashboard (private)
-- **Image:** `ghcr.io/kobii-git/homelab-dashboard` (GHCR, private)
-- **Current version:** see [`package.json`](package.json) / [CHANGELOG.md](CHANGELOG.md)
+- **Repo:** https://github.com/Kobii-git/homelab-dashboard
+- **Image:** `ghcr.io/kobii-git/homelab-dashboard`
+- **Current version:** `0.3.0`
 - **Port:** `4173`
+- **Current branch:** `main`
 
 ---
 
-## 1. What it is
+## 1. What It Is Now
 
-A private, self-hosted homelab command centre. Single admin account. Runs over
-plain HTTP on a LAN (put a reverse proxy in front for HTTPS).
+Homelab Dashboard is a private, single-admin, self-hosted console for managing
+homelab resources. It is currently focused on inventory, monitoring, incidents,
+alerts, notes, widgets, and backup/restore.
+
+The previous browser SSH/RDP/VNC remote-access manager and user credential vault
+were intentionally removed before `0.3.0`. Do not assume Guacamole, saved remote
+credentials, sessions, or access tabs exist in this codebase unless a future
+release reintroduces them.
+
+**Sidebar views:** Dashboard, Monitoring, Alerts, Inventory, Settings.
 
 | Layer | Tech |
 |---|---|
 | Frontend | React 19 + Vite + TypeScript (`src/client/`) |
 | Backend | Fastify 5 + Zod + TypeScript (`src/server/`) |
 | Database | SQLite via Prisma (`prisma/schema.prisma`) |
-| Vault | AES-256-GCM, Node `crypto` (`src/server/vault.ts`) |
-| Remote access | Apache Guacamole `guacd` + `guacamole-common-js` (`src/server/guacamole.ts`) |
+| Secret encryption | AES-256-GCM for alert webhook/SMTP configs (`src/server/vault.ts`) |
 | Deploy | Docker Compose / GHCR |
-
-**Views (sidebar):** Dashboard · SSH · Remote Desktop · Monitoring · Vault ·
-Alerts · Inventory · Settings.
 
 ---
 
-## 2. Deploy & run
+## 2. Current Data Model
 
-### Build from source on the Docker host (keeps data)
+The active Prisma models are:
+
+- `Resource`, `DashboardGroup`, `Tag`, `Note`
+- `HealthCheck`, `HealthResult`
+- `Incident`, `MaintenanceWindow`
+- `AlertChannel`, `AlertRule`, `AlertDelivery`
+- `DashboardWidget`, `DashboardLayout`
+- `AuditEvent`, `AdminAccount`, `SystemConfig`
+
+There are no active `Connection`, `Credential`, remote session, or Guacamole
+models.
+
+---
+
+## 3. Deploy And Run
+
+### Pull The Prebuilt Image
+
+The image is private, so authenticate once on the Docker host:
 
 ```sh
-cd ~/homelab
+echo <GH_PAT_with_read:packages> | docker login ghcr.io -u Kobii-git --password-stdin
+docker compose pull
+docker compose up -d
+```
+
+### Build From Source On The Docker Host
+
+```sh
+cd ~/homelab-dashboard
 git pull
 docker compose -f docker-compose.build.yml up -d --build
 ```
 
-If you hit a container name conflict (`/homelab-guacd already in use`):
+Data lives in the named Docker volume `homelab-dashboard-data`. It survives
+`docker compose down`, container removal, image updates, and rebuilds. It is only
+destroyed by `docker compose down -v` or deleting the volume.
 
-```sh
-docker compose -f docker-compose.build.yml down       # KEEPS the volume
-docker rm -f homelab-guacd homelab-dashboard 2>/dev/null
-docker compose -f docker-compose.build.yml up -d --build
+### First Run
+
+On first visit, the setup screen creates the single admin account and optionally
+loads demo data. `COOKIE_SECRET` and `HOMELAB_VAULT_KEY` can be omitted; the app
+generates and stores them in `SystemConfig`.
+
+Pin these env vars in production if you want secrets to survive a DB reset:
+
+```yaml
+ADMIN_PASSWORD: your-password
+COOKIE_SECRET: random-32-char-string
+HOMELAB_VAULT_KEY: random-alert-config-key
 ```
 
-> **Data lives in the named Docker volume `homelab-dashboard-data`.** It survives
-> `down`, `rm`, and `up`. It is **only** destroyed by `down -v` or `docker volume rm`.
-> Never use `-v` unless you intend to wipe everything.
+`HOMELAB_VAULT_KEY` currently encrypts alert channel configs. It is not a user
+credential-vault feature.
 
-### Pull the prebuilt image (alternative)
+---
 
-The image is private, so authenticate once per machine:
+## 4. Feature State
+
+### Dashboard
+
+- Configurable widgets are backed by `DashboardWidget` records.
+- Active default widget types are `favorites`, `serviceStatus`, `incidents`,
+  `failingChecks`, and `notes`.
+- Removed widget types such as `recentSessions` and `vaultHealth` should not be
+  seeded anymore.
+
+### Monitoring And Incidents
+
+- Checks support HTTP, TCP, and ping.
+- Checks track latest status, latency, failure reason, consecutive
+  failures/successes, and transitions.
+- Failing checks can create incidents.
+- Incidents support open, acknowledged, resolved, muted, and maintenance-related
+  workflows.
+
+### Alerts
+
+- Alert channels support SMTP email and generic webhooks.
+- Channel configs are encrypted with AES-256-GCM.
+- Client-facing serializers must never return plaintext webhook URLs or SMTP
+  passwords.
+- Delivery records track alert attempts and errors.
+
+### Inventory
+
+- Resources can be grouped, tagged, favorited, assigned URLs/hosts, and linked to
+  health checks and notes.
+- Backup/restore exports configuration only: tags, groups, resources, checks,
+  notes, alert channels/rules, maintenance windows, and widgets.
+- Backup restore does not export incidents, check results, alert deliveries, or
+  audit logs.
+
+---
+
+## 5. Auth And Secrets
+
+- Single admin only.
+- `ADMIN_PASSWORD` env var still works and bypasses web account creation.
+- Otherwise an `AdminAccount` row stores the admin username and password hash.
+- `COOKIE_SECURE=false` by default because the target deployment is plain HTTP on
+  a private LAN. Set it to `true` only behind HTTPS.
+- Public unauthenticated routes are intentionally limited to login/setup/status
+  style endpoints. Protected API routes require the session cookie.
+- `COOKIE_SECRET` signs cookies.
+- `HOMELAB_VAULT_KEY` encrypts alert channel configs.
+
+---
+
+## 6. What Codex Has Done Recently
+
+The project history includes an earlier V1/V2 remote manager with Guacamole,
+session tabs, SSH/RDP/VNC work, and a credential vault. That work was later
+removed from `main` in commit `8493d23` (`Remove SSH/RDP/VNC remote access and
+credential vault`).
+
+The current cleanup pass for `0.3.0`:
+
+- Fixed first-run setup so env-managed or existing-admin installs can dismiss the
+  setup screen after logging in.
+- Removed stale default dashboard widgets for `recentSessions` and `vaultHealth`.
+- Updated the package version to `0.3.0`.
+- Upgraded `@fastify/static` to a patched major version.
+- Removed unused Guacamole env/test fields.
+- Rewrote README and this handover to match the current monitoring-dashboard
+  product.
+- Updated backup UI copy so it describes encrypted alert configs, not a removed
+  credential vault.
+
+---
+
+## 7. Local Development
 
 ```sh
-echo <GH_PAT_with_read:packages> | docker login ghcr.io -u Kobii-git --password-stdin
-docker compose up -d
+npm install
+npm run db:push
+npm run dev:all
 ```
 
-### First run
-
-On the first visit you get a **setup screen**: create a username + password and
-optionally load demo data. No environment variables are required — the cookie
-secret and vault key auto-generate and persist in the DB.
-
----
-
-## 3. The work done (feature arc)
-
-Roughly in order, across the development sessions:
-
-1. **v0.1.0 — initial release.** Full dashboard: resources/groups, health checks
-   (HTTP/TCP/ping), incidents, maintenance windows, alert channels/rules/deliveries,
-   AES-256-GCM vault, browser SSH/RDP via guacd, session history, audit log, notes,
-   command palette. Docker + GHCR + GitHub Actions release workflow + issue templates.
-2. **UI pass.** Favorites section, explicit Details button, incident history,
-   recent-sessions strip, working folder filters, conditional alert forms,
-   incident mute, maintenance-window form, vault edit + auto-hiding secrets,
-   inventory edit/delete with confirmations, notes management, palette nav for all views.
-3. **Zero-config install.** Removed the requirement for env vars. Web-based admin
-   account creation (scrypt→pbkdf2 hash in `AdminAccount`); `COOKIE_SECRET` /
-   `HOMELAB_VAULT_KEY` auto-generated into `SystemConfig`. Added a username field.
-4. **The SSH/RDP saga** (this is the big one — see §4).
-5. **Session UI.** Display scales to fit the panel + dynamic resize, status dot,
-   connecting spinner, fullscreen, tab dedupe + "Clear ended", RDP login handling,
-   failed-state credential hints.
-6. **Session input.** Paste-to-type box (works over HTTP), Ctrl+Alt+Del for RDP,
-   best-effort clipboard sync.
-7. **Housekeeping.** Synced CHANGELOG/README versions, `.gh-bin/` gitignored,
-   fixed flaky test suite.
-8. **v0.2.12 configurable dashboard widgets.** Dashboard widgets now render from
-   saved `DashboardWidget` records rather than a hardcoded partial set. The
-   settings drawer supports show/hide, move up/down ordering, and compact/medium/
-   wide/full-width layout cycling. Service Status, Favorite Launchers, Failing
-   Checks, Recent Sessions, Vault Health, and Pinned Notes all participate in the
-   grid.
-
-### Latest Codex session summary (v0.2.12)
-
-This session picked up from the handover's recommended "configurable dashboard
-widgets" work and completed that slice end-to-end:
-
-- Reworked `DashboardConsole` so enabled widgets are sorted by saved order and
-  rendered through a single widget dispatcher.
-- Added real widget cards for Service Status, Favorite Launchers, Vault Health,
-  and Pinned Notes.
-- Added widget settings controls for visibility, ordering, and width.
-- Added a responsive 12-column widget grid and settings-row polish.
-- Backfilled the missing default `notes` widget for existing installs.
-- Fixed demo seeding to update widgets by type so first-run demo data does not
-  duplicate default widgets.
-- Added defensive client de-duplication by widget type for older databases that
-  may already contain duplicates.
-- Extended API tests to assert all default widget types exist and widget
-  `w`/`sortOrder` updates work.
-- Verified with `npm run typecheck`, `npm test`, `npm run build`, and a browser
-  smoke test with demo data.
-
----
-
-## 4. Guacamole tunnel — read this before touching remote access
-
-This took several iterations. The core file is
-[`src/server/guacamole.ts`](src/server/guacamole.ts) (`wireGuacamoleTunnel`) and
-[`src/client/components/GuacamoleDisplay.tsx`](src/client/components/GuacamoleDisplay.tsx).
-
-**Architecture:** browser (`guacamole-common-js`) ⇄ `/api/tunnel` WebSocket ⇄
-our Node tunnel ⇄ `guacd` TCP (4822) ⇄ the SSH/RDP target.
-
-### The four bugs that made SSH/RDP "never work", in the order they surfaced:
-
-1. **The server must drive the guacd handshake.** `guacamole-common-js`'s
-   `client.connect()` only opens the tunnel and waits — it sends **no**
-   `select`/`size`/`connect`. The original code waited for the *browser* to send
-   `connect`, while guacd waited for `select` → deadlock → guacd timeout. The
-   server now performs the full handshake:
-   `select,<protocol>` → read `args` → `size`/`audio`/`video`/`image`/`timezone`
-   → `connect,<value per arg>` (vault creds injected) → guacd replies `ready`.
-
-2. **Negotiate the protocol version DOWN to 1.1.0.** Echoing guacd's offered
-   `VERSION_1_5_0` back caused timeouts. The reference implementation
-   (`guacamole-lite`) clamps to `1_1_0` (the handshake it fully implements). We do
-   the same and send `timezone` for 1.1.0.
-
-3. **Relay the connection id as the empty-opcode tunnel instruction.** On `ready`,
-   send `["", connectionId]` (encodes to `0.,N.<id>;`) — `guacamole-common-js`
-   expects this. Consume `ready` rather than forwarding it.
-
-4. **Send TEXT WebSocket frames, never binary.** This was the final blank-screen
-   bug: the handshake completed (guacd logged "user joined") but the browser
-   stayed on "Waiting" with no terminal/login prompt. `ws.send(Buffer)` defaults
-   to a **binary** frame, and `guacamole-common-js`'s WebSocketTunnel **silently
-   drops binary frames**. Every render instruction — including guacd's SSH
-   `Login as:` prompt and the RDP login screen — was discarded. Fix: `sendToClient`
-   uses `ws.send(buf, { binary: false })`. guacd output is valid UTF-8 so it's
-   lossless. The tunnel test asserts every browser-bound frame is text.
-
-### Other tunnel facts
-
-- **Mouse:** `guacamole-common-js` 1.5 uses `mouse.onEach([...], e => client.sendMouseState(e.state, true))`. The `true` flag auto-divides coordinates by `display.getScale()`, so scaled-to-fit clicks land correctly.
-- **Display sizing:** `client.sendSize(w, h)` on connect + on resize (ResizeObserver, debounced) asks the remote to match the container; `display.scale(...)` fits whatever it renders.
-- **Credentials / prompts:**
-  - SSH with no credential → guacd shows an interactive `Login as:` / `Password:` prompt in the terminal.
-  - RDP with **no password** → we set `security=rdp` (legacy, no NLA) so the Windows login screen appears; **with** a password → `security=any` for NLA/TLS. `ignore-cert=true` always.
-- **Diagnostics:** the tunnel logs each stage tagged `[guac <proto> <host>:<port>]`. `docker logs homelab-dashboard | grep guac` shows where a session stalls. `docker logs homelab-guacd` shows guacd's own reason (auth failure, unreachable host, etc.).
-- **Paste-to-type:** the browser clipboard API is blocked over plain HTTP, so the session toolbar's paste box types text as keystrokes via `src/client/lib/keysyms.ts` (char → X11 keysym). This is the reliable path on a LAN.
-
----
-
-## 5. Auth & secrets
-
-- **Cookie:** `COOKIE_SECURE` defaults to **false**. A `Secure` cookie is dropped
-  by browsers over plain HTTP, which silently breaks login (you can "log in" but
-  the session never sticks). Only set `COOKIE_SECURE=true` behind HTTPS.
-  ([`src/server/env.ts`](src/server/env.ts), `app.ts` login route.)
-- **Admin account:** pbkdf2 hash in the `AdminAccount` table. `ADMIN_PASSWORD`
-  env var still works (bypasses web account creation; Settings shows auth source).
-- **Auto-generated secrets:** `cookie_secret` and `vault_key` are generated on
-  first boot and stored in `SystemConfig` (`src/server/index.ts` `resolveSecrets`).
-  Pin them via env vars if you want sessions to survive a DB reset.
-- **Public (no-auth) API routes:** login, me, health, version, setup/status,
-  setup, status, tunnel.
-
----
-
-## 6. Tests
+Useful commands:
 
 ```sh
-npm test          # 23 tests across 7 files
 npm run typecheck
+npm test
 npm run build
+npm audit --omit=dev
 ```
 
-- All test files share **one** `DATABASE_URL` (set in the `npm test` script), so
-  vitest runs them **sequentially** (`fileParallelism: false` in `vitest.config.ts`).
-  Without that, the suite was intermittently flaky (vault-reveal racing).
-- `tests/guacamoleTunnel.test.ts` is a mock-guacd integration test: it asserts
-  the server sends `select`, answers `args` with `connect` (creds injected,
-  version clamped), relays both ways, and **only ever sends text frames**.
-- `tests/keysyms.test.ts` covers the char→keysym mapping (ASCII, control keys,
-  non-Latin Unicode, surrogate-pair emoji).
+The test script creates a timestamped SQLite database under `data/` and runs
+Vitest sequentially (`fileParallelism: false` in `vitest.config.ts`) to avoid
+cross-test SQLite contention.
 
 ---
 
-## 7. Versioning & release
+## 8. Versioning And Release
 
-- Semver in `package.json`. CHANGELOG and the README version badges are kept in sync.
-- Pushing a `v*` tag triggers the GitHub Actions workflow to build and publish a
-  versioned image to GHCR.
+- Version lives in `package.json`.
+- `src/shared/version.ts` reads the package version and exposes it through the UI
+  and `/api/version`.
+- `.github/workflows/docker.yml` publishes Docker images to GHCR on pushes to
+  `main` and on `v*` tags.
+- Tag pushes publish semver image tags. The workflow does not currently create a
+  GitHub Release page.
+
+Release checklist:
 
 ```sh
 npm version patch --no-git-tag-version   # or minor / major
-# update CHANGELOG.md + README version refs
-git add -A && git commit -m "..." && git tag vX.Y.Z
+# update CHANGELOG.md and README badge/current version
+npm run typecheck && npm test && npm run build
+git add -A && git commit -m "Release vX.Y.Z"
+git tag vX.Y.Z
 git push origin main && git push origin vX.Y.Z
 ```
 
 ---
 
-## 8. Known limitations / gotchas
+## 9. Known Limitations
 
-- **Single admin only.** No multi-user.
-- **Plain HTTP by design.** No built-in HTTPS; use a reverse proxy. Remember
-  `COOKIE_SECURE=true` if you do.
-- **guacd must reach the targets.** guacd runs in the container; it needs a network
-  route to your SSH/RDP hosts. `docker exec homelab-guacd nc -zv <host> <port>` to check.
-- **RDP + NLA.** A Windows host that *requires* NLA won't show a login screen even
-  with `security=rdp`; you must attach a valid credential.
-- **Private GHCR/repo.** Pulling the image or cloning needs a GitHub PAT.
-- The `gh` CLI used for pushes during development was downloaded to `/tmp` (cleaned
-  between sessions); git push still works via cached credentials.
+- Single admin only; no multi-user roles.
+- No built-in HTTPS; use a reverse proxy for HTTPS.
+- No Docker, Hyper-V, or network auto-discovery.
+- No embedded SSH/RDP/VNC remote sessions in the current app.
+- No user credential vault in the current app.
+- Alerts are limited to SMTP email and generic webhooks.
+- Browser end-to-end coverage is still light compared with the API/unit tests.
 
 ---
 
-## 9. Suggested next steps
+## 10. Suggested Next Steps
 
-- **Send a vault password straight into a session** (one-click "paste credential").
-- **Visual polish on non-session views** (Dashboard / Monitoring / Vault / Inventory).
-- **Real end-to-end remote-access test** with a guacd container + a test SSH/RDP
-  target (local Docker wasn't available when the tunnel was fixed, so it's only
-  covered by the mock-guacd integration test).
+- Decide whether remote access and a credential vault should stay removed or come
+  back as a separate, deliberate feature set.
+- Add browser tests for setup, demo data, dashboard widgets, alert creation, and
+  backup/restore preview.
+- Add richer monitoring history charts and retention controls for `HealthResult`.
+- Add a first-class upgrade note or migration guide for anyone coming from the
+  older remote-manager builds.
+- Consider renaming `HOMELAB_VAULT_KEY` to a clearer alert-secret key in a future
+  breaking release.

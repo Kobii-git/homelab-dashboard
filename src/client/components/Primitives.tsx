@@ -198,7 +198,7 @@ export function EmptyPanel({
   );
 }
 
-/* ── Tabs chip (Remote session tabs) ─────────────────────────────── */
+/* ── Tabs chip ───────────────────────────────────────────────────── */
 
 export function TabChip({
   active,

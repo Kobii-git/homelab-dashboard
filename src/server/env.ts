@@ -7,8 +7,6 @@ export type AppEnv = {
   cookieSecret: string;
   cookieSecure: boolean;
   vaultKey: string;
-  guacdHost: string;
-  guacdPort: number;
 };
 
 export function getEnv(): Omit<AppEnv, "cookieSecret" | "vaultKey"> & {
@@ -26,8 +24,6 @@ export function getEnv(): Omit<AppEnv, "cookieSecret" | "vaultKey"> & {
     // Homelab installs are typically plain HTTP on a LAN, where a secure
     // cookie would be silently dropped by the browser and block login.
     cookieSecure: process.env.COOKIE_SECURE === "true",
-    vaultKey: process.env.HOMELAB_VAULT_KEY ?? null,
-    guacdHost: process.env.GUACD_HOST ?? "guacd",
-    guacdPort: Number(process.env.GUACD_PORT ?? 4822)
+    vaultKey: process.env.HOMELAB_VAULT_KEY ?? null
   };
 }

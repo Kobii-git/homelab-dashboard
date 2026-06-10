@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-export type EncryptedCredential = {
+export type EncryptedPayload = {
   encryptedBlob: string;
   iv: string;
   authTag: string;
@@ -18,7 +18,7 @@ function deriveKey(vaultKey?: string): Buffer {
   return crypto.createHash("sha256").update(requireVaultKey(vaultKey)).digest();
 }
 
-export function encryptJson(value: Record<string, unknown>, vaultKey?: string): EncryptedCredential {
+export function encryptJson(value: Record<string, unknown>, vaultKey?: string): EncryptedPayload {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", deriveKey(vaultKey), iv);
   cipher.setAAD(Buffer.from("homelab-dashboard:v1", "utf8"));
@@ -35,7 +35,7 @@ export function encryptJson(value: Record<string, unknown>, vaultKey?: string): 
 }
 
 export function decryptJson<T extends Record<string, unknown>>(
-  encrypted: EncryptedCredential,
+  encrypted: EncryptedPayload,
   vaultKey?: string
 ): T {
   const decipher = crypto.createDecipheriv(

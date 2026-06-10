@@ -1,5 +1,5 @@
 import type { AlertChannel, Incident, PrismaClient } from "@prisma/client";
-import { decryptJson, encryptJson, type EncryptedCredential } from "./vault.js";
+import { decryptJson, encryptJson, type EncryptedPayload } from "./vault.js";
 
 export type AlertChannelConfig = {
   url?: string;
@@ -36,7 +36,7 @@ function safeHost(url: string): string {
   }
 }
 
-export function encryptAlertConfig(config: AlertChannelConfig, vaultKey?: string): EncryptedCredential {
+export function encryptAlertConfig(config: AlertChannelConfig, vaultKey?: string): EncryptedPayload {
   return encryptJson(config, vaultKey);
 }
 

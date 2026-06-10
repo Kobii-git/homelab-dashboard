@@ -1,94 +1,94 @@
 # Homelab Dashboard
 
-A private, self-hosted command centre for your homelab. Launch SSH/RDP sessions in the browser, monitor service health, manage an encrypted credential vault, and get alerted when things break.
+A private, self-hosted command center for your homelab. Track services, websites, VMs, and devices from one LAN/VPN-only dashboard with health checks, incidents, alerts, notes, backup/restore, and a dense console UI.
 
-![Version](https://img.shields.io/badge/version-0.2.15-2dd4bf)
+![Version](https://img.shields.io/badge/version-0.3.0-2dd4bf)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
 
 ## Features
 
-- **Dashboard** — grouped resource cards, status widgets, favorites
-- **Remote Access** — browser-based SSH and RDP via Apache Guacamole `guacd`
-- **Monitoring** — HTTP, TCP, and ping health checks with auto-incident creation
-- **Vault** — AES-256-GCM encrypted credentials with folders and tags
-- **Alerts** — webhook/email channels with rules, cooldowns, and delivery history
-- **Inventory** — full CRUD for resources, connections, checks, and credentials
-- **Command palette** — global search across everything (Ctrl K or `/`)
+- **Dashboard** - configurable widget grid for favorites, service status, incidents, failing checks, and pinned notes
+- **Monitoring** - HTTP, TCP, and ping checks with response time, failure reasons, thresholds, and status transitions
+- **Incidents** - open, acknowledge, resolve, mute, and maintenance-suppress service failures
+- **Alerts** - SMTP email and generic webhook channels with rules, cooldowns, and delivery history
+- **Inventory** - CRUD for resources, groups, tags, health checks, notes, and launcher URLs
+- **Backup / restore** - JSON export/import for configuration, including encrypted alert channel config blobs
+- **Command palette** - global search and quick actions with `Ctrl K` or `/`
+- **Settings** - password change, status page, sync tools, keyboard help, theme controls, and build info
 
-> **New here?** See [HANDOVER.md](HANDOVER.md) for the full architecture, the
-> Guacamole tunnel gotchas, and how everything fits together.
+> **New here?** See [HANDOVER.md](HANDOVER.md) for the current architecture, deployment notes, and project state.
 
 ---
 
-## Quick start with Docker (recommended)
+## Current Scope
+
+Version `0.3.0` is intentionally a monitoring and inventory dashboard. The previous SSH/RDP/VNC remote-access manager and user credential vault were removed before this release. Browser-based remote access can be planned again later, but it is not part of the current app or Docker Compose stack.
+
+The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles or built-in HTTPS termination.
+
+---
+
+## Quick Start With Docker
 
 **No configuration required.** The app sets itself up on first boot.
 
-### Authenticate to the private image registry (once per machine)
+### Authenticate To The Private Image Registry
 
 ```sh
 echo YOUR_GITHUB_TOKEN | docker login ghcr.io -u Kobii-git --password-stdin
 ```
 
-Create a GitHub PAT with `read:packages` scope at https://github.com/settings/tokens/new.
-This is stored in `~/.docker/config.json` — you only need to do it once per machine.
+Create a GitHub PAT with `read:packages` scope at <https://github.com/settings/tokens/new>. Docker stores the login in `~/.docker/config.json`, so you only need to do this once per machine.
 
-### Install — one command
+### Install
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Kobii-git/homelab-dashboard/main/docker-compose.yml \
   -o /tmp/homelab.yml && docker compose -f /tmp/homelab.yml up -d
 ```
 
-Open **http://localhost:4173**. On first visit you'll be prompted to **create a password** and
-optionally load demo data — no env vars needed.
+Open **http://localhost:4173**. On first visit you will be prompted to create the admin account and optionally load demo data.
 
-### What the first-run screen does
+### What First-Run Setup Does
 
-1. You choose a password for the admin account (stored as a salted scrypt hash in the database)
-2. A toggle lets you load demo data to explore the full feature set
-3. The cookie signing key and vault encryption key are auto-generated and persisted in the
-   database — nothing to write down or back up separately
+1. Creates the single admin account, stored as a salted password hash in SQLite.
+2. Optionally loads demo resources, checks, an incident, alert config, and a pinned note.
+3. Auto-generates the cookie signing key and alert encryption key if they are not provided.
 
-### Pinning secrets (optional, recommended for production)
+### Pinning Secrets
 
-If you want to be explicit — or ensure sessions survive container restarts — add these to
-`docker-compose.yml` under `environment:`:
+The app can generate secrets automatically and persist them in the database. For production, you can also pin them in `docker-compose.yml`:
 
 ```yaml
-ADMIN_PASSWORD: your-password        # bypasses the web account creation screen
-COOKIE_SECRET: random-32-char-string # persistent sessions across restarts
-HOMELAB_VAULT_KEY: random-key        # bring your own vault encryption key
+ADMIN_PASSWORD: your-password        # optional; skips web account creation
+COOKIE_SECRET: random-32-char-string # persistent sessions across DB resets
+HOMELAB_VAULT_KEY: random-key        # encrypts alert webhook/SMTP configs
 ```
 
 ---
 
-## First-run demo data
+## Demo Data
 
-On the first login after a fresh install, the dashboard detects that no resources exist and shows a **first-run setup screen**. A toggle lets you choose whether to load demo data before entering the dashboard.
-
-The demo data includes sample resources, grouped by category, with health checks, SSH/RDP connections, an encrypted credential vault, an open incident, alert channel, and a pinned note — everything needed to explore the full feature set.
+On the first login after a fresh install, the dashboard detects that no resources exist and shows a setup screen. The demo toggle loads sample groups, resources, health checks, alert rules, an open incident, and a pinned note so you can explore the console quickly.
 
 The choice is recorded in the database. The setup screen will not appear again once dismissed.
 
 ---
 
-## Environment variables
+## Environment Variables
 
 | Variable | Required | Description |
 |---|---|---|
 | `ADMIN_PASSWORD` | No | Skip web account creation and use this password instead |
-| `COOKIE_SECRET` | No | Signs session cookies — auto-generated if unset (sessions reset on restart) |
-| `COOKIE_SECURE` | No | Set to `true` only if serving over HTTPS. Default `false` for plain-HTTP LAN access |
-| `HOMELAB_VAULT_KEY` | No | Vault encryption key — auto-generated and persisted in DB if unset |
-| `DATABASE_URL` | No | Prisma SQLite path — default `file:/data/homelab.db` |
-| `GUACD_HOST` | No | `guacd` host — default `guacd` in Docker |
-| `GUACD_PORT` | No | `guacd` port — default `4822` |
-| `PORT` | No | HTTP port — default `4173` |
+| `COOKIE_SECRET` | No | Signs session cookies; auto-generated if unset |
+| `COOKIE_SECURE` | No | Set to `true` only when serving over HTTPS. Default is `false` for plain-HTTP LAN use |
+| `HOMELAB_VAULT_KEY` | No | Encrypts alert webhook/SMTP configs; auto-generated and persisted if unset |
+| `DATABASE_URL` | No | Prisma SQLite path; default `file:/data/homelab.db` in Docker |
+| `PORT` | No | HTTP port; default `4173` |
 
-> Keep this on a LAN, VPN, or private mesh network. There is no multi-user auth or HTTPS termination built in — put a reverse proxy (nginx, Caddy, Traefik) in front if exposing beyond localhost.
+Keep this behind a LAN, VPN, or private mesh network. If exposing it beyond that, put a reverse proxy such as Caddy, nginx, or Traefik in front and enable HTTPS.
 
 ---
 
@@ -99,42 +99,29 @@ docker compose pull
 docker compose up -d
 ```
 
-The database is persisted in a named volume (`homelab-dashboard-data`) and survives updates.
+The SQLite database is stored in the named Docker volume `homelab-dashboard-data` and survives updates.
 
 ---
 
-## Remote access setup
-
-SSH and RDP sessions open in the browser through [Apache Guacamole](https://guacamole.apache.org/). The `guacd` container is included in `docker-compose.yml`.
-
-To launch a session:
-1. Add a **Resource** in Inventory (the server or VM)
-2. Add a **Connection** to that resource (SSH on port 22, or RDP on port 3389)
-3. Optionally attach a **Credential** from the vault so the password is filled automatically
-4. Click the connection in the **Access** view
-
-Credentials are decrypted server-side only at the moment of the Guacamole handshake — they are never sent to the browser.
-
----
-
-## Local development
+## Local Development
 
 ```sh
 git clone https://github.com/Kobii-git/homelab-dashboard
 cd homelab-dashboard
 npm install
-cp .env.example .env    # set secrets
 npm run db:push
-npm run dev:all         # API on :3000, frontend on :5173
+npm run dev:all
 ```
+
+The API runs on `:4173` by default when started alone. In `npm run dev:all`, Vite serves the frontend on `:5173` and proxies API calls to the backend.
 
 Optional demo data:
 
 ```sh
-HOMELAB_VAULT_KEY=dev-vault-key-change-me DATABASE_URL=file:../data/homelab.db npm run seed:demo
+HOMELAB_VAULT_KEY=dev-alert-config-key DATABASE_URL=file:../data/homelab.db npm run seed:demo
 ```
 
-### Useful commands
+### Useful Commands
 
 | Command | Description |
 |---|---|
@@ -144,9 +131,9 @@ HOMELAB_VAULT_KEY=dev-vault-key-change-me DATABASE_URL=file:../data/homelab.db n
 | `npm run typecheck` | TypeScript type check |
 | `npm run db:push` | Apply schema to SQLite |
 | `npm run db:studio` | Open Prisma Studio |
-| `npm run seed:demo` | Load demo data (needs env vars) |
+| `npm run seed:demo` | Load demo data |
 
-### Building the Docker image locally
+### Build The Docker Image Locally
 
 ```sh
 docker compose -f docker-compose.build.yml up -d --build
@@ -161,8 +148,7 @@ docker compose -f docker-compose.build.yml up -d --build
 | Frontend | React 19, Vite, TypeScript |
 | Backend | Fastify 5, Zod, TypeScript |
 | Database | SQLite via Prisma ORM |
-| Remote access | Apache Guacamole `guacd` + `guacamole-common-js` |
-| Vault | AES-256-GCM (Node.js built-in `crypto`) |
+| Secret encryption | AES-256-GCM for alert channel configs |
 | Container | Docker / GHCR |
 
 ---
@@ -171,27 +157,29 @@ docker compose -f docker-compose.build.yml up -d --build
 
 Releases follow [Semantic Versioning](https://semver.org). See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
-Current: **v0.2.15**
+Current: **v0.3.0**
 
-### Verify your running build
+### Verify Your Running Build
 
 | Where | What to look for |
 |---|---|
-| **Sidebar** (bottom) | `v0.2.13 · abc1234` — click for GitHub release notes |
-| **Login screen** | Same badge under the Unlock button |
-| **`/status` page** | Version line under the title |
+| **Sidebar** | `v0.3.0 · abc1234` in the build badge |
+| **Login screen** | Same build badge under the Unlock button |
+| **`/status` page** | Version and git hash under the title |
 | **API** | `curl -s http://localhost:4173/api/version` |
 
 The short hash (`abc1234`) is the git commit baked into the Docker image at build time.
 
-### Release a new version
+### Release A New Version
 
 ```sh
-# 1. Bump version + update CHANGELOG.md
-npm version patch   # or minor / major
+# 1. Bump version and update CHANGELOG.md
+npm version patch --no-git-tag-version   # or minor / major
 
 # 2. Commit, tag, and push
-git push && git push origin v$(node -p "require('./package.json').version")
+git add -A && git commit -m "Release vX.Y.Z"
+git tag vX.Y.Z
+git push origin main && git push origin vX.Y.Z
 ```
 
-Pushing a `v*` tag creates a [GitHub Release](https://github.com/Kobii-git/homelab-dashboard/releases) and publishes a matching Docker image to GHCR.
+Pushing `main` publishes `latest` and `sha-*` images to GHCR. Pushing a `v*` tag also publishes versioned image tags.

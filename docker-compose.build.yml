@@ -12,7 +12,7 @@ services:
       # Optional — leave unset and the app handles everything on first boot:
       # ADMIN_PASSWORD: your-password
       # COOKIE_SECRET: random-32-chars
-      # HOMELAB_VAULT_KEY: random-key
+      # HOMELAB_VAULT_KEY: random-key   # encrypts alert webhook/SMTP configs
     ports:
       - "4173:4173"
     volumes:

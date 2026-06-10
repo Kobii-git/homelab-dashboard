@@ -11,9 +11,7 @@ const defaultWidgets = [
   { type: "incidents", title: "Incidents", x: 6, y: 0, w: 6, h: 3, sortOrder: 1 },
   { type: "favorites", title: "Favorites", x: 0, y: 3, w: 4, h: 3, sortOrder: 2 },
   { type: "failingChecks", title: "Failing Checks", x: 4, y: 3, w: 4, h: 3, sortOrder: 3 },
-  { type: "recentSessions", title: "Recent Sessions", x: 8, y: 3, w: 4, h: 3, sortOrder: 4 },
-  { type: "vaultHealth", title: "Vault Health", x: 0, y: 6, w: 4, h: 2, sortOrder: 5 },
-  { type: "notes", title: "Pinned Notes", x: 4, y: 6, w: 4, h: 2, sortOrder: 6 }
+  { type: "notes", title: "Pinned Notes", x: 4, y: 6, w: 4, h: 2, sortOrder: 4 }
 ];
 
 async function ensureDefaultWidgets(prisma: RouteContext["prisma"]): Promise<void> {

@@ -86,8 +86,8 @@ export function BackupRestoreView({ onRefresh }: { onRefresh: () => Promise<void
         <div>
           <strong>Treat backup files like secrets.</strong>
           <p>
-            Backups include encrypted credentials and alert webhook configs. Store offline, encrypt at rest, and use the
-            same <code>HOMELAB_VAULT_KEY</code> when restoring on another instance.
+            Backups include encrypted alert webhook and SMTP configs. Store offline, encrypt at rest, and use the same
+            <code>HOMELAB_VAULT_KEY</code> when restoring on another instance.
           </p>
         </div>
       </div>
@@ -95,10 +95,10 @@ export function BackupRestoreView({ onRefresh }: { onRefresh: () => Promise<void
       <div className="backup-grid">
         <section className="backup-panel">
           <h3><Download size={16} /> Export</h3>
-          <p>Download a JSON snapshot of groups, resources, connections, checks, credentials, alerts, notes, tags, and widgets.</p>
+          <p>Download a JSON snapshot of groups, resources, checks, alerts, maintenance windows, notes, tags, and widgets.</p>
           <ul className="backup-list">
-            <li>Includes encrypted vault blobs (not plaintext passwords)</li>
-            <li>Does not include session history, incidents, or audit logs</li>
+            <li>Includes encrypted alert config blobs, not plaintext webhook URLs or SMTP settings</li>
+            <li>Does not include incidents, check results, alert deliveries, or audit logs</li>
             <li>Safe to schedule regularly for disaster recovery</li>
           </ul>
           <button className="primary-button" type="button" disabled={exporting} onClick={() => void exportBackup()}>
@@ -170,7 +170,7 @@ export function BackupRestoreView({ onRefresh }: { onRefresh: () => Promise<void
           {mode === "replace" ? (
             <div className="backup-replace-warning">
               <AlertTriangle size={16} />
-              <span>Replace deletes all resources, connections, credentials, checks, alerts, notes, tags, folders, and widgets before importing.</span>
+              <span>Replace deletes all resources, checks, alerts, maintenance windows, notes, tags, groups, widgets, and related runtime history before importing.</span>
             </div>
           ) : null}
           <label>

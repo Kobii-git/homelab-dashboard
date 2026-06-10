@@ -10,9 +10,7 @@ const env = {
   databaseUrl: "file:./data/test.db",
   adminPassword: "test-pass",
   cookieSecret: "test-cookie-secret-with-more-than-32-chars",
-  vaultKey: "test-vault-key-for-homelab-dashboard",
-  guacdHost: "127.0.0.1",
-  guacdPort: 4822
+  vaultKey: "test-vault-key-for-homelab-dashboard"
 };
 
 const app = await createApp({ prisma, env, monitor: false, logger: false });
@@ -40,6 +38,29 @@ describe("api routes", () => {
   it("requires authentication for protected routes", async () => {
     const response = await app.inject({ method: "GET", url: "/api/resources" });
     expect(response.statusCode).toBe(401);
+  });
+
+  it("allows env-managed admins to dismiss first-run setup after login", async () => {
+    const cookie = await loginCookie();
+
+    const setup = await app.inject({
+      method: "POST",
+      url: "/api/setup",
+      headers: { cookie },
+      payload: { seedDemo: false }
+    });
+    expect(setup.statusCode).toBe(200);
+
+    const status = await app.inject({
+      method: "GET",
+      url: "/api/setup/status",
+      headers: { cookie }
+    });
+    expect(status.statusCode).toBe(200);
+    expect(status.json<{ firstRun: boolean; needsAccount: boolean }>()).toEqual({
+      firstRun: false,
+      needsAccount: false
+    });
   });
 
   it("creates dashboard groups and resources", async () => {
