@@ -6,6 +6,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.1] - 2026-06-10
+
+### Fixed
+- Docker startup now creates a one-time SQLite backup at
+  `/data/homelab.before-v0.4-schema.db` before applying schema changes.
+- Docker startup now allows the intentional schema cleanup required when
+  upgrading older installs that still contain removed SSH/RDP/Vault tables.
+
+---
+
 ## [0.4.0] - 2026-06-10
 
 ### Changed

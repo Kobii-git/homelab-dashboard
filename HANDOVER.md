@@ -5,7 +5,7 @@ continue without rediscovering the shape of the app.
 
 - **Repo:** https://github.com/Kobii-git/homelab-dashboard
 - **Image:** `ghcr.io/kobii-git/homelab-dashboard`
-- **Current version:** `0.4.0`
+- **Current version:** `0.4.1`
 - **Port:** `4173`
 - **Current branch:** `main`
 
@@ -175,6 +175,9 @@ Recent cleanup and redesign passes:
   `main.tsx`; single-port preview should use `npm run build && npm start`, while
   active local development should use `npm run dev:all`.
 - Tightened the left sidebar and renamed the visible Settings area to Admin.
+- `0.4.1` fixed Docker restarts on older installs by backing up
+  `/data/homelab.db` to `/data/homelab.before-v0.4-schema.db` once, then allowing
+  Prisma to apply the intentional schema cleanup for removed remote/vault tables.
 
 ---
 

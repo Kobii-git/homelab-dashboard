@@ -34,4 +34,4 @@ COPY --from=build /app/prisma ./prisma
 VOLUME ["/data"]
 EXPOSE 4173
 
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/server/index.js"]
+CMD ["sh", "-c", "if [ -f /data/homelab.db ] && [ ! -f /data/homelab.before-v0.4-schema.db ]; then cp /data/homelab.db /data/homelab.before-v0.4-schema.db; fi; npx prisma db push --skip-generate --accept-data-loss && node dist/server/index.js"]
