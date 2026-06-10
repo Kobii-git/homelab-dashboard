@@ -8,7 +8,7 @@ import { DashboardConsole } from "./features/dashboard/DashboardConsole";
 import { ServicesView } from "./features/services/ServicesView";
 import { emptyAppData, type AppData, type AppView } from "./features/types";
 import { SettingsView } from "./features/settings/SettingsView";
-import { apiGet, apiSend } from "./lib/api";
+import { apiGet, apiSend, type SystemSettingsDto } from "./lib/api";
 import { useAppChrome } from "./lib/appChrome";
 import type { DashboardResource } from "../shared/types";
 import type { DashboardDto, HealthCheckDto } from "./lib/api";
@@ -207,11 +207,13 @@ export function App() {
   const [setupError, setSetupError] = useState<string | null>(null);
   const [view, setView] = useState<AppView>("dashboard");
   const [data, setData] = useState<AppData>(emptyAppData);
+  const [systemSettings, setSystemSettings] = useState<SystemSettingsDto>({ autoPingIntervalSeconds: 60 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [username, setUsername] = useState("admin");
   const [authSource, setAuthSource] = useState<"env" | "database">("database");
   const { theme, toggleTheme, sidebarMode, cycleSidebar } = useAppChrome();
+  const [openAddServiceForm, setOpenAddServiceForm] = useState(false);
 
   async function loadData() {
     setLoading(true);
@@ -227,6 +229,11 @@ export function App() {
     }
   }
 
+  async function loadSystemSettings() {
+    const settings = await apiGet<SystemSettingsDto>("/api/settings");
+    setSystemSettings(settings);
+  }
+
   async function checkAuth() {
     const [me, status] = await Promise.all([
       apiGet<{ authenticated: boolean; username?: string; authSource?: "env" | "database" }>("/api/auth/me"),
@@ -237,7 +244,7 @@ export function App() {
     if (me.authSource) setAuthSource(me.authSource);
     setSetupStatus(status);
     if (me.authenticated) {
-      await loadData();
+      await Promise.all([loadData(), loadSystemSettings()]);
     }
   }
 
@@ -357,6 +364,16 @@ export function App() {
     await loadData();
   }
 
+  async function patchSystemSettings(next: SystemSettingsDto) {
+    await apiSend("/api/settings", "PATCH", next);
+    await loadSystemSettings();
+  }
+
+  function openServicesForCreate() {
+    setView("services");
+    setOpenAddServiceForm(true);
+  }
+
   async function runResourceHealthCheck(resource: DashboardResource) {
     let checkId = resource.healthChecks?.[0]?.id;
 
@@ -375,7 +392,7 @@ export function App() {
         resourceId: resource.id,
         type: url ? "http" : "ping",
         target,
-        intervalSeconds: 60,
+        intervalSeconds: systemSettings.autoPingIntervalSeconds,
         timeoutMs: 3000,
         failureThreshold: 1,
         successThreshold: 1,
@@ -423,7 +440,12 @@ export function App() {
       <AppSidebar
         navItems={navItems}
         view={view}
-        onNavigate={setView}
+        onNavigate={(target) => {
+          setView(target);
+          if (target !== "services") {
+            setOpenAddServiceForm(false);
+          }
+        }}
         sidebarMode={sidebarMode}
         onCycleSidebar={cycleSidebar}
       />
@@ -440,12 +462,18 @@ export function App() {
               onPatchResource={patchResource}
               onRunCheck={runResourceHealthCheck}
               onPatchGroup={patchGroup}
-              onOpenServices={() => setView("services")}
+              onOpenServices={openServicesForCreate}
             />
           ) : null}
 
           {view === "services" ? (
-            <ServicesView data={data} onRefresh={loadData} />
+            <ServicesView
+              data={data}
+              onRefresh={loadData}
+              autoPingIntervalSeconds={systemSettings.autoPingIntervalSeconds}
+              openAddServiceForm={openAddServiceForm}
+              onOpenAddServiceFormHandled={() => setOpenAddServiceForm(false)}
+            />
           ) : null}
 
           {view === "settings" ? (
@@ -455,6 +483,8 @@ export function App() {
               onRefresh={loadData}
               theme={theme}
               onToggleTheme={toggleTheme}
+              systemSettings={systemSettings}
+              onSaveSettings={patchSystemSettings}
             />
           ) : null}
         </div>

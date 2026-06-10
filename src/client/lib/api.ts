@@ -36,6 +36,10 @@ export type DashboardDto = {
   layout: Record<string, unknown>;
 };
 
+export type SystemSettingsDto = {
+  autoPingIntervalSeconds: number;
+};
+
 export type { DashboardGroupDto, DashboardResource };
 
 

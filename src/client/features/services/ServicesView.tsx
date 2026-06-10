@@ -44,10 +44,16 @@ function Field({
 
 export function ServicesView({
   data,
-  onRefresh
+  onRefresh,
+  autoPingIntervalSeconds,
+  openAddServiceForm,
+  onOpenAddServiceFormHandled
 }: {
   data: AppData;
   onRefresh: () => Promise<void>;
+  autoPingIntervalSeconds: number;
+  openAddServiceForm?: boolean;
+  onOpenAddServiceFormHandled?: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<ServiceTab>("resource");
   const [editMode, setEditMode] = useState<EditMode>(null);
@@ -61,6 +67,16 @@ export function ServicesView({
     if (editResource) setActiveTab("resource");
     if (editCheck) setActiveTab("check");
   }, [editResource, editCheck]);
+
+  useEffect(() => {
+    if (!openAddServiceForm) {
+      return;
+    }
+    cancelEdit();
+    setActiveTab("resource");
+    setFormMode("resource");
+    onOpenAddServiceFormHandled?.();
+  }, [openAddServiceForm, onOpenAddServiceFormHandled]);
 
   function startEditResource(resource: DashboardResource) {
     setEditResource(resource);
@@ -124,7 +140,9 @@ export function ServicesView({
         resourceId: form.get("resourceId"),
         type: form.get("type"),
         target: emptyToNull(form.get("target")),
-        intervalSeconds: Number(form.get("intervalSeconds") || 60),
+        intervalSeconds: Number.isInteger(Number(form.get("intervalSeconds")))
+          ? Number(form.get("intervalSeconds"))
+          : autoPingIntervalSeconds,
         timeoutMs: Number(form.get("timeoutMs") || 3000),
         failureThreshold: Number(form.get("failureThreshold") || 1),
         successThreshold: Number(form.get("successThreshold") || 1),
@@ -330,8 +348,22 @@ export function ServicesView({
                 </select>
               </label>
               <Field label="Target" name="target" placeholder="https://service.local or host:443" defaultValue={editCheck?.target} required />
-              <Field label="Interval (seconds)" name="intervalSeconds" type="number" placeholder="60" defaultValue={editCheck?.intervalSeconds?.toString()} />
-              <Field label="Timeout (ms)" name="timeoutMs" type="number" placeholder="3000" defaultValue={editCheck?.timeoutMs?.toString()} />
+              <Field
+                label="Interval (seconds)"
+                name="intervalSeconds"
+                type="number"
+                placeholder="60"
+                defaultValue={editCheck?.intervalSeconds?.toString() ?? String(autoPingIntervalSeconds)}
+                required
+              />
+              <Field
+                label="Timeout (ms)"
+                name="timeoutMs"
+                type="number"
+                placeholder="3000"
+                defaultValue={editCheck?.timeoutMs?.toString()}
+                required
+              />
               <Field label="Failure threshold" name="failureThreshold" type="number" placeholder="1" defaultValue={editCheck?.failureThreshold?.toString()} />
               <Field label="Recovery threshold" name="successThreshold" type="number" placeholder="1" defaultValue={editCheck?.successThreshold?.toString()} />
               <div className="form-actions">

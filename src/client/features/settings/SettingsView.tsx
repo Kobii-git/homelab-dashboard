@@ -1,8 +1,8 @@
-import { Download, ExternalLink, Gauge, RefreshCw, Save, Sun, Moon } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { ExternalLink, Gauge, RefreshCw, Save, Sun, Moon } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
 import { PageHeader } from "../../components/Primitives";
 import { FormErrorBanner, runFormAction } from "../../lib/forms";
-import { apiSend } from "../../lib/api";
+import { apiSend, type SystemSettingsDto } from "../../lib/api";
 import type { ThemeMode } from "../../lib/appChrome";
 
 export function SettingsView({
@@ -10,19 +10,28 @@ export function SettingsView({
   authSource,
   onRefresh,
   theme,
-  onToggleTheme
+  onToggleTheme,
+  systemSettings,
+  onSaveSettings
 }: {
   username: string;
   authSource: "env" | "database";
   onRefresh: () => Promise<void>;
   theme: ThemeMode;
   onToggleTheme: () => void;
+  systemSettings: SystemSettingsDto;
+  onSaveSettings: (next: SystemSettingsDto) => Promise<void>;
 }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [autoPingIntervalSeconds, setAutoPingIntervalSeconds] = useState(systemSettings.autoPingIntervalSeconds.toString());
   const [actionError, setActionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    setAutoPingIntervalSeconds(systemSettings.autoPingIntervalSeconds.toString());
+  }, [systemSettings.autoPingIntervalSeconds]);
 
   async function changePassword(event: FormEvent) {
     event.preventDefault();
@@ -44,6 +53,27 @@ export function SettingsView({
       setActionError,
       setSubmitting,
       "Password updated"
+    );
+  }
+
+  async function updateSettings(event: FormEvent) {
+    event.preventDefault();
+    const interval = Number(autoPingIntervalSeconds);
+
+    if (!Number.isInteger(interval) || interval < 15 || interval > 86400) {
+      setActionError("Health check interval must be between 15 and 86400 seconds");
+      return;
+    }
+
+    const payload: SystemSettingsDto = { autoPingIntervalSeconds: interval };
+    await runFormAction(
+      async () => {
+        await onSaveSettings(payload);
+        setAutoPingIntervalSeconds(payload.autoPingIntervalSeconds.toString());
+      },
+      setActionError,
+      setSubmitting,
+      "System settings updated"
     );
   }
 
@@ -74,6 +104,20 @@ export function SettingsView({
 
         <section className="table-panel">
           <h3><Gauge size={16} /> Data &amp; system</h3>
+          <form className="inline-form settings-form-grid" onSubmit={updateSettings}>
+            <label>
+              Auto ping interval (seconds)
+              <input
+                type="number"
+                min={15}
+                max={86400}
+                value={autoPingIntervalSeconds}
+                onChange={(event) => setAutoPingIntervalSeconds(event.target.value)}
+                required
+              />
+            </label>
+            <button className="primary-button" type="submit" disabled={submitting}>Update interval</button>
+          </form>
           <div className="settings-actions">
             <button className="icon-text-button" type="button" onClick={() => void onRefresh()}>
               <RefreshCw size={16} /> Sync all data

@@ -20,7 +20,8 @@ import {
   idParamSchema,
   loginSchema,
   resourcePatchSchema,
-  resourceSchema
+  resourceSchema,
+  settingsSchema
 } from "./validation.js";
 import { seedDemo } from "./seed.js";
 import { registerStatusRoutes } from "./routes/status.js";
@@ -34,6 +35,10 @@ type CreateAppOptions = {
 };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const AUTO_PING_INTERVAL_KEY = "auto_ping_interval_seconds";
+const AUTO_PING_INTERVAL_DEFAULT = 60;
+const AUTO_PING_INTERVAL_MIN = 15;
+const AUTO_PING_INTERVAL_MAX = 86400;
 
 function resolveClientDist(): string | null {
   const candidates = [
@@ -70,6 +75,52 @@ async function isSetupDismissed(prisma: PrismaClient): Promise<boolean> {
 
 function routeId(request: { params: unknown }): string {
   return idParamSchema.parse(request.params).id;
+}
+
+function normalizedAutoPingTarget(resource: { url: string | null; host: string | null }): { type: "http" | "ping"; target: string } | null {
+  const url = resource.url?.trim();
+  if (url) {
+    const hasScheme = /^https?:\/\//i.test(url);
+    return { type: "http", target: hasScheme ? url : `http://${url}` };
+  }
+
+  const host = resource.host?.trim();
+  if (host) {
+    return { type: "ping", target: host };
+  }
+
+  return null;
+}
+
+function clampAutoPingInterval(value: number | null): number {
+  if (value === null) {
+    return AUTO_PING_INTERVAL_DEFAULT;
+  }
+
+  if (!Number.isInteger(value)) {
+    return AUTO_PING_INTERVAL_DEFAULT;
+  }
+
+  if (value < AUTO_PING_INTERVAL_MIN || value > AUTO_PING_INTERVAL_MAX) {
+    return AUTO_PING_INTERVAL_DEFAULT;
+  }
+
+  return value;
+}
+
+async function getAutoPingIntervalSeconds(prisma: PrismaClient): Promise<number> {
+  const entry = await prisma.systemConfig.findUnique({ where: { key: AUTO_PING_INTERVAL_KEY } });
+  const parsed = Number.parseInt(entry?.value ?? "", 10);
+  return clampAutoPingInterval(Number.isNaN(parsed) ? null : parsed);
+}
+
+async function setAutoPingIntervalSeconds(prisma: PrismaClient, value: number): Promise<void> {
+  const interval = clampAutoPingInterval(Math.trunc(value));
+  await prisma.systemConfig.upsert({
+    where: { key: AUTO_PING_INTERVAL_KEY },
+    update: { value: String(interval) },
+    create: { key: AUTO_PING_INTERVAL_KEY, value: String(interval) }
+  });
 }
 
 export async function createApp(options: CreateAppOptions = {}): Promise<FastifyInstance> {
@@ -306,6 +357,17 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     };
   });
 
+  app.get("/api/settings", async () => {
+    const autoPingIntervalSeconds = await getAutoPingIntervalSeconds(prisma);
+    return { autoPingIntervalSeconds };
+  });
+
+  app.patch("/api/settings", async (request) => {
+    const body = settingsSchema.parse(request.body);
+    await setAutoPingIntervalSeconds(prisma, body.autoPingIntervalSeconds);
+    return { autoPingIntervalSeconds: body.autoPingIntervalSeconds };
+  });
+
   app.get("/api/groups", async () =>
     prisma.dashboardGroup.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }] })
   );
@@ -342,6 +404,24 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.post("/api/resources", async (request, reply) => {
     const body = resourceSchema.parse(request.body);
     const resource = await prisma.resource.create({ data: { ...body } });
+
+    const defaultCheck = normalizedAutoPingTarget(resource);
+    if (defaultCheck) {
+      const intervalSeconds = await getAutoPingIntervalSeconds(prisma);
+      await prisma.healthCheck.create({
+        data: {
+          resourceId: resource.id,
+          type: defaultCheck.type,
+          target: defaultCheck.target,
+          intervalSeconds,
+          timeoutMs: 3000,
+          failureThreshold: 1,
+          successThreshold: 1,
+          enabled: true
+        }
+      });
+    }
+
     reply.code(201);
     return resource;
   });

@@ -2,7 +2,6 @@ import { z } from "zod";
 import { HEALTH_CHECK_TYPES, RESOURCE_KINDS } from "../shared/types.js";
 
 const nullableText = z.string().trim().min(1).max(2000).optional().nullable();
-const optionalText = z.string().trim().min(1).max(2000).optional();
 
 export const loginSchema = z.object({
   username: z.string().trim().min(1).optional(),
@@ -21,7 +20,7 @@ export const resourceSchema = z.object({
   name: z.string().trim().min(1).max(160),
   kind: z.enum(RESOURCE_KINDS),
   url: nullableText,
-  description: optionalText,
+  description: nullableText,
   icon: nullableText,
   color: nullableText,
   host: nullableText,
@@ -44,6 +43,10 @@ export const healthCheckSchema = z.object({
 });
 
 export const healthCheckPatchSchema = healthCheckSchema.partial();
+
+export const settingsSchema = z.object({
+  autoPingIntervalSeconds: z.number().int().min(15).max(86400)
+});
 
 export const idParamSchema = z.object({
   id: z.string().cuid()
