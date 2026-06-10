@@ -276,20 +276,11 @@ export function DashboardConsole({
         }
       />
 
-      <section className="service-hero">
-        <div className="service-hero-copy">
-          <span className="eyebrow">Homelab launchpad</span>
-          <h1>Open the right service fast. See trouble before it becomes noise.</h1>
-          <p>
-            This page is now your private start screen: hosted apps first, health signals second, admin tools out of the way.
-          </p>
-        </div>
-        <div className="service-hero-metrics">
-          <MetricCard icon={<Server size={18} />} label="Services" value={resources.length} tone="accent" />
-          <MetricCard icon={<ExternalLink size={18} />} label="Launchable" value={launchableCount} />
-          <MetricCard icon={<Wifi size={18} />} label="Online" value={totals.online} tone="online" />
-          <MetricCard icon={<WifiOff size={18} />} label="Offline" value={totals.offline} tone="offline" />
-        </div>
+      <section className="dashboard-overview dashboard-compact-metrics">
+        <MetricCard icon={<Server size={18} />} label="Services" value={resources.length} tone="accent" />
+        <MetricCard icon={<ExternalLink size={18} />} label="Launchable" value={launchableCount} />
+        <MetricCard icon={<Wifi size={18} />} label="Online" value={totals.online} tone="online" />
+        <MetricCard icon={<WifiOff size={18} />} label="Offline" value={totals.offline} tone="offline" />
       </section>
 
       <section className="dashboard-signal-grid">
