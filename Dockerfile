@@ -25,6 +25,7 @@ ENV NODE_ENV=production
 ENV PORT=4173
 ENV HOST=0.0.0.0
 ENV DATABASE_URL=file:/data/homelab.db
+ENV RUST_LOG=debug
 
 COPY package.json package-lock.json* ./
 COPY --from=build /app/node_modules ./node_modules

@@ -5,7 +5,7 @@ continue without rediscovering the shape of the app.
 
 - **Repo:** https://github.com/Kobii-git/homelab-dashboard
 - **Image:** `ghcr.io/kobii-git/homelab-dashboard`
-- **Current version:** `0.4.1`
+- **Current version:** `0.4.3`
 - **Port:** `4173`
 - **Current branch:** `main`
 
@@ -178,6 +178,10 @@ Recent cleanup and redesign passes:
 - `0.4.1` fixed Docker restarts on older installs by backing up
   `/data/homelab.db` to `/data/homelab.before-v0.4-schema.db` once, then allowing
   Prisma to apply the intentional schema cleanup for removed remote/vault tables.
+- `0.4.2` removed the oversized dashboard launchpad hero and replaced it with a
+  compact service metric strip.
+- `0.4.3` fixed Docker startup on hosts where Prisma `db push` crashed with a
+  blank schema-engine error unless `RUST_LOG=debug` was exported.
 
 ---
 

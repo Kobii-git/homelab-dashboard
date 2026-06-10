@@ -6,6 +6,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.3] - 2026-06-10
+
+### Fixed
+- Docker startup now exports `RUST_LOG=debug` before running Prisma `db push`.
+  This avoids the blank Prisma schema-engine crash that caused the container to
+  restart before the web app could load on Docker hosts.
+
 ## [0.4.2] - 2026-06-10
 
 ### Changed

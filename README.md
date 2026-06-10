@@ -2,7 +2,7 @@
 
 A private, self-hosted command center for your homelab. Track services, websites, VMs, and devices from one LAN/VPN-only dashboard with health checks, incidents, alerts, notes, backup/restore, and a dense console UI.
 
-![Version](https://img.shields.io/badge/version-0.4.1-2dd4bf)
+![Version](https://img.shields.io/badge/version-0.4.3-2dd4bf)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -24,7 +24,7 @@ A private, self-hosted command center for your homelab. Track services, websites
 
 ## Current Scope
 
-Version `0.4.1` is intentionally a service launch/status dashboard. The previous SSH/RDP/VNC remote-access manager and user credential vault were removed before this release line. Browser-based remote access can be planned again later, but it is not part of the current app or Docker Compose stack.
+Version `0.4.3` is intentionally a service launch/status dashboard. The previous SSH/RDP/VNC remote-access manager and user credential vault were removed before this release line. Browser-based remote access can be planned again later, but it is not part of the current app or Docker Compose stack.
 
 The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles or built-in HTTPS termination.
 
@@ -163,13 +163,13 @@ docker compose -f docker-compose.build.yml up -d --build
 
 Releases follow [Semantic Versioning](https://semver.org). See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
-Current: **v0.4.1**
+Current: **v0.4.3**
 
 ### Verify Your Running Build
 
 | Where | What to look for |
 |---|---|
-| **Sidebar** | `v0.4.1 · abc1234` in the build badge |
+| **Sidebar** | `v0.4.3 · abc1234` in the build badge |
 | **Login screen** | Same build badge under the Unlock button |
 | **`/status` page** | Version and git hash under the title |
 | **API** | `curl -s http://localhost:4173/api/version` |
