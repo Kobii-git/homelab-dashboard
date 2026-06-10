@@ -1,45 +1,18 @@
-import type {
-  AlertChannelDto,
-  AlertDeliveryDto,
-  AlertRuleDto,
-  DashboardDto,
-  DashboardWidgetDto,
-  HealthCheckDto,
-  IncidentDto,
-  MaintenanceWindowDto,
-  NoteDto,
-  TagDto
-} from "../lib/api";
-import type { DashboardGroupDto, DashboardResource } from "../../shared/types";
+import type { DashboardGroupDto, DashboardResource } from "../lib/api";
+import type { DashboardDto, HealthCheckDto } from "../lib/api";
 
-export type AppView = "dashboard" | "services" | "monitoring" | "alerts" | "settings";
+export type AppView = "dashboard" | "services" | "settings";
 
-export type V2Data = {
+export type AppData = {
   dashboard: DashboardDto;
   resources: DashboardResource[];
   groups: DashboardGroupDto[];
   checks: HealthCheckDto[];
-  widgets: DashboardWidgetDto[];
-  incidents: IncidentDto[];
-  tags: TagDto[];
-  alertChannels: AlertChannelDto[];
-  alertRules: AlertRuleDto[];
-  alertDeliveries: AlertDeliveryDto[];
-  maintenanceWindows: MaintenanceWindowDto[];
-  notes: NoteDto[];
 };
 
-export const emptyV2Data: V2Data = {
+export const emptyAppData: AppData = {
   dashboard: { groups: [], ungroupedResources: [], layout: {} },
   resources: [],
   groups: [],
-  checks: [],
-  widgets: [],
-  incidents: [],
-  tags: [],
-  alertChannels: [],
-  alertRules: [],
-  alertDeliveries: [],
-  maintenanceWindows: [],
-  notes: []
+  checks: []
 };

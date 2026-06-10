@@ -1,15 +1,4 @@
 import type { DashboardGroupDto, DashboardResource } from "../../shared/types";
-import type {
-  AlertChannelDto,
-  AlertDeliveryDto,
-  AlertRuleDto,
-  AuditEventDto,
-  DashboardWidgetDto,
-  IncidentDto,
-  NoteDto,
-  SearchResultDto,
-  TagDto
-} from "../../shared/types";
 
 export type HealthCheckDto = {
   id: string;
@@ -23,11 +12,11 @@ export type HealthCheckDto = {
   latestLatencyMs: number | null;
   latestCheckedAt: string | null;
   latestError: string | null;
-  consecutiveFailures?: number;
-  consecutiveSuccesses?: number;
-  failureThreshold?: number;
-  successThreshold?: number;
-  lastTransitionAt?: string | null;
+  consecutiveFailures: number;
+  consecutiveSuccesses: number;
+  failureThreshold: number;
+  successThreshold: number;
+  lastTransitionAt: string | null;
   resource?: DashboardResource;
   results?: HealthResultDto[];
 };
@@ -41,35 +30,14 @@ export type HealthResultDto = {
   checkedAt: string;
 };
 
-export type MaintenanceWindowDto = {
-  id: string;
-  name: string;
-  startsAt: string;
-  endsAt: string;
-  enabled: boolean;
-  scope: Record<string, unknown>;
-  notes: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type DashboardDto = {
   groups: DashboardGroupDto[];
   ungroupedResources: DashboardResource[];
   layout: Record<string, unknown>;
 };
 
-export type {
-  AlertChannelDto,
-  AlertDeliveryDto,
-  AlertRuleDto,
-  AuditEventDto,
-  DashboardWidgetDto,
-  IncidentDto,
-  NoteDto,
-  SearchResultDto,
-  TagDto
-};
+export type { DashboardGroupDto, DashboardResource };
+
 
 type ApiErrorBody = {
   error?: string;

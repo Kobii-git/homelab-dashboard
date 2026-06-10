@@ -20,11 +20,7 @@ async function resolveSecrets(
     partial.cookieSecret ??
     (await getOrCreate(prisma, "cookie_secret", () => crypto.randomBytes(32).toString("hex")));
 
-  const vaultKey =
-    partial.vaultKey ??
-    (await getOrCreate(prisma, "vault_key", () => crypto.randomBytes(32).toString("hex")));
-
-  return { ...partial, cookieSecret, vaultKey };
+  return { ...partial, cookieSecret };
 }
 
 const rawEnv = getEnv();

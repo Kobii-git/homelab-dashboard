@@ -1,14 +1,10 @@
 import {
   Activity,
-  AlertTriangle,
   BarChart3,
-  Boxes,
   ChevronDown,
   ChevronRight,
-  Clock3,
   ExternalLink,
   Globe2,
-  Info,
   Laptop,
   Monitor,
   Plus,
@@ -22,20 +18,19 @@ import {
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import type { DashboardResource } from "../../../shared/types";
-import { WidgetSettings } from "../../components/WidgetSettings";
 import { EmptyPanel, MetricCard, PageHeader, StatusBadge } from "../../components/Primitives";
 import { dashboardResources, formatDateTime, statusFor, summarizeResourceStatus } from "../../lib/format";
-import type { V2Data } from "../types";
+import { type AppData } from "../types";
 
 type StatusFilter = "all" | "favorites" | "online" | "offline" | "unknown";
 
 const icons: Record<string, ReactNode> = {
-  app: <Boxes size={22} />,
+  app: <Server size={22} />,
   website: <Globe2 size={22} />,
-  docker: <Boxes size={22} />,
+  docker: <Monitor size={22} />,
   vm: <Laptop size={22} />,
   server: <Server size={22} />,
-  other: <Monitor size={22} />
+  other: <Server size={22} />
 };
 
 const filters: Array<{ id: StatusFilter; label: string }> = [
@@ -112,9 +107,7 @@ function LatencyPanel({ resources }: { resources: DashboardResource[] }) {
             <strong>{latency} ms</strong>
           </div>
         ))}
-        {latencyRows.length === 0 ? (
-          <p className="muted-copy">Add health checks to see response-time signals here.</p>
-        ) : null}
+        {latencyRows.length === 0 ? <p className="muted-copy">Add health checks to see response-time signals.</p> : null}
       </div>
     </section>
   );
@@ -124,14 +117,12 @@ function ServiceCard({
   resource,
   onOpen,
   onFavorite,
-  onInspect,
   onRunCheck,
   checking
 }: {
   resource: DashboardResource;
   onOpen: (resource: DashboardResource) => void;
   onFavorite: (resource: DashboardResource) => void;
-  onInspect: (resource: DashboardResource) => void;
   onRunCheck: (resource: DashboardResource) => void;
   checking: boolean;
 }) {
@@ -149,7 +140,7 @@ function ServiceCard({
         type="button"
         disabled={!resource.url}
         onClick={() => onOpen(resource)}
-        title={resource.url ? `Open ${resource.name}` : "Add a URL to launch this service"}
+        title={resource.url ? `Open ${resource.name}` : "Add a URL or host to launch this service"}
       >
         <span className="service-icon" style={{ color }}>
           {resource.icon ? resource.icon.slice(0, 2).toUpperCase() : icons[resource.kind] ?? icons.other}
@@ -159,8 +150,6 @@ function ServiceCard({
           <small>{address}</small>
         </span>
       </button>
-
-      {resource.description ? <p className="service-description">{resource.description}</p> : null}
 
       <div className="service-card-meta">
         <button
@@ -186,9 +175,6 @@ function ServiceCard({
 
       <div className="service-card-actions">
         <span className="kind-chip">{resource.kind}</span>
-        <button className="icon-button" type="button" title="Details" onClick={() => onInspect(resource)}>
-          <Info size={15} />
-        </button>
         <button
           className={`icon-button ${resource.favorite ? "is-active" : ""}`}
           type="button"
@@ -212,31 +198,26 @@ export function DashboardConsole({
   onPatchResource,
   onRunCheck,
   onPatchGroup,
-  onOpenServices,
-  onInspectResource,
-  onOpenIncident
+  onOpenServices
 }: {
-  data: V2Data;
+  data: AppData;
   onRefresh: () => Promise<void>;
   onPatchResource: (id: string, body: Record<string, unknown>) => Promise<void>;
   onRunCheck: (resource: DashboardResource) => Promise<void>;
   onPatchGroup: (id: string, body: Record<string, unknown>) => Promise<void>;
   onOpenServices: () => void;
-  onInspectResource: (resource: DashboardResource) => void;
-  onOpenIncident: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [checkingResourceId, setCheckingResourceId] = useState<string | null>(null);
   const [checkError, setCheckError] = useState<string | null>(null);
+
   const resources = useMemo(
     () => dashboardResources(data.dashboard.groups, data.dashboard.ungroupedResources),
     [data.dashboard]
   );
   const totals = summarizeResourceStatus(resources);
   const launchableCount = resources.filter((resource) => resource.url).length;
-  const openIncidents = data.incidents.filter((incident) => incident.status !== "resolved").slice(0, 5);
-  const pinnedNotes = data.notes.filter((note) => note.pinned).slice(0, 3);
 
   function matchesResource(resource: DashboardResource): boolean {
     const status = statusFor(resource);
@@ -245,8 +226,7 @@ export function DashboardConsole({
       resource.url,
       resource.host,
       resource.kind,
-      resource.description,
-      ...(resource.tags ?? []).map((tag) => tag.name)
+      resource.description
     ].join(" ").toLowerCase();
     const matchesQuery = haystack.includes(query.toLowerCase());
     const matchesFilter =
@@ -261,20 +241,17 @@ export function DashboardConsole({
   const filteredUngrouped = data.dashboard.ungroupedResources.filter(matchesResource);
   const visibleCount = filteredGroups.reduce((sum, group) => sum + group.resources.length, 0) + filteredUngrouped.length;
 
-  function openResource(resource: DashboardResource) {
-    if (resource.url) {
-      window.open(resource.url, "_blank", "noopener,noreferrer");
-    }
-  }
-
   function renderResourceCard(resource: DashboardResource) {
     return (
       <ServiceCard
         key={resource.id}
         resource={resource}
-        onInspect={onInspectResource}
-        onOpen={openResource}
-        onFavorite={(item) => onPatchResource(item.id, { favorite: !item.favorite })}
+        onOpen={(service) => {
+          if (service.url) {
+            window.open(service.url, "_blank", "noopener,noreferrer");
+          }
+        }}
+        onFavorite={(item) => void onPatchResource(item.id, { favorite: !item.favorite })}
         onRunCheck={async (item) => {
           setCheckingResourceId(item.id);
           setCheckError(null);
@@ -295,7 +272,7 @@ export function DashboardConsole({
     <main className="view-shell service-dashboard">
       <PageHeader
         title="Dashboard"
-        subtitle="Launch hosted services and monitor the ones that matter."
+        subtitle="Launch hosted services and monitor health in one place"
         actions={
           <>
             <label className="search-box service-search">
@@ -338,44 +315,6 @@ export function DashboardConsole({
         </section>
 
         <LatencyPanel resources={resources} />
-
-        <section className="dashboard-signal-panel">
-          <div className="signal-panel-header">
-            <span><AlertTriangle size={16} /> Attention</span>
-            <small>{openIncidents.length} active</small>
-          </div>
-          <div className="compact-list">
-            {openIncidents.map((incident) => (
-              <button className="compact-row" key={incident.id} type="button" onClick={() => onOpenIncident(incident.id)}>
-                <span className={`severity-dot severity-${incident.severity}`} />
-                <span>
-                  <strong>{incident.title}</strong>
-                  <small>{incident.status} · {formatDateTime(incident.openedAt)}</small>
-                </span>
-              </button>
-            ))}
-            {openIncidents.length === 0 ? <p className="muted-copy">No active incidents.</p> : null}
-          </div>
-        </section>
-
-        <section className="dashboard-signal-panel dashboard-notes-panel">
-          <div className="signal-panel-header">
-            <span><Clock3 size={16} /> Notes</span>
-            <small>{pinnedNotes.length} pinned</small>
-          </div>
-          <div className="compact-list">
-            {pinnedNotes.map((note) => (
-              <div className="compact-row" key={note.id}>
-                <Clock3 size={16} />
-                <span>
-                  <strong>{note.title}</strong>
-                  <small>{note.body}</small>
-                </span>
-              </div>
-            ))}
-            {pinnedNotes.length === 0 ? <p className="muted-copy">Pinned notes stay here, below the important service signals.</p> : null}
-          </div>
-        </section>
       </section>
 
       <section className="service-filter-strip">
@@ -434,10 +373,6 @@ export function DashboardConsole({
       {resources.length > 0 && visibleCount === 0 ? (
         <EmptyPanel icon={<Search size={36} />} title="No services match" body="Clear search or change the status filter." />
       ) : null}
-
-      <div className="dashboard-customize">
-        <WidgetSettings widgets={data.widgets} onRefresh={onRefresh} />
-      </div>
     </main>
   );
 }

@@ -3,7 +3,7 @@ import { getBuildInfo } from "../../shared/version.js";
 
 export async function registerStatusRoutes({ app, prisma }: RouteContext): Promise<void> {
   app.get("/api/status", async () => {
-    const [resources, checks, incidents] = await Promise.all([
+    const [resources, checks] = await Promise.all([
       prisma.resource.findMany({
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
         select: {
@@ -25,14 +25,7 @@ export async function registerStatusRoutes({ app, prisma }: RouteContext): Promi
           }
         }
       }),
-      prisma.healthCheck.findMany({
-        where: { enabled: true },
-        select: { latestStatus: true }
-      }),
-      prisma.incident.findMany({
-        where: { status: { not: "resolved" } },
-        select: { id: true, title: true, status: true, severity: true, openedAt: true }
-      })
+      prisma.healthCheck.findMany({ where: { enabled: true }, select: { latestStatus: true } })
     ]);
 
     const online = checks.filter((check) => check.latestStatus === "online").length;
@@ -40,17 +33,15 @@ export async function registerStatusRoutes({ app, prisma }: RouteContext): Promi
     const unknown = checks.length - online - offline;
 
     return {
-      ok: offline === 0 && incidents.length === 0,
+      ok: offline === 0,
       ...getBuildInfo(),
       summary: {
         resources: resources.length,
         checks: checks.length,
         online,
         offline,
-        unknown,
-        openIncidents: incidents.length
+        unknown
       },
-      incidents,
       resources: resources.map((resource) => ({
         id: resource.id,
         name: resource.name,
@@ -108,7 +99,7 @@ export async function registerStatusRoutes({ app, prisma }: RouteContext): Promi
         '<span class="pill ' + (data.ok ? 'ok' : 'bad') + '">' + (data.ok ? 'All systems operational' : 'Issues detected') + '</span>',
         '<span class="pill">' + data.summary.online + ' online</span>',
         '<span class="pill">' + data.summary.offline + ' offline</span>',
-        '<span class="pill">' + data.summary.openIncidents + ' incidents</span>'
+        '<span class="pill">' + data.summary.resources + ' services</span>'
       ].join('');
       list.innerHTML = data.resources.map(function(resource) {
         return '<div class="row"><div><strong>' + esc(resource.name) + '</strong><small>' + esc(resource.host || resource.url || resource.kind) + '</small></div><span class="status-' + esc(resource.status) + '">' + esc(resource.status) + '</span></div>';

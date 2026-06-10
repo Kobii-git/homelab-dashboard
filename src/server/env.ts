@@ -6,12 +6,10 @@ export type AppEnv = {
   adminPassword: string | null;
   cookieSecret: string;
   cookieSecure: boolean;
-  vaultKey: string;
 };
 
-export function getEnv(): Omit<AppEnv, "cookieSecret" | "vaultKey"> & {
+export function getEnv(): Omit<AppEnv, "cookieSecret"> & {
   cookieSecret: string | null;
-  vaultKey: string | null;
 } {
   return {
     nodeEnv: process.env.NODE_ENV ?? "development",
@@ -24,6 +22,5 @@ export function getEnv(): Omit<AppEnv, "cookieSecret" | "vaultKey"> & {
     // Homelab installs are typically plain HTTP on a LAN, where a secure
     // cookie would be silently dropped by the browser and block login.
     cookieSecure: process.env.COOKIE_SECURE === "true",
-    vaultKey: process.env.HOMELAB_VAULT_KEY ?? null
   };
 }

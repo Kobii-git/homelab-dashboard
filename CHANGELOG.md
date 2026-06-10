@@ -6,6 +6,29 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.0] - 2026-06-10
+
+### Changed
+- Completed the simplification into a focused service dashboard: active scope is
+  Dashboard, Services, Admin, resources, groups, and health checks.
+- Reduced the Prisma schema to the active models only: resources, groups, checks,
+  check history, admin account, and system config.
+- Docker startup now creates `/data/homelab.before-v0.5-schema.db` once before
+  applying the simplified schema cleanup.
+- README and HANDOVER now describe the actual simplified app instead of the old
+  V2 pro-console.
+
+### Removed
+- Removed stale database models and active references for widgets, tags, notes,
+  incidents, maintenance windows, alerts, audit events, vault keys, and old
+  Guacamole reachability helpers.
+
+### Fixed
+- Fixed TypeScript/build breakage from stale `V2Data` imports and incomplete
+  health-check DTOs.
+- Restored the shared API error helper used by form actions.
+- Fixed the public `/status` page JavaScript summary pill rendering.
+
 ## [0.4.4] - 2026-06-10
 
 ### Changed

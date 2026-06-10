@@ -2,7 +2,6 @@ import { execFile } from "node:child_process";
 import net from "node:net";
 import { promisify } from "node:util";
 import type { HealthCheck, PrismaClient } from "@prisma/client";
-import { applyHealthOutcome } from "./incidents.js";
 import { checkSslCertificate } from "./connectivity.js";
 
 const execFileAsync = promisify(execFile);
@@ -88,32 +87,28 @@ async function checkTcp(target: string, timeoutMs: number): Promise<CheckOutcome
       if (settled) {
         return;
       }
-
       settled = true;
       socket.destroy();
       resolve(outcome);
     };
 
     socket.setTimeout(timeoutMs);
-    socket.once("connect", () =>
-      finish({ status: "online", latencyMs: elapsedSince(startedAt) })
-    );
-    socket.once("timeout", () =>
-      finish({ status: "offline", latencyMs: elapsedSince(startedAt), error: "Timeout" })
-    );
-    socket.once("error", (error) =>
-      finish({ status: "offline", latencyMs: elapsedSince(startedAt), error: error.message })
-    );
+    socket.once("connect", () => finish({ status: "online", latencyMs: elapsedSince(startedAt) }));
+    socket.once("timeout", () => finish({ status: "offline", latencyMs: elapsedSince(startedAt), error: "Timeout" }));
+    socket.once("error", (error) => finish({
+      status: "offline",
+      latencyMs: elapsedSince(startedAt),
+      error: error.message
+    }));
   });
 }
 
 async function checkPing(target: string, timeoutMs: number): Promise<CheckOutcome> {
   const startedAt = Date.now();
   const timeoutSeconds = Math.max(1, Math.ceil(timeoutMs / 1000));
-  const args =
-    process.platform === "win32"
-      ? ["-n", "1", "-w", String(timeoutMs), target]
-      : ["-c", "1", "-W", String(timeoutSeconds), target];
+  const args = process.platform === "win32"
+    ? ["-n", "1", "-w", String(timeoutMs), target]
+    : ["-c", "1", "-W", String(timeoutSeconds), target];
 
   try {
     await execFileAsync("ping", args, { timeout: timeoutMs + 500 });
@@ -125,6 +120,53 @@ async function checkPing(target: string, timeoutMs: number): Promise<CheckOutcom
       error: error instanceof Error ? error.message : "Ping failed"
     };
   }
+}
+
+async function applyHealthOutcome(
+  prisma: PrismaClient,
+  check: HealthCheck,
+  outcome: CheckOutcome
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await tx.healthResult.create({
+      data: {
+        checkId: check.id,
+        status: outcome.status,
+        latencyMs: outcome.latencyMs,
+        error: outcome.error
+      }
+    });
+
+    const nextFailures = outcome.status === "offline" ? check.consecutiveFailures + 1 : 0;
+    const nextSuccesses = outcome.status === "online" ? check.consecutiveSuccesses + 1 : 0;
+    const transitioned = check.latestStatus !== outcome.status;
+
+    await tx.healthCheck.update({
+      where: { id: check.id },
+      data: {
+        latestStatus: outcome.status,
+        latestLatencyMs: outcome.latencyMs,
+        latestCheckedAt: new Date(),
+        latestError: outcome.error ?? null,
+        consecutiveFailures: nextFailures,
+        consecutiveSuccesses: nextSuccesses,
+        lastTransitionAt: transitioned ? new Date() : check.lastTransitionAt
+      }
+    });
+
+    const stale = await tx.healthResult.findMany({
+      where: { checkId: check.id },
+      orderBy: { checkedAt: "desc" },
+      skip: 100,
+      select: { id: true }
+    });
+
+    if (stale.length > 0) {
+      await tx.healthResult.deleteMany({
+        where: { id: { in: stale.map((result) => result.id) } }
+      });
+    }
+  });
 }
 
 export async function runHealthCheck(

@@ -26,11 +26,6 @@ export async function testTcpReachable(host: string, port: number, timeoutMs = 3
   });
 }
 
-export async function testGuacdReachable(host: string, port: number): Promise<boolean> {
-  const result = await testTcpReachable(host, port, 2000);
-  return result.ok;
-}
-
 function parseSslTarget(target: string): { host: string; port: number; servername: string } {
   if (target.includes("://")) {
     const url = new URL(target);

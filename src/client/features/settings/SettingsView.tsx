@@ -1,4 +1,4 @@
-import { Download, ExternalLink, Gauge, Keyboard, Moon, RefreshCw, Save, Sun, User } from "lucide-react";
+import { Download, ExternalLink, Gauge, RefreshCw, Save, Sun, Moon } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { PageHeader } from "../../components/Primitives";
 import { FormErrorBanner, runFormAction } from "../../lib/forms";
@@ -10,17 +10,13 @@ export function SettingsView({
   authSource,
   onRefresh,
   theme,
-  onToggleTheme,
-  onOpenKeyboardHelp,
-  onOpenBackup
+  onToggleTheme
 }: {
   username: string;
   authSource: "env" | "database";
   onRefresh: () => Promise<void>;
   theme: ThemeMode;
   onToggleTheme: () => void;
-  onOpenKeyboardHelp: () => void;
-  onOpenBackup: () => void;
 }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -34,38 +30,46 @@ export function SettingsView({
       setActionError("New passwords do not match");
       return;
     }
-    await runFormAction(async () => {
-      await apiSend("/api/auth/password", "POST", { currentPassword, newPassword });
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-    }, setActionError, setSubmitting, "Password updated");
+
+    await runFormAction(
+      async () => {
+        await apiSend("/api/auth/password", "POST", {
+          currentPassword,
+          newPassword
+        });
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+      },
+      setActionError,
+      setSubmitting,
+      "Password updated"
+    );
   }
 
   return (
     <main className="view-shell">
-      <PageHeader title="Admin" subtitle="Account, appearance, data, and system tools" />
+      <PageHeader title="Admin" subtitle="Account, appearance, and system tools" />
 
       <FormErrorBanner message={actionError} />
 
       <section className="settings-grid">
         <section className="table-panel">
-          <h3><User size={16} /> Account</h3>
+          <h3><RefreshCw size={16} /> Account</h3>
           <div className="key-value-grid">
             <span><span>Username</span><strong>{username}</strong></span>
             <span><span>Auth</span><strong>{authSource === "env" ? "Server env (ADMIN_PASSWORD)" : "Database"}</strong></span>
           </div>
           {authSource === "database" ? (
             <form className="inline-form settings-form-grid" onSubmit={changePassword}>
-              <label>Current password<input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required /></label>
-              <label>New password<input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8} /></label>
-              <label>Confirm new password<input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required minLength={8} /></label>
+              <label>Current password<input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label>
+              <label>New password<input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required minLength={8} /></label>
+              <label>Confirm new password<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required minLength={8} /></label>
               <button className="primary-button" type="submit" disabled={submitting}><Save size={15} /> Update password</button>
             </form>
           ) : (
             <p className="muted-copy">Password is set via <code>ADMIN_PASSWORD</code> in docker-compose. Change it there and restart the container.</p>
           )}
-          <p className="muted-copy">Multi-user accounts are not supported yet — one admin account per instance.</p>
         </section>
 
         <section className="table-panel">
@@ -74,9 +78,6 @@ export function SettingsView({
             <button className="icon-text-button" type="button" onClick={() => void onRefresh()}>
               <RefreshCw size={16} /> Sync all data
             </button>
-            <button className="icon-text-button" type="button" onClick={onOpenBackup}>
-              <Download size={16} /> Backup &amp; restore
-            </button>
             <button
               className="icon-text-button"
               type="button"
@@ -84,18 +85,8 @@ export function SettingsView({
             >
               <ExternalLink size={16} /> Public status page
             </button>
-          </div>
-        </section>
-
-        <section className="table-panel">
-          <h3>{theme === "dark" ? <Moon size={16} /> : <Sun size={16} />} Appearance &amp; shortcuts</h3>
-          <div className="settings-actions">
             <button className="icon-text-button" type="button" onClick={onToggleTheme}>
-              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-              Switch to {theme === "dark" ? "light" : "dark"} mode
-            </button>
-            <button className="icon-text-button" type="button" onClick={onOpenKeyboardHelp}>
-              <Keyboard size={16} /> Keyboard shortcuts
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />} Switch to {theme === "dark" ? "light" : "dark"} mode
             </button>
           </div>
         </section>

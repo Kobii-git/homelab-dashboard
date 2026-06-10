@@ -1,57 +1,48 @@
 # Homelab Dashboard - Handover
 
-This document captures the current state of the project so the next session can
-continue without rediscovering the shape of the app.
+This document captures the current state of the project so the next session can continue without rediscovering the shape of the app.
 
 - **Repo:** https://github.com/Kobii-git/homelab-dashboard
 - **Image:** `ghcr.io/kobii-git/homelab-dashboard`
-- **Current version:** `0.4.4`
+- **Current version:** `0.5.0`
 - **Port:** `4173`
 - **Current branch:** `main`
 
 ---
 
-## 1. What It Is Now
+## What It Is Now
 
-Homelab Dashboard is a private, single-admin, self-hosted service launchpad and
-status dashboard. It is currently focused on opening hosted services quickly,
-monitoring health, surfacing incidents, alerts, notes, widgets, and
-backup/restore.
+Homelab Dashboard is a private, single-admin, self-hosted service launcher and health dashboard. It is focused on manually managed hosted services: web apps, Docker-hosted services, websites, VMs, servers, and other devices.
 
-The previous browser SSH/RDP/VNC remote-access manager and user credential vault
-were intentionally removed before the current service-dashboard release line. Do
-not assume Guacamole, saved remote credentials, sessions, or access tabs exist in
-this codebase unless a future release reintroduces them.
+The current product is deliberately not a remote-management platform. SSH, RDP, VNC, Guacamole, credential vaults, session history, incidents, alert delivery, backup/restore, tags, notes, and dashboard widgets were removed from the active scope.
 
-**Sidebar views:** Dashboard, Monitoring, Alerts, Services, Admin.
+**Sidebar views:** Dashboard, Services, Admin.
 
 | Layer | Tech |
 |---|---|
 | Frontend | React 19 + Vite + TypeScript (`src/client/`) |
 | Backend | Fastify 5 + Zod + TypeScript (`src/server/`) |
 | Database | SQLite via Prisma (`prisma/schema.prisma`) |
-| Secret encryption | AES-256-GCM for alert webhook/SMTP configs (`src/server/vault.ts`) |
 | Deploy | Docker Compose / GHCR |
 
 ---
 
-## 2. Current Data Model
+## Current Data Model
 
 The active Prisma models are:
 
-- `Resource`, `DashboardGroup`, `Tag`, `Note`
-- `HealthCheck`, `HealthResult`
-- `Incident`, `MaintenanceWindow`
-- `AlertChannel`, `AlertRule`, `AlertDelivery`
-- `DashboardWidget`, `DashboardLayout`
-- `AuditEvent`, `AdminAccount`, `SystemConfig`
+- `Resource`
+- `DashboardGroup`
+- `HealthCheck`
+- `HealthResult`
+- `AdminAccount`
+- `SystemConfig`
 
-There are no active `Connection`, `Credential`, remote session, or Guacamole
-models.
+Schema cleanup in `0.5.0` removes old pro-console models: widgets, layout, tags, notes, incidents, maintenance windows, alert channels/rules/deliveries, and audit events.
 
 ---
 
-## 3. Deploy And Run
+## Deploy And Run
 
 ### Pull The Prebuilt Image
 
@@ -60,135 +51,90 @@ The image is private, so authenticate once on the Docker host:
 ```sh
 echo <GH_PAT_with_read:packages> | docker login ghcr.io -u Kobii-git --password-stdin
 docker compose pull
-docker compose up -d
+docker compose up -d --force-recreate
 ```
 
 ### Build From Source On The Docker Host
 
 ```sh
 cd ~/homelab-dashboard
-git pull
-docker compose -f docker-compose.build.yml up -d --build
+git pull --ff-only origin main
+docker compose -f docker-compose.build.yml up -d --build --force-recreate
 ```
 
-Data lives in the named Docker volume `homelab-dashboard-data`. It survives
-`docker compose down`, container removal, image updates, and rebuilds. It is only
-destroyed by `docker compose down -v` or deleting the volume.
+Data lives in the named Docker volume `homelab-dashboard-data`. It survives container removal, image updates, and rebuilds. It is only destroyed by `docker compose down -v` or deleting the volume.
+
+On startup, Docker creates `/data/homelab.before-v0.5-schema.db` once before Prisma applies the simplified schema with `--accept-data-loss`. That backup is specifically for users upgrading from the older V2/pro-console shape.
 
 ### First Run
 
-On first visit, the setup screen creates the single admin account and optionally
-loads demo data. `COOKIE_SECRET` and `HOMELAB_VAULT_KEY` can be omitted; the app
-generates and stores them in `SystemConfig`.
+On first visit, the setup screen creates the single admin account and optionally loads demo services and health checks.
 
-Pin these env vars in production if you want secrets to survive a DB reset:
+Optional env vars:
 
 ```yaml
 ADMIN_PASSWORD: your-password
 COOKIE_SECRET: random-32-char-string
-HOMELAB_VAULT_KEY: random-alert-config-key
 ```
-
-`HOMELAB_VAULT_KEY` currently encrypts alert channel configs. It is not a user
-credential-vault feature.
 
 ---
 
-## 4. Feature State
+## Feature State
 
 ### Dashboard
 
-- Configurable widgets are backed by `DashboardWidget` records.
-- Active default widget types are `favorites`, `serviceStatus`, `incidents`,
-  `failingChecks`, and `notes`.
-- Removed widget types such as `recentSessions` and `vaultHealth` should not be
-  seeded anymore.
-
-### Monitoring And Incidents
-
-- Checks support HTTP, TCP, and ping.
-- Checks track latest status, latency, failure reason, consecutive
-  failures/successes, and transitions.
-- Failing checks can create incidents.
-- Incidents support open, acknowledged, resolved, muted, and maintenance-related
-  workflows.
-
-### Alerts
-
-- Alert channels support SMTP email and generic webhooks.
-- Channel configs are encrypted with AES-256-GCM.
-- Client-facing serializers must never return plaintext webhook URLs or SMTP
-  passwords.
-- Delivery records track alert attempts and errors.
+- Compact metric strip for total services, launchable services, online, and offline.
+- Service cards open saved URLs in a new tab.
+- Favorite stars update optimistically.
+- Status and latency chips run the service health check.
+- If a service has no health check, the dashboard creates a default HTTP or ping check from its URL or host.
+- Filters: all, favorites, online, offline, unknown.
+- Group sections can be collapsed.
 
 ### Services
 
-- Resources are presented as hosted services. They can be grouped, tagged,
-  favorited, assigned launch URLs/hosts, and linked to health checks and notes.
-- The Services page is compact by default; add/edit forms only open after an
-  explicit action.
-- Backup/restore exports configuration only: tags, groups, resources, checks,
-  notes, alert channels/rules, maintenance windows, and widgets.
-- Backup restore does not export incidents, check results, alert deliveries, or
-  audit logs.
+- Manual catalog for service resources and groups.
+- Add/edit/delete resources.
+- Add/edit/delete health checks.
+- Reorder resources.
+- Health check types: `http`, `tcp`, `ping`, `ssl`.
+
+### Admin
+
+- Password change for database-managed admin accounts.
+- Theme toggle.
+- Public `/status` page link and build/version information.
+- Setup can be dismissed and demo data can be loaded.
 
 ---
 
-## 5. Auth And Secrets
+## Auth And Runtime Notes
 
 - Single admin only.
 - `ADMIN_PASSWORD` env var still works and bypasses web account creation.
 - Otherwise an `AdminAccount` row stores the admin username and password hash.
-- `COOKIE_SECURE=false` by default because the target deployment is plain HTTP on
-  a private LAN. Set it to `true` only behind HTTPS.
-- Public unauthenticated routes are intentionally limited to login/setup/status
-  style endpoints. Protected API routes require the session cookie.
-- `COOKIE_SECRET` signs cookies.
-- `HOMELAB_VAULT_KEY` encrypts alert channel configs.
+- `COOKIE_SECURE=false` by default because the target deployment is plain HTTP on a private LAN. Set it to `true` only behind HTTPS.
+- Public unauthenticated routes are limited to login/setup/version/health/status style endpoints.
+- Protected API routes require the session cookie.
 
 ---
 
-## 6. What Codex Has Done Recently
+## What Codex Changed In 0.5.0
 
-The project history includes an earlier V1/V2 remote manager with Guacamole,
-session tabs, SSH/RDP/VNC work, and a credential vault. That work was later
-removed from `main` in commit `8493d23` (`Remove SSH/RDP/VNC remote access and
-credential vault`).
-
-Recent cleanup and redesign passes:
-
-- Fixed first-run setup so env-managed or existing-admin installs can dismiss the
-  setup screen after logging in.
-- Removed stale default dashboard widgets for `recentSessions` and `vaultHealth`.
-- Updated the package version to `0.3.0` for the removal cleanup.
-- Upgraded `@fastify/static` to a patched major version.
-- Removed unused Guacamole env/test fields.
-- Rewrote README and this handover to match the current monitoring-dashboard
-  product.
-- Updated backup UI copy so it describes encrypted alert configs, not a removed
-  credential vault.
-- `0.4.0` then redesigned the front door into a service-first launcher/status
-  dashboard and renamed Inventory to Services in the UI.
-- Cleaned old remote/session frontend leftovers from shared primitives and CSS.
-- Moved the active Services view files to `src/client/features/services/`.
-- Fixed backend static serving so source-mode backend runs do not serve raw
-  `main.tsx`; single-port preview should use `npm run build && npm start`, while
-  active local development should use `npm run dev:all`.
-- Tightened the left sidebar and renamed the visible Settings area to Admin.
-- `0.4.1` fixed Docker restarts on older installs by backing up
-  `/data/homelab.db` to `/data/homelab.before-v0.4-schema.db` once, then allowing
-  Prisma to apply the intentional schema cleanup for removed remote/vault tables.
-- `0.4.2` removed the oversized dashboard launchpad hero and replaced it with a
-  compact service metric strip.
-- `0.4.3` fixed Docker startup on hosts where Prisma `db push` crashed with a
-  blank schema-engine error unless `RUST_LOG=debug` was exported.
-- `0.4.4` made dashboard status/latency chips runnable, auto-creates a default
-  check from a service URL/host when needed, and makes favorite stars update
-  immediately with a clear selected state.
+- Fixed TypeScript/build breakage after the simplification pass.
+- Restored the shared API error helper used by form actions.
+- Corrected dashboard/service data types so health checks include resource ID, interval, timeout, thresholds, counters, and transition metadata.
+- Typed default health-check creation from the dashboard.
+- Fixed the generated `/status` page JavaScript string.
+- Removed stale Prisma models and relations for widgets, tags, notes, incidents, alerts, audit events, and maintenance windows.
+- Removed the stale Guacamole reachability helper and dead incident module.
+- Updated Docker startup backup naming to `/data/homelab.before-v0.5-schema.db`.
+- Removed `HOMELAB_VAULT_KEY` from docs, compose comments, and test script.
+- Updated README and this handover to describe the actual simplified dashboard.
 
 ---
 
-## 7. Local Development
+## Local Development
 
 ```sh
 npm install
@@ -202,58 +148,32 @@ Useful commands:
 npm run typecheck
 npm test
 npm run build
-npm audit --omit=dev
 ```
 
-The test script creates a timestamped SQLite database under `data/` and runs
-Vitest sequentially (`fileParallelism: false` in `vitest.config.ts`) to avoid
-cross-test SQLite contention.
+The test script creates a timestamped SQLite database under `data/` and runs Vitest sequentially (`fileParallelism: false` in `vitest.config.ts`) to avoid cross-test SQLite contention.
 
 ---
 
-## 8. Versioning And Release
+## Versioning And Release
 
 - Version lives in `package.json`.
-- `src/shared/version.ts` reads the package version and exposes it through the UI
-  and `/api/version`.
-- `.github/workflows/docker.yml` publishes Docker images to GHCR on pushes to
-  `main` and on `v*` tags.
-- Tag pushes publish semver image tags. The workflow does not currently create a
-  GitHub Release page.
+- `src/shared/version.ts` reads the package version and exposes it through the UI and `/api/version`.
+- `.github/workflows/docker.yml` publishes Docker images to GHCR on pushes to `main` and on `v*` tags.
+- Tag pushes publish semver image tags. The workflow does not currently create a GitHub Release page.
 
 Release checklist:
 
 ```sh
-npm version patch --no-git-tag-version   # or minor / major
-# update CHANGELOG.md and README badge/current version
 npm run typecheck && npm test && npm run build
-git add -A && git commit -m "Release vX.Y.Z"
-git tag vX.Y.Z
-git push origin main && git push origin vX.Y.Z
+git add -A
+git commit -m "Release vX.Y.Z"
+git push origin main
 ```
 
 ---
 
-## 9. Known Limitations
+## Outstanding
 
-- Single admin only; no multi-user roles.
-- No built-in HTTPS; use a reverse proxy for HTTPS.
-- No Docker, Hyper-V, or network auto-discovery.
-- No embedded SSH/RDP/VNC remote sessions in the current app.
-- No user credential vault in the current app.
-- Alerts are limited to SMTP email and generic webhooks.
-- Browser end-to-end coverage is still light compared with the API/unit tests.
-
----
-
-## 10. Suggested Next Steps
-
-- Decide whether remote access and a credential vault should stay removed or come
-  back as a separate, deliberate feature set.
-- Add browser tests for setup, demo data, dashboard widgets, alert creation, and
-  backup/restore preview.
-- Add richer monitoring history charts and retention controls for `HealthResult`.
-- Add a first-class upgrade note or migration guide for anyone coming from the
-  older remote-manager builds.
-- Consider renaming `HOMELAB_VAULT_KEY` to a clearer alert-secret key in a future
-  breaking release.
+- Browser/end-to-end tests are still thin.
+- CSS still contains some unused selectors from older UI eras; they are not imported by deleted components, but can be trimmed in a dedicated style cleanup.
+- Hyper-V, Docker, and network discovery remain future ideas, not current features.

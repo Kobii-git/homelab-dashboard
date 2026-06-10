@@ -9,8 +9,7 @@ const env = {
   port: 0,
   databaseUrl: "file:./data/test.db",
   adminPassword: "test-pass",
-  cookieSecret: "test-cookie-secret-with-more-than-32-chars",
-  vaultKey: "test-vault-key-for-homelab-dashboard"
+  cookieSecret: "test-cookie-secret-with-more-than-32-chars"
 };
 
 const app = await createApp({ prisma, env, monitor: false, logger: false });

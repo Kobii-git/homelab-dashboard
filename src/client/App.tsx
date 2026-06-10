@@ -1,50 +1,20 @@
-import {
-  Activity,
-  Bell,
-  Gauge,
-  Home,
-  Plus,
-  RefreshCw,
-  Server,
-  Shield
-} from "lucide-react";
-import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { Gauge, Home, Server, Shield } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
 
 import { AppSidebar, adminNavItem } from "./components/AppSidebar";
-import { InlineSpinner } from "./components/Primitives";
-import { CommandPalette } from "./components/CommandPalette";
 import { BuildBadge } from "./components/BuildBadge";
-import { DetailDrawer, type DrawerState } from "./components/DetailDrawer";
-import { KeyboardHelp } from "./components/KeyboardHelp";
-import { AlertsView } from "./features/alerts/AlertsView";
+import { InlineSpinner } from "./components/Primitives";
 import { DashboardConsole } from "./features/dashboard/DashboardConsole";
-import { ServicesView, type ServiceTab } from "./features/services/ServicesView";
-import { MonitoringCenter } from "./features/monitoring/MonitoringCenter";
-import { emptyV2Data, type AppView, type V2Data } from "./features/types";
+import { ServicesView } from "./features/services/ServicesView";
+import { emptyAppData, type AppData, type AppView } from "./features/types";
 import { SettingsView } from "./features/settings/SettingsView";
-import {
-  apiGet,
-  apiSend,
-  type AlertChannelDto,
-  type AlertDeliveryDto,
-  type AlertRuleDto,
-  type DashboardDto,
-  type DashboardWidgetDto,
-  type HealthCheckDto,
-  type IncidentDto,
-  type MaintenanceWindowDto,
-  type NoteDto,
-  type SearchResultDto,
-  type TagDto
-} from "./lib/api";
-import { formatDateTime } from "./lib/format";
+import { apiGet, apiSend } from "./lib/api";
 import { useAppChrome } from "./lib/appChrome";
-import type { DashboardGroupDto, DashboardResource } from "../shared/types";
+import type { DashboardResource } from "../shared/types";
+import type { DashboardDto, HealthCheckDto } from "./lib/api";
 
-const navItems: Array<{ id: AppView; label: string; icon: ReactNode }> = [
+const navItems: Array<{ id: AppView; label: string; icon: React.ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <Home size={18} /> },
-  { id: "monitoring", label: "Monitoring", icon: <Activity size={18} /> },
-  { id: "alerts", label: "Alerts", icon: <Bell size={18} /> },
   { id: "services", label: "Services", icon: <Server size={18} /> },
   adminNavItem()
 ];
@@ -59,7 +29,6 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
     event.preventDefault();
     setSubmitting(true);
     setError(null);
-
     try {
       await apiSend("/api/auth/login", "POST", { username: username || undefined, password });
       onLogin();
@@ -100,8 +69,7 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
         </label>
         {error ? <p className="form-error">{error}</p> : null}
         <button className="primary-button" type="submit" disabled={submitting}>
-          {submitting ? <InlineSpinner size={16} /> : <Shield size={16} />}
-          {submitting ? "Unlocking…" : "Unlock"}
+          {submitting ? <InlineSpinner size={16} /> : <Shield size={16} />} {submitting ? "Unlocking…" : "Unlock"}
         </button>
         <BuildBadge className="login-build-badge" />
       </form>
@@ -128,16 +96,27 @@ function SetupScreen({
 
   function submit() {
     if (needsAccount) {
-      if (!username) { setLocalError("Please choose a username."); return; }
-      if (!password) { setLocalError("Please set a password."); return; }
-      if (password !== confirm) { setLocalError("Passwords do not match."); return; }
-      if (password.length < 6) { setLocalError("Password must be at least 6 characters."); return; }
+      if (!username) {
+        setLocalError("Please choose a username.");
+        return;
+      }
+      if (!password) {
+        setLocalError("Please set a password.");
+        return;
+      }
+      if (password !== confirm) {
+        setLocalError("Passwords do not match.");
+        return;
+      }
+      if (password.length < 6) {
+        setLocalError("Password must be at least 6 characters.");
+        return;
+      }
     }
+
     setLocalError(null);
     onComplete(needsAccount ? username : null, needsAccount ? password : null, withDemo);
   }
-
-  const displayError = localError ?? error;
 
   return (
     <main className="login-shell">
@@ -152,15 +131,15 @@ function SetupScreen({
 
         {needsAccount ? (
           <>
-            <p className="setup-description">Create the admin account you'll use to log in.</p>
+            <p className="setup-description">Create the admin account for this dashboard.</p>
             <label>
               Username
               <input
                 type="text"
                 autoFocus
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="e.g. admin"
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder="admin"
               />
             </label>
             <label>
@@ -168,8 +147,8 @@ function SetupScreen({
               <input
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Min. 6 characters"
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Minimum 6 characters"
               />
             </label>
             <label>
@@ -177,52 +156,48 @@ function SetupScreen({
               <input
                 type="password"
                 value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
+                onChange={(event) => setConfirm(event.target.value)}
                 placeholder="Repeat password"
               />
             </label>
           </>
         ) : null}
 
-        <div className="toggle-row" onClick={() => setWithDemo((v) => !v)}>
+        <label className="toggle-row" onClick={() => setWithDemo((value) => !value)}>
           <span className={`toggle-track ${withDemo ? "is-on" : ""}`}>
             <span className="toggle-thumb" />
           </span>
           <span>
             <strong>Load demo data</strong>
-            <small>
-              Sample resources, health checks, an open incident, and a pinned note
-            </small>
+            <small>Sample services and health checks for a quick first look</small>
           </span>
-        </div>
+        </label>
 
-        {displayError ? <p className="form-error">{displayError}</p> : null}
+        {(error ?? localError) ? <p className="form-error">{error ?? localError}</p> : null}
 
-        <button
-          className="primary-button"
-          type="button"
-          disabled={loading}
-          onClick={submit}
-        >
-          {loading ? <RefreshCw className="spin" size={16} /> : <Gauge size={16} />}
-          {loading ? (withDemo ? "Loading demo data…" : "Setting up…") : "Get started"}
+        <button className="primary-button" type="button" disabled={loading} onClick={submit}>
+          {loading ? <InlineSpinner size={16} /> : <Gauge size={16} />} {loading ? "Starting…" : "Get started"}
         </button>
       </div>
     </main>
   );
 }
 
-function DrawerBody({ rows }: { rows: Array<[string, string | number | null | undefined]> }) {
-  return (
-    <div className="key-value-grid">
-      {rows.map(([label, value]) => (
-        <span key={label}>
-          <span>{label}</span>
-          <strong>{value ?? "-"}</strong>
-        </span>
-      ))}
-    </div>
+function deriveAppData(dashboard: DashboardDto): AppData {
+  const resources = [
+    ...dashboard.groups.flatMap((group) => group.resources),
+    ...dashboard.ungroupedResources
+  ];
+  const checks = resources.flatMap((resource) =>
+    (resource.healthChecks ?? []).map((check) => ({ ...check, resource }))
   );
+
+  return {
+    dashboard,
+    resources,
+    groups: dashboard.groups,
+    checks
+  };
 }
 
 export function App() {
@@ -231,69 +206,20 @@ export function App() {
   const [setupLoading, setSetupLoading] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   const [view, setView] = useState<AppView>("dashboard");
-  const [data, setData] = useState<V2Data>(emptyV2Data);
+  const [data, setData] = useState<AppData>(emptyAppData);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [drawer, setDrawer] = useState<DrawerState>(null);
-  const [keyboardHelpOpen, setKeyboardHelpOpen] = useState(false);
-  const [serviceTab, setServiceTab] = useState<ServiceTab>("resource");
   const [username, setUsername] = useState("admin");
   const [authSource, setAuthSource] = useState<"env" | "database">("database");
   const { theme, toggleTheme, sidebarMode, cycleSidebar } = useAppChrome();
-
-  const openIncidentMap = useMemo(
-    () => new Map(data.incidents.map((incident) => [incident.id, incident])),
-    [data.incidents]
-  );
 
   async function loadData() {
     setLoading(true);
     setError(null);
 
     try {
-      const [
-        dashboard,
-        resources,
-        groups,
-        checks,
-        widgets,
-        incidents,
-        tags,
-        alertChannels,
-        alertRules,
-        alertDeliveries,
-        maintenanceWindows,
-        notes
-      ] = await Promise.all([
-        apiGet<DashboardDto>("/api/dashboard"),
-        apiGet<DashboardResource[]>("/api/resources"),
-        apiGet<DashboardGroupDto[]>("/api/groups"),
-        apiGet<HealthCheckDto[]>("/api/health-checks"),
-        apiGet<DashboardWidgetDto[]>("/api/dashboard/widgets"),
-        apiGet<IncidentDto[]>("/api/incidents"),
-        apiGet<TagDto[]>("/api/tags"),
-        apiGet<AlertChannelDto[]>("/api/alert-channels"),
-        apiGet<AlertRuleDto[]>("/api/alert-rules"),
-        apiGet<AlertDeliveryDto[]>("/api/alert-deliveries"),
-        apiGet<MaintenanceWindowDto[]>("/api/maintenance-windows"),
-        apiGet<NoteDto[]>("/api/notes")
-      ]);
-
-      setData({
-        dashboard,
-        resources,
-        groups,
-        checks,
-        widgets,
-        incidents,
-        tags,
-        alertChannels,
-        alertRules,
-        alertDeliveries,
-        maintenanceWindows,
-        notes
-      });
+      const dashboard = await apiGet<DashboardDto>("/api/dashboard");
+      setData(deriveAppData(dashboard));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Load failed");
     } finally {
@@ -315,29 +241,34 @@ export function App() {
     }
   }
 
-  async function completeSetup(username: string | null, password: string | null, withDemo: boolean) {
+  async function completeSetup(usernameInput: string | null, password: string | null, withDemo: boolean) {
     setSetupLoading(true);
     setSetupError(null);
+
     try {
       await apiSend("/api/setup", "POST", {
-        username: username ?? undefined,
+        username: usernameInput ?? undefined,
         password: password ?? undefined,
         seedDemo: withDemo
       });
       setSetupStatus(null);
-    } catch (e) {
-      setSetupError(e instanceof Error ? e.message : "Setup failed");
+    } catch (setupError) {
+      setSetupError(setupError instanceof Error ? setupError.message : "Setup failed");
       setSetupLoading(false);
       return;
     }
-    // Auto-login then always call checkAuth to get out of loading state
+
     if (password) {
       try {
-        await apiSend("/api/auth/login", "POST", { username: username ?? undefined, password });
+        await apiSend("/api/auth/login", "POST", {
+          username: usernameInput ?? undefined,
+          password
+        });
       } catch {
-        // auto-login failed — checkAuth below will show login screen
+        // continue; checkAuth below handles this path if login fails
       }
     }
+
     await checkAuth();
     setSetupLoading(false);
   }
@@ -348,7 +279,7 @@ export function App() {
 
   useEffect(() => {
     if (!authenticated) {
-      return undefined;
+      return;
     }
 
     const timer = setInterval(() => {
@@ -363,44 +294,22 @@ export function App() {
       const target = event.target as HTMLElement | null;
       const typing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.tagName === "SELECT";
 
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setPaletteOpen(true);
-      }
-
-      if (!typing && event.key === "/") {
-        event.preventDefault();
-        setPaletteOpen(true);
-      }
-
       if (!typing && event.key.toLowerCase() === "r") {
         void loadData();
       }
 
       if (!typing && event.key.toLowerCase() === "n") {
-        setServiceTab("resource");
         setView("services");
       }
 
-      if (!typing && event.key === "?") {
-        event.preventDefault();
-        setKeyboardHelpOpen(true);
-      }
-
       if (event.key === "Escape") {
-        if (paletteOpen) {
-          setPaletteOpen(false);
-        } else if (keyboardHelpOpen) {
-          setKeyboardHelpOpen(false);
-        } else {
-          setDrawer(null);
-        }
+        // no overlay panels in the simplified UI
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [keyboardHelpOpen, paletteOpen]);
+  }, [view]);
 
   async function logout() {
     await apiSend("/api/auth/logout", "POST");
@@ -409,24 +318,34 @@ export function App() {
 
   async function patchResource(id: string, body: Record<string, unknown>) {
     if (typeof body.favorite === "boolean") {
-      setData((current) => ({
-        ...current,
-        resources: current.resources.map((resource) =>
-          resource.id === id ? { ...resource, favorite: body.favorite as boolean } : resource
-        ),
-        dashboard: {
-          ...current.dashboard,
-          groups: current.dashboard.groups.map((group) => ({
-            ...group,
-            resources: group.resources.map((resource) =>
-              resource.id === id ? { ...resource, favorite: body.favorite as boolean } : resource
-            )
-          })),
-          ungroupedResources: current.dashboard.ungroupedResources.map((resource) =>
-            resource.id === id ? { ...resource, favorite: body.favorite as boolean } : resource
+      setData((current) => {
+        const isFavorite = body.favorite as boolean;
+        const resources = current.resources.map((resource) =>
+          resource.id === id ? { ...resource, favorite: isFavorite } : resource
+        );
+        const groups = current.groups.map((group) => ({
+          ...group,
+          resources: group.resources.map((resource) =>
+            resource.id === id ? { ...resource, favorite: isFavorite } : resource
           )
-        }
-      }));
+        }));
+
+        const dashboard = {
+          ...current.dashboard,
+          groups,
+          ungroupedResources: current.dashboard.ungroupedResources.map((resource) =>
+            resource.id === id ? { ...resource, favorite: isFavorite } : resource
+          )
+        };
+
+        return {
+          ...current,
+          resources,
+          groups,
+          dashboard,
+          checks: current.checks
+        };
+      });
     }
 
     await apiSend(`/api/resources/${id}`, "PATCH", body);
@@ -469,84 +388,16 @@ export function App() {
     await loadData();
   }
 
-  function inspectResource(resource: DashboardResource) {
-    setDrawer({
-      type: "resource",
-      title: resource.name,
-      body: (
-        <DrawerBody
-          rows={[
-            ["Kind", resource.kind],
-            ["URL", resource.url],
-            ["Host", resource.host],
-            ["Favorite", resource.favorite ? "Yes" : "No"],
-            ["Notes", resource.notes]
-          ]}
-        />
-      )
-    });
-  }
-
-  function inspectIncident(incident: IncidentDto) {
-    setDrawer({
-      type: "incident",
-      title: incident.title,
-      body: (
-        <DrawerBody
-          rows={[
-            ["Status", incident.status],
-            ["Severity", incident.severity],
-            ["Opened", formatDateTime(incident.openedAt)],
-            ["Acknowledged", formatDateTime(incident.acknowledgedAt)],
-            ["Resolved", formatDateTime(incident.resolvedAt)],
-            ["Summary", incident.summary]
-          ]}
-        />
-      )
-    });
-  }
-
-  async function handlePaletteAction(result: SearchResultDto) {
-    setPaletteOpen(false);
-
-    if (result.action === "navigate" && typeof result.payload?.view === "string") {
-      setView(result.payload.view as AppView);
-      return;
-    }
-
-    if (result.action === "openUrl" && typeof result.payload?.url === "string") {
-      window.open(result.payload.url, "_blank", "noopener,noreferrer");
-      return;
-    }
-
-    if (result.action === "runCheck" && typeof result.payload?.checkId === "string") {
-      await apiSend(`/api/health-checks/${result.payload.checkId}/run`, "POST");
-      await loadData();
-      setView("monitoring");
-      return;
-    }
-
-    if (result.action === "openIncident" && typeof result.payload?.incidentId === "string") {
-      const incident = openIncidentMap.get(result.payload.incidentId);
-      if (incident) {
-        inspectIncident(incident);
-      }
-      setView("monitoring");
-      return;
-    }
-  }
-
   if (authenticated === null || setupStatus === null) {
     return <div className="loading-screen">Loading</div>;
   }
 
-  // No account exists yet — show account creation before anything else
   if (setupStatus.needsAccount) {
     return (
       <SetupScreen
         loading={setupLoading}
         error={setupError}
-        needsAccount={true}
+        needsAccount
         onComplete={completeSetup}
       />
     );
@@ -575,15 +426,13 @@ export function App() {
         onNavigate={setView}
         sidebarMode={sidebarMode}
         onCycleSidebar={cycleSidebar}
-        onOpenPalette={() => setPaletteOpen(true)}
-        onLogout={logout}
-        openIncidents={data.incidents.filter((incident) => incident.status !== "resolved").length}
-        failingChecks={data.checks.filter((check) => check.latestStatus === "offline" && check.enabled).length}
       />
+
       <div className="content-shell">
         <div className="workspace-scroll">
           {error ? <div className="app-error">{error}</div> : null}
           {loading ? <div className="loading-strip"><InlineSpinner size={12} /> Syncing</div> : null}
+
           {view === "dashboard" ? (
             <DashboardConsole
               data={data}
@@ -591,28 +440,14 @@ export function App() {
               onPatchResource={patchResource}
               onRunCheck={runResourceHealthCheck}
               onPatchGroup={patchGroup}
-              onOpenServices={() => { setServiceTab("resource"); setView("services"); }}
-              onInspectResource={inspectResource}
-              onOpenIncident={(id) => {
-                const incident = openIncidentMap.get(id);
-                if (incident) {
-                  inspectIncident(incident);
-                }
-              }}
+              onOpenServices={() => setView("services")}
             />
           ) : null}
+
           {view === "services" ? (
-            <ServicesView data={data} onRefresh={loadData} activeTab={serviceTab} onTabChange={setServiceTab} />
+            <ServicesView data={data} onRefresh={loadData} />
           ) : null}
-          {view === "monitoring" ? (
-            <MonitoringCenter
-              data={data}
-              onRefresh={loadData}
-              onInspectIncident={inspectIncident}
-              onOpenServicesChecks={() => { setServiceTab("check"); setView("services"); }}
-            />
-          ) : null}
-          {view === "alerts" ? <AlertsView data={data} onRefresh={loadData} /> : null}
+
           {view === "settings" ? (
             <SettingsView
               username={username}
@@ -620,15 +455,14 @@ export function App() {
               onRefresh={loadData}
               theme={theme}
               onToggleTheme={toggleTheme}
-              onOpenKeyboardHelp={() => setKeyboardHelpOpen(true)}
-              onOpenBackup={() => { setServiceTab("backup"); setView("services"); }}
             />
           ) : null}
         </div>
-        <DetailDrawer drawer={drawer} onClose={() => setDrawer(null)} />
-        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onAction={handlePaletteAction} />
-        <KeyboardHelp open={keyboardHelpOpen} onClose={() => setKeyboardHelpOpen(false)} />
       </div>
+
+      <button className="sign-out-sticky" type="button" onClick={() => void logout()}>
+        Logout
+      </button>
     </div>
   );
 }

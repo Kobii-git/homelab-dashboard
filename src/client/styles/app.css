@@ -1680,10 +1680,6 @@ label {
   border-bottom: 1px solid var(--line-soft);
 }
 
-.incident-row {
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
-}
-
 .data-row-wide {
   grid-template-columns: minmax(0, 1fr) auto auto;
 }
@@ -1985,11 +1981,6 @@ label {
 
 .monitor-run-button {
   align-self: center;
-}
-
-.incident-timeline-row {
-  grid-template-columns: 132px minmax(180px, 0.8fr) minmax(0, 1fr) auto;
-  align-items: center;
 }
 
 .timeline-actions {
@@ -2383,37 +2374,6 @@ label {
   to {
     transform: rotate(360deg);
   }
-}
-
-/* Monitoring: mute picker */
-.mute-picker {
-  display: grid;
-  gap: 8px;
-  padding: 12px;
-  margin-bottom: 12px;
-  border: 1px solid rgba(45, 212, 191, 0.35);
-  border-radius: 8px;
-  background: rgba(45, 212, 191, 0.05);
-  font-size: 13px;
-}
-
-.mute-actions {
-  display: flex;
-  gap: 8px;
-}
-
-/* Monitor card: actions column */
-.monitor-card-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-
-/* Monitoring: 5-column incident row */
-.incident-row-5 {
-  grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
 }
 
 .toast-stack {

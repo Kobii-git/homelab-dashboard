@@ -1,10 +1,7 @@
 import {
   Gauge,
-  LogOut,
   PanelLeft,
-  PanelLeftClose,
-  Search,
-  Shield
+  PanelLeftClose
 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { AppView } from "../features/types";
@@ -18,21 +15,13 @@ export function AppSidebar({
   view,
   onNavigate,
   sidebarMode,
-  onCycleSidebar,
-  onOpenPalette,
-  onLogout,
-  openIncidents,
-  failingChecks
+  onCycleSidebar
 }: {
   navItems: NavItem[];
   view: AppView;
   onNavigate: (view: AppView) => void;
   sidebarMode: SidebarMode;
   onCycleSidebar: () => void;
-  onOpenPalette: () => void;
-  onLogout: () => void;
-  openIncidents: number;
-  failingChecks: number;
 }) {
   const compact = sidebarMode === "compact";
   const hidden = sidebarMode === "hidden";
@@ -54,23 +43,6 @@ export function AppSidebar({
           </button>
         </div>
 
-        <button className="sidebar-search" type="button" title="Command palette (Ctrl K)" onClick={onOpenPalette}>
-          <Search size={16} />
-          {!compact ? (
-            <>
-              <span>Search</span>
-              <kbd>Ctrl K</kbd>
-            </>
-          ) : null}
-        </button>
-
-        {!compact ? (
-          <div className="sidebar-stats" aria-label="Summary">
-            <span className="sidebar-stat">{openIncidents} incidents</span>
-            <span className="sidebar-stat">{failingChecks} failing</span>
-          </div>
-        ) : null}
-
         <nav className="nav-list" aria-label="Primary">
           {navItems.map((item) => (
             <button
@@ -88,10 +60,6 @@ export function AppSidebar({
 
         <div className="sidebar-footer">
           {!compact ? <BuildBadge className="sidebar-build-badge" /> : null}
-          <button className="nav-utility" type="button" title="Logout" onClick={onLogout}>
-            <LogOut size={18} />
-            {!compact ? "Logout" : null}
-          </button>
         </div>
       </aside>
     </>
@@ -99,5 +67,5 @@ export function AppSidebar({
 }
 
 export function adminNavItem(): NavItem {
-  return { id: "settings", label: "Admin", icon: <Shield size={17} /> };
+  return { id: "settings", label: "Admin", icon: <span /> };
 }

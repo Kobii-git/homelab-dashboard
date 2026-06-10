@@ -1,6 +1,6 @@
 {
   "name": "homelab-dashboard",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,7 @@
     "start": "node dist/server/index.js",
     "db:studio": "prisma studio",
     "seed:demo": "tsx src/server/seed.ts",
-    "test": "sh -c 'export NODE_ENV=test DATABASE_URL=\"file:../data/test-$(date +%s)-$$.db\" HOMELAB_VAULT_KEY=test-vault-key-for-homelab-dashboard ADMIN_PASSWORD=test-pass COOKIE_SECRET=test-cookie-secret-with-more-than-32-chars PRISMA_SCHEMA_ENGINE_LOG_LEVEL=trace RUST_LOG=debug; prisma generate && prisma db push --skip-generate && vitest run'",
+    "test": "sh -c 'export NODE_ENV=test DATABASE_URL=\"file:../data/test-$(date +%s)-$$.db\" ADMIN_PASSWORD=test-pass COOKIE_SECRET=test-cookie-secret-with-more-than-32-chars PRISMA_SCHEMA_ENGINE_LOG_LEVEL=trace RUST_LOG=debug; prisma generate && prisma db push --skip-generate && vitest run'",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

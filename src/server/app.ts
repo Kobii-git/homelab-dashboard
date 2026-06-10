@@ -18,20 +18,12 @@ import {
   healthCheckPatchSchema,
   healthCheckSchema,
   idParamSchema,
-  layoutSchema,
   loginSchema,
   resourcePatchSchema,
   resourceSchema
 } from "./validation.js";
 import { seedDemo } from "./seed.js";
-import { createAuditEvent } from "./audit.js";
-import { registerAlertRoutes } from "./routes/alerts.js";
-import { registerIncidentRoutes } from "./routes/incidents.js";
-import { registerSearchRoutes } from "./routes/search.js";
-import { registerTagRoutes } from "./routes/tags.js";
-import { registerExportRoutes } from "./routes/export.js";
 import { registerStatusRoutes } from "./routes/status.js";
-import { registerWidgetRoutes } from "./routes/widgets.js";
 import { RateLimiter } from "./rateLimit.js";
 
 type CreateAppOptions = {
@@ -55,14 +47,6 @@ function resolveClientDist(): string | null {
   ) ?? null;
 }
 
-function parseLayout(layoutJson: string): Record<string, unknown> {
-  try {
-    return JSON.parse(layoutJson) as Record<string, unknown>;
-  } catch {
-    return {};
-  }
-}
-
 async function adminAccountExists(env: AppEnv, prisma: PrismaClient): Promise<boolean> {
   if (env.adminPassword) {
     return true;
@@ -71,31 +55,28 @@ async function adminAccountExists(env: AppEnv, prisma: PrismaClient): Promise<bo
   return Boolean(account);
 }
 
+async function setSetupDismissed(prisma: PrismaClient): Promise<void> {
+  await prisma.systemConfig.upsert({
+    where: { key: "setup_dismissed" },
+    update: { value: "true" },
+    create: { key: "setup_dismissed", value: "true" }
+  });
+}
 
+async function isSetupDismissed(prisma: PrismaClient): Promise<boolean> {
+  const entry = await prisma.systemConfig.findUnique({ where: { key: "setup_dismissed" } });
+  return entry?.value === "true";
+}
 
 function routeId(request: { params: unknown }): string {
   return idParamSchema.parse(request.params).id;
-}
-
-function splitTagIds<T extends { tagIds?: string[] }>(body: T) {
-  const { tagIds, ...rest } = body;
-  return { rest, tagIds };
-}
-
-function tagConnect(tagIds?: string[]) {
-  return tagIds?.length ? { tags: { connect: tagIds.map((id) => ({ id })) } } : {};
-}
-
-function tagSet(tagIds?: string[] | undefined) {
-  return tagIds !== undefined ? { tags: { set: tagIds.map((id) => ({ id })) } } : {};
 }
 
 export async function createApp(options: CreateAppOptions = {}): Promise<FastifyInstance> {
   const raw = options.env ?? getEnv();
   const env: AppEnv = {
     ...raw,
-    cookieSecret: raw.cookieSecret ?? crypto.randomBytes(32).toString("hex"),
-    vaultKey: raw.vaultKey ?? crypto.randomBytes(32).toString("hex")
+    cookieSecret: raw.cookieSecret ?? crypto.randomBytes(32).toString("hex")
   };
   const prisma = options.prisma ?? new PrismaClient();
   const loginLimiter = new RateLimiter(10, 60_000);
@@ -119,6 +100,17 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
           message: issue.message
         }))
       });
+      return;
+    }
+
+    const httpError = error as { statusCode?: unknown; message?: unknown };
+    const statusCode =
+      typeof httpError.statusCode === "number" && httpError.statusCode >= 400 && httpError.statusCode < 500
+        ? httpError.statusCode
+        : 500;
+
+    if (statusCode < 500) {
+      reply.code(statusCode).send({ error: typeof httpError.message === "string" ? httpError.message : "Invalid request" });
       return;
     }
 
@@ -154,32 +146,21 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.get("/api/health", async () => {
     return {
       ok: true,
-      ...getBuildInfo(),
-      alertSecretEncryptionConfigured: Boolean(env.vaultKey && env.vaultKey.length >= 16)
+      ...getBuildInfo()
     };
   });
 
   app.get("/api/version", async () => getBuildInfo());
 
-  app.post("/api/alert-deliveries/:id/retry", async (request) => {
-    const id = routeId(request);
-    await prisma.alertDelivery.update({
-      where: { id },
-      data: { status: "queued", error: null }
-    });
-    return { ok: true };
-  });
-
   app.get("/api/setup/status", async () => {
     const [resourceCount, layout, adminAccount] = await Promise.all([
       prisma.resource.count(),
-      prisma.dashboardLayout.findUnique({ where: { id: "main" } }),
+      isSetupDismissed(prisma),
       env.adminPassword ? null : prisma.adminAccount.findUnique({ where: { id: "admin" } })
     ]);
-    const layoutData = parseLayout(layout?.layoutJson ?? "{}");
     const hasAccount = Boolean(env.adminPassword) || Boolean(adminAccount);
-    const emptyDashboard = resourceCount === 0 && !layoutData.setupDismissed;
-    return { firstRun: !hasAccount || emptyDashboard, needsAccount: !hasAccount };
+    const firstRun = Boolean(resourceCount === 0 && !layout);
+    return { firstRun, needsAccount: !hasAccount };
   });
 
   app.post("/api/setup", async (request, reply) => {
@@ -201,7 +182,6 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       return reply.code(400).send({ error: "Password is required for first-run setup" });
     }
 
-    // Create admin account
     if (!hasAccount && body.password && !env.adminPassword) {
       const hash = hashPassword(body.password);
       await prisma.adminAccount.upsert({
@@ -211,20 +191,10 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       });
     }
 
-    // Mark setup dismissed immediately so the client can proceed
-    const layout = await prisma.dashboardLayout.findUnique({ where: { id: "main" } });
-    const existing = parseLayout(layout?.layoutJson ?? "{}");
-    await prisma.dashboardLayout.upsert({
-      where: { id: "main" },
-      create: { id: "main", layoutJson: JSON.stringify({ ...existing, setupDismissed: true }) },
-      update: { layoutJson: JSON.stringify({ ...existing, setupDismissed: true }) }
-    });
+    await setSetupDismissed(prisma);
 
-    // Seed demo data in the background — don't block the response
     if (body.seedDemo) {
-      seedDemo(prisma, env.vaultKey).catch((err) => {
-        app.log.error({ err }, "Demo seed failed");
-      });
+      await seedDemo(prisma);
     }
 
     return { ok: true };
@@ -305,24 +275,16 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return { ok: true };
   });
 
-  const routeContext = { app, prisma, env };
-  await registerSearchRoutes(routeContext);
-  await registerWidgetRoutes(routeContext);
-  await registerTagRoutes(routeContext);
-  await registerIncidentRoutes(routeContext);
-  await registerAlertRoutes(routeContext);
-  await registerExportRoutes(routeContext);
-  await registerStatusRoutes(routeContext);
+  await registerStatusRoutes({ app, prisma, env });
 
   app.get("/api/dashboard", async () => {
-    const [groups, ungroupedResources, layout] = await Promise.all([
+    const [groups, ungroupedResources] = await Promise.all([
       prisma.dashboardGroup.findMany({
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
         include: {
           resources: {
             orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
             include: {
-              tags: true,
               healthChecks: true
             }
           }
@@ -332,33 +294,16 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
         where: { groupId: null },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
         include: {
-          tags: true,
           healthChecks: true
         }
-      }),
-      prisma.dashboardLayout.upsert({
-        where: { id: "main" },
-        update: {},
-        create: { id: "main", layoutJson: "{}" }
       })
     ]);
 
     return {
       groups,
       ungroupedResources,
-      layout: parseLayout(layout.layoutJson)
+      layout: {}
     };
-  });
-
-  app.put("/api/dashboard/layout", async (request) => {
-    const body = layoutSchema.parse(request.body);
-    const layout = await prisma.dashboardLayout.upsert({
-      where: { id: "main" },
-      create: { id: "main", layoutJson: JSON.stringify(body.layout) },
-      update: { layoutJson: JSON.stringify(body.layout) }
-    });
-
-    return { layout: parseLayout(layout.layoutJson) };
   });
 
   app.get("/api/groups", async () =>
@@ -388,7 +333,6 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     prisma.resource.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: {
-        tags: true,
         healthChecks: true,
         group: true
       }
@@ -397,8 +341,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   app.post("/api/resources", async (request, reply) => {
     const body = resourceSchema.parse(request.body);
-    const { rest, tagIds } = splitTagIds(body);
-    const resource = await prisma.resource.create({ data: { ...rest, ...tagConnect(tagIds) } });
+    const resource = await prisma.resource.create({ data: { ...body } });
     reply.code(201);
     return resource;
   });
@@ -406,12 +349,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.patch("/api/resources/:id", async (request) => {
     const id = routeId(request);
     const body = resourcePatchSchema.parse(request.body);
-    const { rest, tagIds } = splitTagIds(body);
-    return prisma.resource.update({
-      where: { id },
-      data: { ...rest, ...tagSet(tagIds) },
-      include: { tags: true, healthChecks: true, group: true }
-    });
+    return prisma.resource.update({ where: { id }, data: body, include: { healthChecks: true, group: true } });
   });
 
   app.delete("/api/resources/:id", async (request) => {
