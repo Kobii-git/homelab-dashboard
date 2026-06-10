@@ -6,6 +6,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.2] - 2026-06-10
+
+### Changed
+- Simplified the dashboard landing view by removing the oversized `Homelab launchpad`
+  hero/card and replacing it with a compact metric strip.
+
+### Fixed
+- Tightened the dashboard signal panel density so the page is less vertically bulky.
+
 ## [0.4.1] - 2026-06-10
 
 ### Fixed
