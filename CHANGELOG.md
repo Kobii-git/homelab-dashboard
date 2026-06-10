@@ -6,6 +6,33 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.0] - 2026-06-10
+
+### Changed
+- Reworked the home dashboard into a service-first homelab launchpad with
+  launchable service cards, status filters, health mix, response-time bars,
+  active incident summary, and lower-priority pinned notes.
+- Renamed the user-facing Inventory area to **Services** and made it a compact
+  catalog: add/edit forms now open only when requested instead of being expanded
+  by default.
+- Moved theme switching and keyboard shortcuts out of the sidebar and into
+  Admin.
+- Updated command palette/navigation copy around services rather than inventory.
+- Moved the active Services frontend module out of the old `features/inventory`
+  path and into `features/services`.
+- Tightened the left sidebar density and renamed the visible Settings area to
+  Admin.
+
+### Removed
+- Removed remaining recent-session/remote-facing UI traces from the dashboard
+  surface, including unused session tab primitives and access/session CSS.
+
+### Fixed
+- Backend-only source runs no longer serve raw Vite/TSX files as the browser app;
+  the server only serves the built client bundle when static assets exist.
+
+---
+
 ## [0.3.0] - 2026-06-10
 
 ### Removed

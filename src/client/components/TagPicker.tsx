@@ -14,7 +14,7 @@ export function TagPicker({
   const filtered = tags.filter((tag) => tag.type === type || tag.type === "general");
 
   if (filtered.length === 0) {
-    return <p className="muted-copy" style={{ margin: 0, fontSize: 12 }}>No tags yet — create them in Inventory → Tags.</p>;
+    return <p className="muted-copy" style={{ margin: 0, fontSize: 12 }}>No tags yet - create them in Services &gt; Tags.</p>;
   }
 
   return (

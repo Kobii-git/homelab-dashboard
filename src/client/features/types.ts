@@ -12,7 +12,7 @@ import type {
 } from "../lib/api";
 import type { DashboardGroupDto, DashboardResource } from "../../shared/types";
 
-export type AppView = "dashboard" | "inventory" | "monitoring" | "alerts" | "settings";
+export type AppView = "dashboard" | "services" | "monitoring" | "alerts" | "settings";
 
 export type V2Data = {
   dashboard: DashboardDto;

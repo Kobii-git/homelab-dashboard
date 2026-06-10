@@ -4,7 +4,7 @@ const shortcuts = [
   { keys: "Ctrl K", action: "Open command palette" },
   { keys: "/", action: "Open command palette" },
   { keys: "R", action: "Refresh data" },
-  { keys: "N", action: "Go to Inventory" },
+  { keys: "N", action: "Go to Services" },
   { keys: "?", action: "Show keyboard shortcuts" },
   { keys: "Esc", action: "Close palette or drawer" }
 ];

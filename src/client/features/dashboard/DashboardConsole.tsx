@@ -1,5 +1,7 @@
 import {
   Activity,
+  AlertTriangle,
+  BarChart3,
   Boxes,
   ChevronDown,
   ChevronRight,
@@ -10,31 +12,115 @@ import {
   Laptop,
   Monitor,
   Plus,
+  RefreshCw,
   Search,
   Server,
   Star,
   Wifi,
   WifiOff
 } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
-import type { DashboardWidgetDto } from "../../lib/api";
 import type { DashboardResource } from "../../../shared/types";
 import { WidgetSettings } from "../../components/WidgetSettings";
 import { EmptyPanel, MetricCard, PageHeader, StatusBadge } from "../../components/Primitives";
 import { dashboardResources, formatDateTime, statusFor, summarizeResourceStatus } from "../../lib/format";
 import type { V2Data } from "../types";
 
+type StatusFilter = "all" | "favorites" | "online" | "offline" | "unknown";
+
 const icons: Record<string, ReactNode> = {
-  app: <Boxes size={20} />,
-  website: <Globe2 size={20} />,
-  docker: <Boxes size={20} />,
-  vm: <Laptop size={20} />,
-  server: <Server size={20} />,
-  other: <Monitor size={20} />
+  app: <Boxes size={22} />,
+  website: <Globe2 size={22} />,
+  docker: <Boxes size={22} />,
+  vm: <Laptop size={22} />,
+  server: <Server size={22} />,
+  other: <Monitor size={22} />
 };
 
-function ResourceTile({
+const filters: Array<{ id: StatusFilter; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "favorites", label: "Favorites" },
+  { id: "online", label: "Online" },
+  { id: "offline", label: "Offline" },
+  { id: "unknown", label: "Unknown" }
+];
+
+function serviceAddress(resource: DashboardResource): string {
+  if (resource.url) {
+    try {
+      const parsed = new URL(resource.url);
+      return parsed.host;
+    } catch {
+      return resource.url;
+    }
+  }
+  return resource.host ?? resource.kind;
+}
+
+function latestLatency(resource: DashboardResource): number | null {
+  const latencies = (resource.healthChecks ?? [])
+    .map((check) => check.latestLatencyMs)
+    .filter((value): value is number => typeof value === "number");
+  if (latencies.length === 0) return null;
+  return Math.round(latencies.reduce((sum, value) => sum + value, 0) / latencies.length);
+}
+
+function latestCheckTime(resource: DashboardResource): string | null {
+  return (resource.healthChecks ?? [])
+    .map((check) => check.latestCheckedAt)
+    .filter((value): value is string => Boolean(value))
+    .sort((left, right) => right.localeCompare(left))[0] ?? null;
+}
+
+function formatLatency(value: number | null): string {
+  return value == null ? "No latency" : `${value} ms`;
+}
+
+function HealthMixBar({ online, offline, unknown }: { online: number; offline: number; unknown: number }) {
+  const total = Math.max(1, online + offline + unknown);
+  return (
+    <div className="health-mix-bar" aria-label="Service health mix">
+      <span className="health-mix-online" style={{ width: `${(online / total) * 100}%` }} />
+      <span className="health-mix-offline" style={{ width: `${(offline / total) * 100}%` }} />
+      <span className="health-mix-unknown" style={{ width: `${(unknown / total) * 100}%` }} />
+    </div>
+  );
+}
+
+function LatencyPanel({ resources }: { resources: DashboardResource[] }) {
+  const latencyRows = resources
+    .map((resource) => ({ resource, latency: latestLatency(resource) }))
+    .filter((row): row is { resource: DashboardResource; latency: number } => row.latency != null)
+    .sort((left, right) => right.latency - left.latency)
+    .slice(0, 6);
+  const maxLatency = Math.max(1, ...latencyRows.map((row) => row.latency));
+
+  return (
+    <section className="dashboard-signal-panel">
+      <div className="signal-panel-header">
+        <span><BarChart3 size={16} /> Slowest responses</span>
+        <small>{latencyRows.length ? "latest check" : "waiting for checks"}</small>
+      </div>
+      <div className="latency-bars">
+        {latencyRows.map(({ resource, latency }) => (
+          <div className="latency-row" key={resource.id}>
+            <span>{resource.name}</span>
+            <div className="latency-track">
+              <span style={{ width: `${Math.max(8, (latency / maxLatency) * 100)}%` }} />
+            </div>
+            <strong>{latency} ms</strong>
+          </div>
+        ))}
+        {latencyRows.length === 0 ? (
+          <p className="muted-copy">Add health checks to see response-time signals here.</p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function ServiceCard({
   resource,
   onOpen,
   onFavorite,
@@ -47,80 +133,54 @@ function ResourceTile({
 }) {
   const status = statusFor(resource);
   const color = resource.color ?? "#2dd4bf";
-  const checks = resource.healthChecks ?? [];
-  const latestCheck = checks
-    .filter((check) => check.latestCheckedAt)
-    .sort((left, right) => String(right.latestCheckedAt).localeCompare(String(left.latestCheckedAt)))[0];
+  const latency = latestLatency(resource);
+  const address = serviceAddress(resource);
+  const checkedAt = latestCheckTime(resource);
 
   return (
-    <article className={`resource-tile tile-${status}`}>
-      <div className="resource-heading">
-        <span className="resource-icon" style={{ color }}>
-          {icons[resource.kind] ?? icons.other}
+    <article className={`service-card service-${status} ${resource.url ? "can-launch" : ""}`}>
+      <button
+        className="service-card-main"
+        type="button"
+        disabled={!resource.url}
+        onClick={() => onOpen(resource)}
+        title={resource.url ? `Open ${resource.name}` : "Add a URL to launch this service"}
+      >
+        <span className="service-icon" style={{ color }}>
+          {resource.icon ? resource.icon.slice(0, 2).toUpperCase() : icons[resource.kind] ?? icons.other}
         </span>
-        <div>
-          <h3>{resource.name}</h3>
-          <p>{resource.url ?? resource.host ?? resource.kind}</p>
-        </div>
-      </div>
-      <div className="resource-meta">
-        <span className="kind-chip">{resource.kind}</span>
-        {resource.host ? <span>{resource.host}</span> : null}
-        {resource.tags?.length ? <span>{resource.tags.map((tag) => tag.name).join(", ")}</span> : null}
-      </div>
-      {resource.description ? <p className="resource-description">{resource.description}</p> : null}
-      <div className="resource-health-line">
-        <span>{checks.length} checks</span>
-        <span>{formatDateTime(latestCheck?.latestCheckedAt)}</span>
-      </div>
-      <div className="resource-actions">
+        <span className="service-copy">
+          <strong>{resource.name}</strong>
+          <small>{address}</small>
+        </span>
+      </button>
+
+      {resource.description ? <p className="service-description">{resource.description}</p> : null}
+
+      <div className="service-card-meta">
         <StatusBadge status={status} />
+        <span>{formatLatency(latency)}</span>
+        <span>{formatDateTime(checkedAt)}</span>
+      </div>
+
+      <div className="service-card-actions">
+        <span className="kind-chip">{resource.kind}</span>
         <button className="icon-button" type="button" title="Details" onClick={() => onInspect(resource)}>
-          <Info size={16} />
+          <Info size={15} />
         </button>
         <button
           className={`icon-button ${resource.favorite ? "is-active" : ""}`}
           type="button"
-          title="Favorite"
+          title={resource.favorite ? "Remove favorite" : "Favorite"}
           onClick={() => onFavorite(resource)}
         >
-          <Star size={16} />
+          <Star size={15} />
         </button>
-        <button className="icon-button" type="button" title="Open" disabled={!resource.url} onClick={() => onOpen(resource)}>
-          <ExternalLink size={16} />
+        <button className="icon-button" type="button" title="Open service" disabled={!resource.url} onClick={() => onOpen(resource)}>
+          <ExternalLink size={15} />
         </button>
       </div>
     </article>
-  );
-}
-
-function widgetSpanStyle(widget: DashboardWidgetDto): CSSProperties {
-  const span = Math.min(12, Math.max(3, widget.w || 4));
-  return { "--widget-span": String(span) } as CSSProperties;
-}
-
-function orderedUniqueWidgets(widgets: DashboardWidgetDto[]) {
-  const seen = new Set<string>();
-  return [...widgets]
-    .filter((widget) => widget.enabled)
-    .sort((left, right) => left.sortOrder - right.sortOrder || left.title.localeCompare(right.title))
-    .filter((widget) => {
-      if (seen.has(widget.type)) {
-        return false;
-      }
-      seen.add(widget.type);
-      return true;
-    });
-}
-
-function WidgetCard({ title, children, widget }: { title: string; children: ReactNode; widget: DashboardWidgetDto }) {
-  return (
-    <section className="widget-card" style={widgetSpanStyle(widget)}>
-      <div className="widget-header">
-        <h3>{title}</h3>
-      </div>
-      <div className="widget-body">{children}</div>
-    </section>
   );
 }
 
@@ -129,7 +189,7 @@ export function DashboardConsole({
   onRefresh,
   onPatchResource,
   onPatchGroup,
-  onOpenInventory,
+  onOpenServices,
   onInspectResource,
   onOpenIncident
 }: {
@@ -137,37 +197,43 @@ export function DashboardConsole({
   onRefresh: () => Promise<void>;
   onPatchResource: (id: string, body: Record<string, unknown>) => Promise<void>;
   onPatchGroup: (id: string, body: Record<string, unknown>) => Promise<void>;
-  onOpenInventory: () => void;
+  onOpenServices: () => void;
   onInspectResource: (resource: DashboardResource) => void;
   onOpenIncident: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const resources = useMemo(
     () => dashboardResources(data.dashboard.groups, data.dashboard.ungroupedResources),
     [data.dashboard]
   );
-  const orderedWidgets = useMemo(
-    () => orderedUniqueWidgets(data.widgets),
-    [data.widgets]
-  );
   const totals = summarizeResourceStatus(resources);
-  const favoriteResources = resources.filter((resource) => resource.favorite).slice(0, 6);
-  const failingChecks = data.checks.filter((check) => check.latestStatus === "offline").slice(0, 8);
-  const openIncidents = data.incidents.filter((incident) => incident.status !== "resolved").slice(0, 8);
-  const pinnedNotes = data.notes.filter((note) => note.pinned).slice(0, 4);
+  const launchableCount = resources.filter((resource) => resource.url).length;
+  const openIncidents = data.incidents.filter((incident) => incident.status !== "resolved").slice(0, 5);
+  const pinnedNotes = data.notes.filter((note) => note.pinned).slice(0, 3);
+
+  function matchesResource(resource: DashboardResource): boolean {
+    const status = statusFor(resource);
+    const haystack = [
+      resource.name,
+      resource.url,
+      resource.host,
+      resource.kind,
+      resource.description,
+      ...(resource.tags ?? []).map((tag) => tag.name)
+    ].join(" ").toLowerCase();
+    const matchesQuery = haystack.includes(query.toLowerCase());
+    const matchesFilter =
+      statusFilter === "all" ||
+      (statusFilter === "favorites" ? resource.favorite : status === statusFilter);
+    return matchesQuery && matchesFilter;
+  }
+
   const filteredGroups = data.dashboard.groups
-    .map((group) => ({
-      ...group,
-      resources: group.resources.filter((resource) => {
-        const haystack = `${resource.name} ${resource.url ?? ""} ${resource.host ?? ""} ${resource.kind}`;
-        return haystack.toLowerCase().includes(query.toLowerCase());
-      })
-    }))
-    .filter((group) => group.resources.length > 0 || query.length === 0);
-  const filteredUngrouped = data.dashboard.ungroupedResources.filter((resource) => {
-    const haystack = `${resource.name} ${resource.url ?? ""} ${resource.host ?? ""} ${resource.kind}`;
-    return haystack.toLowerCase().includes(query.toLowerCase());
-  });
+    .map((group) => ({ ...group, resources: group.resources.filter(matchesResource) }))
+    .filter((group) => group.resources.length > 0 || (!query && statusFilter === "all"));
+  const filteredUngrouped = data.dashboard.ungroupedResources.filter(matchesResource);
+  const visibleCount = filteredGroups.reduce((sum, group) => sum + group.resources.length, 0) + filteredUngrouped.length;
 
   function openResource(resource: DashboardResource) {
     if (resource.url) {
@@ -175,9 +241,9 @@ export function DashboardConsole({
     }
   }
 
-  function renderResourceTile(resource: DashboardResource) {
+  function renderResourceCard(resource: DashboardResource) {
     return (
-      <ResourceTile
+      <ServiceCard
         key={resource.id}
         resource={resource}
         onInspect={onInspectResource}
@@ -187,173 +253,160 @@ export function DashboardConsole({
     );
   }
 
-  function renderDashboardWidget(widget: DashboardWidgetDto) {
-    switch (widget.type) {
-      case "serviceStatus":
-        return (
-          <WidgetCard key={widget.id} title={widget.title} widget={widget}>
-            <div className="dashboard-overview widget-metrics">
-              <MetricCard icon={<Wifi size={18} />} label="Online" value={totals.online} tone="online" />
-              <MetricCard icon={<WifiOff size={18} />} label="Offline" value={totals.offline} tone="offline" />
-              <MetricCard icon={<Activity size={18} />} label="Unknown" value={totals.unknown} />
-              <MetricCard icon={<Server size={18} />} label="Total Services" value={resources.length} tone="accent" />
-            </div>
-          </WidgetCard>
-        );
-      case "incidents":
-        return (
-          <WidgetCard key={widget.id} title={widget.title} widget={widget}>
-            <div className="compact-list">
-              {openIncidents.map((incident) => (
-                <button className="compact-row" key={incident.id} type="button" onClick={() => onOpenIncident(incident.id)}>
-                  <span className={`severity-dot severity-${incident.severity}`} />
-                  <span>
-                    <strong>{incident.title}</strong>
-                    <small>{incident.status} · {formatDateTime(incident.openedAt)}</small>
-                  </span>
-                </button>
-              ))}
-              {openIncidents.length === 0 ? (
-                <EmptyPanel compact icon={<Activity size={18} />} title="No active incidents" body="Open incidents will appear here." />
-              ) : null}
-            </div>
-          </WidgetCard>
-        );
-      case "favorites":
-        return (
-          <WidgetCard key={widget.id} title={widget.title} widget={widget}>
-            <div className="compact-list">
-              {favoriteResources.map((resource) => (
-                <button
-                  className="compact-row"
-                  key={resource.id}
-                  type="button"
-                  onClick={() => (resource.url ? openResource(resource) : onInspectResource(resource))}
-                >
-                  <span className="resource-icon" style={{ color: resource.color ?? "#2dd4bf" }}>
-                    {icons[resource.kind] ?? icons.other}
-                  </span>
-                  <span>
-                    <strong>{resource.name}</strong>
-                    <small>{resource.url ?? resource.host ?? resource.kind}</small>
-                  </span>
-                  <StatusBadge status={statusFor(resource)} />
-                </button>
-              ))}
-              {favoriteResources.length === 0 ? (
-                <EmptyPanel compact icon={<Star size={18} />} title="No favorites" body="Mark resources as favorites to pin them here." />
-              ) : null}
-            </div>
-          </WidgetCard>
-        );
-      case "failingChecks":
-        return (
-          <WidgetCard key={widget.id} title={widget.title} widget={widget}>
-            <div className="compact-list">
-              {failingChecks.map((check) => (
-                <div className="compact-row" key={check.id}>
-                  <Activity size={16} />
-                  <span>
-                    <strong>{check.resource?.name ?? check.target}</strong>
-                    <small>{check.latestError ?? check.target}</small>
-                  </span>
-                </div>
-              ))}
-              {failingChecks.length === 0 ? (
-                <EmptyPanel compact icon={<Activity size={18} />} title="All checks passing" body="No failing checks right now." />
-              ) : null}
-            </div>
-          </WidgetCard>
-        );
-      case "notes":
-        return (
-          <WidgetCard key={widget.id} title={widget.title} widget={widget}>
-            <div className="compact-list">
-              {pinnedNotes.map((note) => (
-                <div className="compact-row" key={note.id}>
-                  <Clock3 size={16} />
-                  <span>
-                    <strong>{note.title}</strong>
-                    <small>{note.body}</small>
-                  </span>
-                </div>
-              ))}
-              {pinnedNotes.length === 0 ? (
-                <EmptyPanel compact icon={<Clock3 size={18} />} title="No pinned notes" body="Pin notes from Inventory to surface them here." />
-              ) : null}
-            </div>
-          </WidgetCard>
-        );
-      default:
-        return null;
-    }
-  }
-
   return (
-    <main className="view-shell pro-dashboard">
+    <main className="view-shell service-dashboard">
       <PageHeader
         title="Dashboard"
-        subtitle={`${resources.length} resources · ${data.incidents.length} incidents`}
+        subtitle="Launch hosted services and monitor the ones that matter."
         actions={
           <>
-            <label className="search-box">
+            <label className="search-box service-search">
               <Search size={16} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter resources" />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search services" />
             </label>
             <button className="icon-text-button" type="button" onClick={onRefresh}>
-              <Activity size={16} />
+              <RefreshCw size={16} />
               Refresh
             </button>
-            <button className="icon-text-button" type="button" onClick={onOpenInventory}>
+            <button className="primary-button header-primary-action" type="button" onClick={onOpenServices}>
               <Plus size={16} />
-              Add
+              Add service
             </button>
           </>
         }
       />
 
-      <WidgetSettings widgets={data.widgets} onRefresh={onRefresh} />
+      <section className="service-hero">
+        <div className="service-hero-copy">
+          <span className="eyebrow">Homelab launchpad</span>
+          <h1>Open the right service fast. See trouble before it becomes noise.</h1>
+          <p>
+            This page is now your private start screen: hosted apps first, health signals second, admin tools out of the way.
+          </p>
+        </div>
+        <div className="service-hero-metrics">
+          <MetricCard icon={<Server size={18} />} label="Services" value={resources.length} tone="accent" />
+          <MetricCard icon={<ExternalLink size={18} />} label="Launchable" value={launchableCount} />
+          <MetricCard icon={<Wifi size={18} />} label="Online" value={totals.online} tone="online" />
+          <MetricCard icon={<WifiOff size={18} />} label="Offline" value={totals.offline} tone="offline" />
+        </div>
+      </section>
 
-      <section className="widget-grid">
-        {orderedWidgets.map(renderDashboardWidget)}
+      <section className="dashboard-signal-grid">
+        <section className="dashboard-signal-panel">
+          <div className="signal-panel-header">
+            <span><Activity size={16} /> Health mix</span>
+            <small>{totals.checks} checks</small>
+          </div>
+          <HealthMixBar online={totals.online} offline={totals.offline} unknown={totals.unknown} />
+          <div className="signal-legend">
+            <span><i className="legend-online" /> {totals.online} online</span>
+            <span><i className="legend-offline" /> {totals.offline} offline</span>
+            <span><i className="legend-unknown" /> {totals.unknown} unknown</span>
+          </div>
+        </section>
+
+        <LatencyPanel resources={resources} />
+
+        <section className="dashboard-signal-panel">
+          <div className="signal-panel-header">
+            <span><AlertTriangle size={16} /> Attention</span>
+            <small>{openIncidents.length} active</small>
+          </div>
+          <div className="compact-list">
+            {openIncidents.map((incident) => (
+              <button className="compact-row" key={incident.id} type="button" onClick={() => onOpenIncident(incident.id)}>
+                <span className={`severity-dot severity-${incident.severity}`} />
+                <span>
+                  <strong>{incident.title}</strong>
+                  <small>{incident.status} · {formatDateTime(incident.openedAt)}</small>
+                </span>
+              </button>
+            ))}
+            {openIncidents.length === 0 ? <p className="muted-copy">No active incidents.</p> : null}
+          </div>
+        </section>
+
+        <section className="dashboard-signal-panel dashboard-notes-panel">
+          <div className="signal-panel-header">
+            <span><Clock3 size={16} /> Notes</span>
+            <small>{pinnedNotes.length} pinned</small>
+          </div>
+          <div className="compact-list">
+            {pinnedNotes.map((note) => (
+              <div className="compact-row" key={note.id}>
+                <Clock3 size={16} />
+                <span>
+                  <strong>{note.title}</strong>
+                  <small>{note.body}</small>
+                </span>
+              </div>
+            ))}
+            {pinnedNotes.length === 0 ? <p className="muted-copy">Pinned notes stay here, below the important service signals.</p> : null}
+          </div>
+        </section>
+      </section>
+
+      <section className="service-filter-strip">
+        <div className="service-filter-tabs" aria-label="Service filters">
+          {filters.map((filter) => (
+            <button
+              key={filter.id}
+              className={statusFilter === filter.id ? "active" : ""}
+              type="button"
+              onClick={() => setStatusFilter(filter.id)}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+        <span>{visibleCount} shown</span>
       </section>
 
       {resources.length === 0 ? (
         <EmptyPanel
           icon={<Server size={36} />}
           title="No services yet"
-          body="Add your first app, VM, server, or website, then attach checks."
+          body="Add Plex, Home Assistant, NAS, router, websites, and anything else you host."
           action={
-            <button className="icon-text-button" type="button" onClick={onOpenInventory}>
+            <button className="icon-text-button" type="button" onClick={onOpenServices}>
               <Plus size={16} />
-              Add resource
+              Add service
             </button>
           }
         />
       ) : null}
 
       {filteredGroups.map((group) => (
-        <section className="resource-section" key={group.id}>
-          <div className="section-heading group-heading">
+        <section className="service-group" key={group.id}>
+          <div className="service-group-header">
             <button className="group-toggle" type="button" onClick={() => onPatchGroup(group.id, { collapsed: !group.collapsed })}>
               {group.collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
               <h3>{group.name}</h3>
             </button>
             <span>{group.resources.length}</span>
           </div>
-          {!group.collapsed ? <div className="tile-grid">{group.resources.map(renderResourceTile)}</div> : null}
+          {!group.collapsed ? <div className="service-grid">{group.resources.map(renderResourceCard)}</div> : null}
         </section>
       ))}
 
       {filteredUngrouped.length > 0 ? (
-        <section className="resource-section">
-          <div className="section-heading">
+        <section className="service-group">
+          <div className="service-group-header">
             <h3>Ungrouped</h3>
             <span>{filteredUngrouped.length}</span>
           </div>
-          <div className="tile-grid">{filteredUngrouped.map(renderResourceTile)}</div>
+          <div className="service-grid">{filteredUngrouped.map(renderResourceCard)}</div>
         </section>
       ) : null}
+
+      {resources.length > 0 && visibleCount === 0 ? (
+        <EmptyPanel icon={<Search size={36} />} title="No services match" body="Clear search or change the status filter." />
+      ) : null}
+
+      <div className="dashboard-customize">
+        <WidgetSettings widgets={data.widgets} onRefresh={onRefresh} />
+      </div>
     </main>
   );
 }

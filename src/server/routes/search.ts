@@ -77,10 +77,11 @@ export async function registerSearchRoutes({ app, prisma }: RouteContext): Promi
         action: "openIncident",
         payload: { incidentId: incident.id }
       })),
-      { id: "nav-dashboard", type: "navigation", title: "Dashboard", subtitle: "Overview and resource tiles", action: "navigate", payload: { view: "dashboard" } },
+      { id: "nav-dashboard", type: "navigation", title: "Dashboard", subtitle: "Service launcher and status overview", action: "navigate", payload: { view: "dashboard" } },
       { id: "nav-monitoring", type: "navigation", title: "Monitoring", subtitle: "Health checks and incidents", action: "navigate", payload: { view: "monitoring" } },
       { id: "nav-alerts", type: "navigation", title: "Alerts", subtitle: "Alert channels and delivery rules", action: "navigate", payload: { view: "alerts" } },
-      { id: "nav-inventory", type: "navigation", title: "Inventory", subtitle: "Manage resources and checks", action: "navigate", payload: { view: "inventory" } }
+      { id: "nav-services", type: "navigation", title: "Services", subtitle: "Manage service launchers and checks", action: "navigate", payload: { view: "services" } },
+      { id: "nav-admin", type: "navigation", title: "Admin", subtitle: "Account, appearance, data, and system tools", action: "navigate", payload: { view: "settings" } }
     ].slice(0, limit);
   });
 }

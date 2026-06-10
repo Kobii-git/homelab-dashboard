@@ -1,17 +1,14 @@
 import {
   Gauge,
   LogOut,
-  Moon,
   PanelLeft,
   PanelLeftClose,
   Search,
-  Settings,
-  Shield,
-  Sun
+  Shield
 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { AppView } from "../features/types";
-import type { SidebarMode, ThemeMode } from "../lib/appChrome";
+import type { SidebarMode } from "../lib/appChrome";
 import { BuildBadge } from "./BuildBadge";
 
 type NavItem = { id: AppView; label: string; icon: ReactNode };
@@ -22,10 +19,7 @@ export function AppSidebar({
   onNavigate,
   sidebarMode,
   onCycleSidebar,
-  theme,
-  onToggleTheme,
   onOpenPalette,
-  onOpenKeyboardHelp,
   onLogout,
   openIncidents,
   failingChecks
@@ -35,10 +29,7 @@ export function AppSidebar({
   onNavigate: (view: AppView) => void;
   sidebarMode: SidebarMode;
   onCycleSidebar: () => void;
-  theme: ThemeMode;
-  onToggleTheme: () => void;
   onOpenPalette: () => void;
-  onOpenKeyboardHelp: () => void;
   onLogout: () => void;
   openIncidents: number;
   failingChecks: number;
@@ -96,14 +87,6 @@ export function AppSidebar({
         </nav>
 
         <div className="sidebar-footer">
-          <button className="sidebar-tool" type="button" title="Keyboard shortcuts" onClick={onOpenKeyboardHelp}>
-            <Shield size={16} />
-            {!compact ? <span>Shortcuts</span> : null}
-          </button>
-          <button className="sidebar-tool" type="button" title="Toggle theme" onClick={onToggleTheme}>
-            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-            {!compact ? <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span> : null}
-          </button>
           {!compact ? <BuildBadge className="sidebar-build-badge" /> : null}
           <button className="nav-utility" type="button" title="Logout" onClick={onLogout}>
             <LogOut size={18} />
@@ -115,6 +98,6 @@ export function AppSidebar({
   );
 }
 
-export function settingsNavItem(): NavItem {
-  return { id: "settings", label: "Settings", icon: <Settings size={18} /> };
+export function adminNavItem(): NavItem {
+  return { id: "settings", label: "Admin", icon: <Shield size={17} /> };
 }

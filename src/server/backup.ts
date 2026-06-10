@@ -324,7 +324,7 @@ export function previewBackupImport(payload: unknown): ImportPreview {
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
-async function clearInventoryConfig(prisma: DbClient): Promise<void> {
+async function clearServiceConfig(prisma: DbClient): Promise<void> {
   await prisma.alertDelivery.deleteMany();
   await prisma.incident.deleteMany();
   await prisma.healthResult.deleteMany();
@@ -499,13 +499,13 @@ export async function applyBackupImport(
 
   if (mode === "replace") {
     await prisma.$transaction(async (tx) => {
-      await clearInventoryConfig(tx);
+      await clearServiceConfig(tx);
       await importEntities(tx, data, "replace");
     });
     await createAuditEvent(prisma, {
       action: "backup.imported",
       entityType: "backup",
-      summary: `Restored inventory backup (${data.exportedAt}) in replace mode`
+      summary: `Restored services backup (${data.exportedAt}) in replace mode`
     });
     return {
       ...preview,
@@ -520,7 +520,7 @@ export async function applyBackupImport(
   await createAuditEvent(prisma, {
     action: "backup.imported",
     entityType: "backup",
-    summary: `Merged inventory backup (${data.exportedAt})`
+    summary: `Merged services backup (${data.exportedAt})`
   });
 
   return {

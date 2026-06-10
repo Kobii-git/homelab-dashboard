@@ -5,7 +5,7 @@ continue without rediscovering the shape of the app.
 
 - **Repo:** https://github.com/Kobii-git/homelab-dashboard
 - **Image:** `ghcr.io/kobii-git/homelab-dashboard`
-- **Current version:** `0.3.0`
+- **Current version:** `0.4.0`
 - **Port:** `4173`
 - **Current branch:** `main`
 
@@ -13,16 +13,17 @@ continue without rediscovering the shape of the app.
 
 ## 1. What It Is Now
 
-Homelab Dashboard is a private, single-admin, self-hosted console for managing
-homelab resources. It is currently focused on inventory, monitoring, incidents,
-alerts, notes, widgets, and backup/restore.
+Homelab Dashboard is a private, single-admin, self-hosted service launchpad and
+status dashboard. It is currently focused on opening hosted services quickly,
+monitoring health, surfacing incidents, alerts, notes, widgets, and
+backup/restore.
 
 The previous browser SSH/RDP/VNC remote-access manager and user credential vault
-were intentionally removed before `0.3.0`. Do not assume Guacamole, saved remote
-credentials, sessions, or access tabs exist in this codebase unless a future
-release reintroduces them.
+were intentionally removed before the current service-dashboard release line. Do
+not assume Guacamole, saved remote credentials, sessions, or access tabs exist in
+this codebase unless a future release reintroduces them.
 
-**Sidebar views:** Dashboard, Monitoring, Alerts, Inventory, Settings.
+**Sidebar views:** Dashboard, Monitoring, Alerts, Services, Admin.
 
 | Layer | Tech |
 |---|---|
@@ -120,10 +121,12 @@ credential-vault feature.
   passwords.
 - Delivery records track alert attempts and errors.
 
-### Inventory
+### Services
 
-- Resources can be grouped, tagged, favorited, assigned URLs/hosts, and linked to
-  health checks and notes.
+- Resources are presented as hosted services. They can be grouped, tagged,
+  favorited, assigned launch URLs/hosts, and linked to health checks and notes.
+- The Services page is compact by default; add/edit forms only open after an
+  explicit action.
 - Backup/restore exports configuration only: tags, groups, resources, checks,
   notes, alert channels/rules, maintenance windows, and widgets.
 - Backup restore does not export incidents, check results, alert deliveries, or
@@ -152,18 +155,26 @@ session tabs, SSH/RDP/VNC work, and a credential vault. That work was later
 removed from `main` in commit `8493d23` (`Remove SSH/RDP/VNC remote access and
 credential vault`).
 
-The current cleanup pass for `0.3.0`:
+Recent cleanup and redesign passes:
 
 - Fixed first-run setup so env-managed or existing-admin installs can dismiss the
   setup screen after logging in.
 - Removed stale default dashboard widgets for `recentSessions` and `vaultHealth`.
-- Updated the package version to `0.3.0`.
+- Updated the package version to `0.3.0` for the removal cleanup.
 - Upgraded `@fastify/static` to a patched major version.
 - Removed unused Guacamole env/test fields.
 - Rewrote README and this handover to match the current monitoring-dashboard
   product.
 - Updated backup UI copy so it describes encrypted alert configs, not a removed
   credential vault.
+- `0.4.0` then redesigned the front door into a service-first launcher/status
+  dashboard and renamed Inventory to Services in the UI.
+- Cleaned old remote/session frontend leftovers from shared primitives and CSS.
+- Moved the active Services view files to `src/client/features/services/`.
+- Fixed backend static serving so source-mode backend runs do not serve raw
+  `main.tsx`; single-port preview should use `npm run build && npm start`, while
+  active local development should use `npm run dev:all`.
+- Tightened the left sidebar and renamed the visible Settings area to Admin.
 
 ---
 

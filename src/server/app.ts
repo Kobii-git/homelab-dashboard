@@ -42,7 +42,18 @@ type CreateAppOptions = {
 };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const clientDist = path.resolve(__dirname, "../client");
+
+function resolveClientDist(): string | null {
+  const candidates = [
+    path.resolve(__dirname, "../client"),
+    path.resolve(__dirname, "../../dist/client")
+  ];
+
+  return candidates.find((candidate) =>
+    fs.existsSync(path.join(candidate, "index.html")) &&
+    fs.existsSync(path.join(candidate, "assets"))
+  ) ?? null;
+}
 
 function parseLayout(layoutJson: string): Record<string, unknown> {
   try {
@@ -462,7 +473,9 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     }
   });
 
-  if (fs.existsSync(clientDist)) {
+  const clientDist = resolveClientDist();
+
+  if (clientDist) {
     await app.register(staticFiles, {
       root: clientDist,
       prefix: "/"

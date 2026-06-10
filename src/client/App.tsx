@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 
-import { AppSidebar, settingsNavItem } from "./components/AppSidebar";
+import { AppSidebar, adminNavItem } from "./components/AppSidebar";
 import { InlineSpinner } from "./components/Primitives";
 import { CommandPalette } from "./components/CommandPalette";
 import { BuildBadge } from "./components/BuildBadge";
@@ -18,7 +18,7 @@ import { DetailDrawer, type DrawerState } from "./components/DetailDrawer";
 import { KeyboardHelp } from "./components/KeyboardHelp";
 import { AlertsView } from "./features/alerts/AlertsView";
 import { DashboardConsole } from "./features/dashboard/DashboardConsole";
-import { InventoryView, type InventoryTab } from "./features/inventory/InventoryView";
+import { ServicesView, type ServiceTab } from "./features/services/ServicesView";
 import { MonitoringCenter } from "./features/monitoring/MonitoringCenter";
 import { emptyV2Data, type AppView, type V2Data } from "./features/types";
 import { SettingsView } from "./features/settings/SettingsView";
@@ -45,8 +45,8 @@ const navItems: Array<{ id: AppView; label: string; icon: ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <Home size={18} /> },
   { id: "monitoring", label: "Monitoring", icon: <Activity size={18} /> },
   { id: "alerts", label: "Alerts", icon: <Bell size={18} /> },
-  { id: "inventory", label: "Inventory", icon: <Server size={18} /> },
-  settingsNavItem()
+  { id: "services", label: "Services", icon: <Server size={18} /> },
+  adminNavItem()
 ];
 
 function LoginView({ onLogin }: { onLogin: () => void }) {
@@ -237,7 +237,7 @@ export function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const [keyboardHelpOpen, setKeyboardHelpOpen] = useState(false);
-  const [inventoryTab, setInventoryTab] = useState<InventoryTab>("resource");
+  const [serviceTab, setServiceTab] = useState<ServiceTab>("resource");
   const [username, setUsername] = useState("admin");
   const [authSource, setAuthSource] = useState<"env" | "database">("database");
   const { theme, toggleTheme, sidebarMode, cycleSidebar } = useAppChrome();
@@ -378,7 +378,8 @@ export function App() {
       }
 
       if (!typing && event.key.toLowerCase() === "n") {
-        setView("inventory");
+        setServiceTab("resource");
+        setView("services");
       }
 
       if (!typing && event.key === "?") {
@@ -522,10 +523,7 @@ export function App() {
         onNavigate={setView}
         sidebarMode={sidebarMode}
         onCycleSidebar={cycleSidebar}
-        theme={theme}
-        onToggleTheme={toggleTheme}
         onOpenPalette={() => setPaletteOpen(true)}
-        onOpenKeyboardHelp={() => setKeyboardHelpOpen(true)}
         onLogout={logout}
         openIncidents={data.incidents.filter((incident) => incident.status !== "resolved").length}
         failingChecks={data.checks.filter((check) => check.latestStatus === "offline" && check.enabled).length}
@@ -540,7 +538,7 @@ export function App() {
               onRefresh={loadData}
               onPatchResource={patchResource}
               onPatchGroup={patchGroup}
-              onOpenInventory={() => { setInventoryTab("resource"); setView("inventory"); }}
+              onOpenServices={() => { setServiceTab("resource"); setView("services"); }}
               onInspectResource={inspectResource}
               onOpenIncident={(id) => {
                 const incident = openIncidentMap.get(id);
@@ -550,15 +548,15 @@ export function App() {
               }}
             />
           ) : null}
-          {view === "inventory" ? (
-            <InventoryView data={data} onRefresh={loadData} activeTab={inventoryTab} onTabChange={setInventoryTab} />
+          {view === "services" ? (
+            <ServicesView data={data} onRefresh={loadData} activeTab={serviceTab} onTabChange={setServiceTab} />
           ) : null}
           {view === "monitoring" ? (
             <MonitoringCenter
               data={data}
               onRefresh={loadData}
               onInspectIncident={inspectIncident}
-              onOpenInventoryChecks={() => { setInventoryTab("check"); setView("inventory"); }}
+              onOpenServicesChecks={() => { setServiceTab("check"); setView("services"); }}
             />
           ) : null}
           {view === "alerts" ? <AlertsView data={data} onRefresh={loadData} /> : null}
@@ -567,7 +565,10 @@ export function App() {
               username={username}
               authSource={authSource}
               onRefresh={loadData}
-              onOpenBackup={() => { setInventoryTab("backup"); setView("inventory"); }}
+              theme={theme}
+              onToggleTheme={toggleTheme}
+              onOpenKeyboardHelp={() => setKeyboardHelpOpen(true)}
+              onOpenBackup={() => { setServiceTab("backup"); setView("services"); }}
             />
           ) : null}
         </div>

@@ -1,18 +1,25 @@
-import { Download, ExternalLink, Gauge, RefreshCw, Save, User } from "lucide-react";
+import { Download, ExternalLink, Gauge, Keyboard, Moon, RefreshCw, Save, Sun, User } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { PageHeader } from "../../components/Primitives";
 import { FormErrorBanner, runFormAction } from "../../lib/forms";
 import { apiSend } from "../../lib/api";
+import type { ThemeMode } from "../../lib/appChrome";
 
 export function SettingsView({
   username,
   authSource,
   onRefresh,
+  theme,
+  onToggleTheme,
+  onOpenKeyboardHelp,
   onOpenBackup
 }: {
   username: string;
   authSource: "env" | "database";
   onRefresh: () => Promise<void>;
+  theme: ThemeMode;
+  onToggleTheme: () => void;
+  onOpenKeyboardHelp: () => void;
   onOpenBackup: () => void;
 }) {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -37,7 +44,7 @@ export function SettingsView({
 
   return (
     <main className="view-shell">
-      <PageHeader title="Settings" subtitle="Account, data, and system tools" />
+      <PageHeader title="Admin" subtitle="Account, appearance, data, and system tools" />
 
       <FormErrorBanner message={actionError} />
 
@@ -76,6 +83,19 @@ export function SettingsView({
               onClick={() => window.open("/status", "_blank", "noopener,noreferrer")}
             >
               <ExternalLink size={16} /> Public status page
+            </button>
+          </div>
+        </section>
+
+        <section className="table-panel">
+          <h3>{theme === "dark" ? <Moon size={16} /> : <Sun size={16} />} Appearance &amp; shortcuts</h3>
+          <div className="settings-actions">
+            <button className="icon-text-button" type="button" onClick={onToggleTheme}>
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+              Switch to {theme === "dark" ? "light" : "dark"} mode
+            </button>
+            <button className="icon-text-button" type="button" onClick={onOpenKeyboardHelp}>
+              <Keyboard size={16} /> Keyboard shortcuts
             </button>
           </div>
         </section>

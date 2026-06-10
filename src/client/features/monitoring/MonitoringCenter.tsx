@@ -88,12 +88,12 @@ export function MonitoringCenter({
   data,
   onRefresh,
   onInspectIncident,
-  onOpenInventoryChecks
+  onOpenServicesChecks
 }: {
   data: V2Data;
   onRefresh: () => Promise<void>;
   onInspectIncident: (incident: IncidentDto) => void;
-  onOpenInventoryChecks?: () => void;
+  onOpenServicesChecks?: () => void;
 }) {
   const [runningId, setRunningId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -395,14 +395,14 @@ export function MonitoringCenter({
               title={data.checks.length === 0 ? "No health checks yet" : "No checks match"}
               body={
                 data.checks.length === 0
-                  ? "Create HTTP, TCP, ping, or SSL checks under Inventory → Checks. Checks run automatically every minute once added."
-                  : "Adjust the filters or create checks in Inventory."
+                  ? "Create HTTP, TCP, ping, or SSL checks under Services -> Checks. Checks run automatically every minute once added."
+                  : "Adjust the filters or create checks in Services."
               }
               action={
-                onOpenInventoryChecks ? (
-                  <button className="primary-button" type="button" onClick={onOpenInventoryChecks}>
+                onOpenServicesChecks ? (
+                  <button className="primary-button" type="button" onClick={onOpenServicesChecks}>
                     <Plus size={15} />
-                    Add check in Inventory
+                    Add check in Services
                   </button>
                 ) : undefined
               }

@@ -2,21 +2,21 @@
 
 A private, self-hosted command center for your homelab. Track services, websites, VMs, and devices from one LAN/VPN-only dashboard with health checks, incidents, alerts, notes, backup/restore, and a dense console UI.
 
-![Version](https://img.shields.io/badge/version-0.3.0-2dd4bf)
+![Version](https://img.shields.io/badge/version-0.4.0-2dd4bf)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
 
 ## Features
 
-- **Dashboard** - configurable widget grid for favorites, service status, incidents, failing checks, and pinned notes
+- **Dashboard** - service launchpad with status filters, health mix, response-time bars, incidents, and pinned notes
 - **Monitoring** - HTTP, TCP, and ping checks with response time, failure reasons, thresholds, and status transitions
 - **Incidents** - open, acknowledge, resolve, mute, and maintenance-suppress service failures
 - **Alerts** - SMTP email and generic webhook channels with rules, cooldowns, and delivery history
-- **Inventory** - CRUD for resources, groups, tags, health checks, notes, and launcher URLs
+- **Services** - compact catalog for launch URLs, groups, tags, health checks, and notes
 - **Backup / restore** - JSON export/import for configuration, including encrypted alert channel config blobs
 - **Command palette** - global search and quick actions with `Ctrl K` or `/`
-- **Settings** - password change, status page, sync tools, keyboard help, theme controls, and build info
+- **Admin** - password change, status page, sync tools, keyboard help, theme controls, and build info
 
 > **New here?** See [HANDOVER.md](HANDOVER.md) for the current architecture, deployment notes, and project state.
 
@@ -24,7 +24,7 @@ A private, self-hosted command center for your homelab. Track services, websites
 
 ## Current Scope
 
-Version `0.3.0` is intentionally a monitoring and inventory dashboard. The previous SSH/RDP/VNC remote-access manager and user credential vault were removed before this release. Browser-based remote access can be planned again later, but it is not part of the current app or Docker Compose stack.
+Version `0.4.0` is intentionally a service launch/status dashboard. The previous SSH/RDP/VNC remote-access manager and user credential vault were removed before this release line. Browser-based remote access can be planned again later, but it is not part of the current app or Docker Compose stack.
 
 The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles or built-in HTTPS termination.
 
@@ -115,6 +115,8 @@ npm run dev:all
 
 The API runs on `:4173` by default when started alone. In `npm run dev:all`, Vite serves the frontend on `:5173` and proxies API calls to the backend.
 
+For a single-port local preview on `:4173`, run `npm run build` and then `npm start`.
+
 Optional demo data:
 
 ```sh
@@ -157,13 +159,13 @@ docker compose -f docker-compose.build.yml up -d --build
 
 Releases follow [Semantic Versioning](https://semver.org). See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
-Current: **v0.3.0**
+Current: **v0.4.0**
 
 ### Verify Your Running Build
 
 | Where | What to look for |
 |---|---|
-| **Sidebar** | `v0.3.0 · abc1234` in the build badge |
+| **Sidebar** | `v0.4.0 · abc1234` in the build badge |
 | **Login screen** | Same build badge under the Unlock button |
 | **`/status` page** | Version and git hash under the title |
 | **API** | `curl -s http://localhost:4173/api/version` |

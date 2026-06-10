@@ -76,7 +76,7 @@ export function BackupRestoreView({ onRefresh }: { onRefresh: () => Promise<void
       setPassword("");
       setConfirmReplace("");
       await onRefresh();
-    }, setActionError, setSubmitting, mode === "replace" ? "Inventory restored from backup" : "Backup merged");
+    }, setActionError, setSubmitting, mode === "replace" ? "Services restored from backup" : "Backup merged");
   }
 
   return (
@@ -164,7 +164,7 @@ export function BackupRestoreView({ onRefresh }: { onRefresh: () => Promise<void
             Import mode
             <select value={mode} onChange={(event) => setMode(event.target.value as ImportMode)}>
               <option value="merge">Merge — add items that do not already exist</option>
-              <option value="replace">Replace — wipe inventory and restore from backup</option>
+              <option value="replace">Replace - wipe services/config and restore from backup</option>
             </select>
           </label>
           {mode === "replace" ? (

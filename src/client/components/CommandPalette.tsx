@@ -1,4 +1,4 @@
-import { Activity, ExternalLink, Monitor, Search, Server, Shield, TerminalSquare, X } from "lucide-react";
+import { Activity, ExternalLink, Monitor, Search, Server, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { SearchResultDto } from "../lib/api";
@@ -67,7 +67,7 @@ export function CommandPalette({
           <input
             autoFocus
             value={query}
-            placeholder="Search resources, checks, incidents..."
+            placeholder="Search services, checks, incidents..."
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
