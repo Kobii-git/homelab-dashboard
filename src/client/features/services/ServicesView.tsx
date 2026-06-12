@@ -2,6 +2,7 @@ import { Activity, ChevronDown, ChevronUp, Plus, Pencil, Save, Server, Trash2, W
 import { FormEvent, useEffect, useState } from "react";
 import { HEALTH_CHECK_TYPES, HEALTH_STATUSES, MONITORING_MODES, RESOURCE_KINDS } from "../../../shared/types";
 import { MetricCard, PageHeader, StatusBadge } from "../../components/Primitives";
+import { ServiceIcon } from "../../components/ServiceIcon";
 import { FormErrorBanner, runFormAction, runFormSubmit } from "../../lib/forms";
 import { apiSend, emptyToNull } from "../../lib/api";
 import { formatDateTime, statusFor } from "../../lib/format";
@@ -47,13 +48,17 @@ export function ServicesView({
   onRefresh,
   autoPingIntervalSeconds,
   openAddServiceForm,
-  onOpenAddServiceFormHandled
+  onOpenAddServiceFormHandled,
+  editServiceId,
+  onEditServiceHandled
 }: {
   data: AppData;
   onRefresh: () => Promise<void>;
   autoPingIntervalSeconds: number;
   openAddServiceForm?: boolean;
   onOpenAddServiceFormHandled?: () => void;
+  editServiceId?: string | null;
+  onEditServiceHandled?: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<ServiceTab>("resource");
   const [editMode, setEditMode] = useState<EditMode>(null);
@@ -77,6 +82,17 @@ export function ServicesView({
     setFormMode("resource");
     onOpenAddServiceFormHandled?.();
   }, [openAddServiceForm, onOpenAddServiceFormHandled]);
+
+  useEffect(() => {
+    if (!editServiceId) {
+      return;
+    }
+    const resource = data.resources.find((item) => item.id === editServiceId);
+    if (resource) {
+      startEditResource(resource);
+    }
+    onEditServiceHandled?.();
+  }, [editServiceId, data.resources, onEditServiceHandled]);
 
   function startEditResource(resource: DashboardResource) {
     setEditResource(resource);
@@ -279,7 +295,12 @@ export function ServicesView({
               </label>
               <Field label="URL" name="url" placeholder="https://service.local" defaultValue={editResource?.url ?? ""} />
               <Field label="Host" name="host" placeholder="192.168.1.10" defaultValue={editResource?.host ?? ""} />
-              <Field label="Icon label" name="icon" defaultValue={editResource?.icon ?? ""} />
+              <Field
+                label="Icon (auto-detected from name if empty)"
+                name="icon"
+                placeholder="plex, home-assistant, or https://… image"
+                defaultValue={editResource?.icon ?? ""}
+              />
               <label>
                 Color
                 <input name="color" type="color" defaultValue={editResource?.color ?? "#2dd4bf"} style={{ height: 38, cursor: "pointer" }} />
@@ -326,6 +347,7 @@ export function ServicesView({
           <div className="row-list service-catalog-list">
             {data.resources.map((resource, index, list) => (
               <div className="data-row data-row-wide service-data-row" key={resource.id}>
+                <ServiceIcon resource={resource} size={28} />
                 <span>
                   <strong>{resource.name}</strong>
                   <small>

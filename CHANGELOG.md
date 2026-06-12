@@ -6,6 +6,53 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.6.0] - 2026-06-12
+
+A full dashboard revamp inspired by the best of Homarr, Homepage, Glance, and
+Uptime Kuma.
+
+### Added
+- **Real service icons**: icons auto-resolve from the service name via the
+  `homarr-labs/dashboard-icons` CDN, with favicon and letter-avatar fallbacks.
+  The icon field now accepts a slug (`plex`, `home-assistant`) or an image URL.
+- **Heartbeat bars** (Uptime-Kuma style): every card shows the recent check
+  history as colored ticks with per-tick tooltips.
+- **Uptime %** per service, computed from stored check history, shown on cards,
+  in the detail drawer, and on the public status page.
+- **Service detail drawer**: uptime/latency/last-checked stats, a large
+  heartbeat, an SVG latency sparkline, the check list with errors, and quick
+  actions (open, check now, edit, favorite).
+- **Command palette** (`⌘K` / `/`): fuzzy-search services and actions, arrow
+  keys + Enter to launch.
+- **Drag-and-drop reordering** of service cards within a group, persisted via
+  the new `POST /api/resources/reorder` endpoint.
+- **Dashboard hero**: greeting with username, live clock, date, and an
+  at-a-glance online/offline/unknown summary.
+- **Attention strip** listing offline services with their latest error; click
+  to open the detail drawer.
+- **Favorites strip** of one-click launch tiles.
+- **Grid/list density toggle**, persisted locally.
+- Tab title shows `(N down)` when services are offline; data refreshes on
+  window focus.
+- Public status page redesigned with heartbeat ticks, uptime, and latency.
+- Browser favicon.
+
+### Changed
+- Dashboard payload now includes recent health results per check (last 60).
+- Health result retention raised from 100 to 300 samples per check.
+- Sidebar: brand mark, search/palette button, theme toggle and log out moved
+  into the footer (the floating log-out button is gone), proper Admin icon.
+- Login and setup screens restyled with ambient gradients.
+- Demo seed now includes icon slugs and generated check history so heartbeats,
+  uptime, and the latency sparkline are visible immediately.
+- Filter chips show per-status counts; group headers show online ratios.
+- Stylesheet rewritten: dead styles from removed features purged, new design
+  tokens, pulse/slide animations, light/dark refinements.
+
+### Fixed
+- `npm run dev` now pins the API to port 4173 (override with `API_PORT`) so it
+  cannot collide with the Vite dev server port.
+
 ## [0.5.2] - 2026-06-10
 
 ### Added

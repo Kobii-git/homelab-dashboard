@@ -8,6 +8,13 @@ export type HealthCheckType = (typeof HEALTH_CHECK_TYPES)[number];
 export type HealthStatus = (typeof HEALTH_STATUSES)[number];
 export type MonitoringMode = (typeof MONITORING_MODES)[number];
 
+export type HealthTick = {
+  id: string;
+  status: HealthStatus;
+  latencyMs: number | null;
+  checkedAt: string;
+};
+
 export type DashboardResource = {
   id: string;
   name: string;
@@ -40,6 +47,7 @@ export type DashboardResource = {
     failureThreshold: number;
     successThreshold: number;
     lastTransitionAt: string | null;
+    results?: HealthTick[];
   }>;
 };
 

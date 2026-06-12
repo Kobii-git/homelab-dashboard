@@ -1,4 +1,4 @@
-import type { DashboardResource } from "../../shared/types";
+import type { DashboardResource, HealthTick } from "../../shared/types";
 
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) {
@@ -48,4 +48,110 @@ export function summarizeResourceStatus(resources: DashboardResource[]) {
     },
     { online: 0, offline: 0, unknown: 0, checks: 0, favorites: 0 }
   );
+}
+
+/** Recent results of the primary (first enabled, non-empty) check, oldest → newest. */
+export function resourceTicks(resource: DashboardResource, limit = 30): HealthTick[] {
+  if (resource.monitoringMode !== "auto") {
+    return [];
+  }
+
+  const checks = resource.healthChecks ?? [];
+  const primary =
+    checks.find((check) => check.enabled && (check.results?.length ?? 0) > 0) ??
+    checks.find((check) => (check.results?.length ?? 0) > 0);
+  const results = primary?.results ?? [];
+
+  return [...results]
+    .sort((left, right) => left.checkedAt.localeCompare(right.checkedAt))
+    .slice(-limit);
+}
+
+/** Percentage of stored recent results that were online, across all checks. Null when unmonitored. */
+export function uptimePercent(resource: DashboardResource): number | null {
+  if (resource.monitoringMode !== "auto") {
+    return null;
+  }
+
+  const results = (resource.healthChecks ?? []).flatMap((check) => check.results ?? []);
+  const counted = results.filter((result) => result.status === "online" || result.status === "offline");
+
+  if (counted.length === 0) {
+    return null;
+  }
+
+  const online = counted.filter((result) => result.status === "online").length;
+  return Math.round((online / counted.length) * 1000) / 10;
+}
+
+export function formatUptime(value: number | null): string {
+  if (value == null) {
+    return "—";
+  }
+
+  return Number.isInteger(value) ? `${value}%` : `${value.toFixed(1)}%`;
+}
+
+export function latestLatency(resource: DashboardResource): number | null {
+  const latencies = (resource.healthChecks ?? [])
+    .map((check) => check.latestLatencyMs)
+    .filter((value): value is number => typeof value === "number");
+
+  if (latencies.length === 0) {
+    return null;
+  }
+
+  return Math.round(latencies.reduce((sum, value) => sum + value, 0) / latencies.length);
+}
+
+export function latestCheckedAt(resource: DashboardResource): string | null {
+  return (resource.healthChecks ?? [])
+    .map((check) => check.latestCheckedAt)
+    .filter((value): value is string => Boolean(value))
+    .sort((left, right) => right.localeCompare(left))[0] ?? null;
+}
+
+export function latestErrors(resource: DashboardResource): string[] {
+  return (resource.healthChecks ?? [])
+    .filter((check) => check.latestStatus === "offline" && check.latestError)
+    .map((check) => check.latestError as string);
+}
+
+export function relativeTime(value: string | null | undefined): string {
+  if (!value) {
+    return "never";
+  }
+
+  const then = new Date(value).getTime();
+  if (Number.isNaN(then)) {
+    return "unknown";
+  }
+
+  const seconds = Math.round((Date.now() - then) / 1000);
+  if (seconds < 0) return "just now";
+  if (seconds < 45) return "just now";
+  if (seconds < 90) return "1m ago";
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+  if (seconds < 86400 * 2) return `${Math.round(seconds / 3600)}h ago`;
+  return `${Math.round(seconds / 86400)}d ago`;
+}
+
+export function serviceAddress(resource: DashboardResource): string {
+  if (resource.url) {
+    try {
+      return new URL(resource.url).host;
+    } catch {
+      return resource.url;
+    }
+  }
+
+  return resource.host ?? resource.kind;
+}
+
+export function greetingFor(date: Date): string {
+  const hour = date.getHours();
+  if (hour < 5) return "Up late";
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
 }

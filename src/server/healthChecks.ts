@@ -157,7 +157,7 @@ async function applyHealthOutcome(
     const stale = await tx.healthResult.findMany({
       where: { checkId: check.id },
       orderBy: { checkedAt: "desc" },
-      skip: 100,
+      skip: 300,
       select: { id: true }
     });
 

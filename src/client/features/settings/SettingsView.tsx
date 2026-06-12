@@ -1,24 +1,19 @@
-import { ExternalLink, Gauge, RefreshCw, Save, Sun, Moon } from "lucide-react";
+import { ExternalLink, Gauge, RefreshCw, Save } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { PageHeader } from "../../components/Primitives";
 import { FormErrorBanner, runFormAction } from "../../lib/forms";
 import { apiSend, type SystemSettingsDto } from "../../lib/api";
-import type { ThemeMode } from "../../lib/appChrome";
 
 export function SettingsView({
   username,
   authSource,
   onRefresh,
-  theme,
-  onToggleTheme,
   systemSettings,
   onSaveSettings
 }: {
   username: string;
   authSource: "env" | "database";
   onRefresh: () => Promise<void>;
-  theme: ThemeMode;
-  onToggleTheme: () => void;
   systemSettings: SystemSettingsDto;
   onSaveSettings: (next: SystemSettingsDto) => Promise<void>;
 }) {
@@ -128,9 +123,6 @@ export function SettingsView({
               onClick={() => window.open("/status", "_blank", "noopener,noreferrer")}
             >
               <ExternalLink size={16} /> Public status page
-            </button>
-            <button className="icon-text-button" type="button" onClick={onToggleTheme}>
-              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />} Switch to {theme === "dark" ? "light" : "dark"} mode
             </button>
           </div>
         </section>

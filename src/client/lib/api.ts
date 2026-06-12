@@ -1,4 +1,4 @@
-import type { DashboardGroupDto, DashboardResource } from "../../shared/types";
+import type { DashboardGroupDto, DashboardResource, HealthTick } from "../../shared/types";
 
 export type HealthCheckDto = {
   id: string;
@@ -18,16 +18,7 @@ export type HealthCheckDto = {
   successThreshold: number;
   lastTransitionAt: string | null;
   resource?: DashboardResource;
-  results?: HealthResultDto[];
-};
-
-export type HealthResultDto = {
-  id: string;
-  checkId: string;
-  status: "unknown" | "online" | "offline";
-  latencyMs: number | null;
-  error: string | null;
-  checkedAt: string;
+  results?: HealthTick[];
 };
 
 export type DashboardDto = {

@@ -1,8 +1,9 @@
-import { Gauge, Home, Server, Shield } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { Gauge, LayoutDashboard, Server, Settings, Shield } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
-import { AppSidebar, adminNavItem } from "./components/AppSidebar";
+import { AppSidebar } from "./components/AppSidebar";
 import { BuildBadge } from "./components/BuildBadge";
+import { CommandPalette, type PaletteCommand } from "./components/CommandPalette";
 import { InlineSpinner } from "./components/Primitives";
 import { DashboardConsole } from "./features/dashboard/DashboardConsole";
 import { ServicesView } from "./features/services/ServicesView";
@@ -10,13 +11,14 @@ import { emptyAppData, type AppData, type AppView } from "./features/types";
 import { SettingsView } from "./features/settings/SettingsView";
 import { apiGet, apiSend, type SystemSettingsDto } from "./lib/api";
 import { useAppChrome } from "./lib/appChrome";
+import { statusFor } from "./lib/format";
 import type { DashboardResource } from "../shared/types";
 import type { DashboardDto, HealthCheckDto } from "./lib/api";
 
 const navItems: Array<{ id: AppView; label: string; icon: React.ReactNode }> = [
-  { id: "dashboard", label: "Dashboard", icon: <Home size={18} /> },
+  { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
   { id: "services", label: "Services", icon: <Server size={18} /> },
-  adminNavItem()
+  { id: "settings", label: "Admin", icon: <Settings size={18} /> }
 ];
 
 function LoginView({ onLogin }: { onLogin: () => void }) {
@@ -41,12 +43,14 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
 
   return (
     <main className="login-shell">
+      <div className="login-orb login-orb-a" aria-hidden />
+      <div className="login-orb login-orb-b" aria-hidden />
       <form className="login-panel" onSubmit={submit}>
         <div className="brand-lock">
-          <Shield size={28} />
+          <span className="brand-mark"><Gauge size={22} /></span>
           <div>
-            <h1>Homelab Dashboard</h1>
-            <span>Admin panel</span>
+            <h1>Homelab</h1>
+            <span>Service dashboard</span>
           </div>
         </div>
         <label>
@@ -120,11 +124,13 @@ function SetupScreen({
 
   return (
     <main className="login-shell">
+      <div className="login-orb login-orb-a" aria-hidden />
+      <div className="login-orb login-orb-b" aria-hidden />
       <div className="setup-panel">
         <div className="brand-lock">
-          <Gauge size={28} />
+          <span className="brand-mark"><Gauge size={22} /></span>
           <div>
-            <h1>Homelab Dashboard</h1>
+            <h1>Homelab</h1>
             <span>First-run setup</span>
           </div>
         </div>
@@ -200,6 +206,27 @@ function deriveAppData(dashboard: DashboardDto): AppData {
   };
 }
 
+function applyLocalOrder(current: AppData, orderedIds: string[]): AppData {
+  const orderIndex = new Map(orderedIds.map((id, index) => [id, index]));
+
+  function sortList(list: DashboardResource[]): DashboardResource[] {
+    if (!list.some((resource) => orderIndex.has(resource.id))) {
+      return list;
+    }
+    return [...list].sort(
+      (left, right) => (orderIndex.get(left.id) ?? 0) - (orderIndex.get(right.id) ?? 0)
+    );
+  }
+
+  const dashboard = {
+    ...current.dashboard,
+    groups: current.dashboard.groups.map((group) => ({ ...group, resources: sortList(group.resources) })),
+    ungroupedResources: sortList(current.dashboard.ungroupedResources)
+  };
+
+  return deriveAppData(dashboard);
+}
+
 export function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [setupStatus, setSetupStatus] = useState<{ firstRun: boolean; needsAccount: boolean } | null>(null);
@@ -214,6 +241,8 @@ export function App() {
   const [authSource, setAuthSource] = useState<"env" | "database">("database");
   const { theme, toggleTheme, sidebarMode, cycleSidebar } = useAppChrome();
   const [openAddServiceForm, setOpenAddServiceForm] = useState(false);
+  const [editServiceId, setEditServiceId] = useState<string | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   async function loadData() {
     setLoading(true);
@@ -293,30 +322,52 @@ export function App() {
       void loadData();
     }, 30000);
 
-    return () => clearInterval(timer);
+    function onFocus() {
+      void loadData();
+    }
+
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [authenticated]);
+
+  const offlineCount = useMemo(
+    () => data.resources.filter((resource) => statusFor(resource) === "offline").length,
+    [data.resources]
+  );
+
+  useEffect(() => {
+    document.title = offlineCount > 0 ? `(${offlineCount} down) Homelab` : "Homelab Dashboard";
+  }, [offlineCount]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+        return;
+      }
+
       const target = event.target as HTMLElement | null;
       const typing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.tagName === "SELECT";
+      if (typing || event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
 
-      if (!typing && event.key.toLowerCase() === "r") {
+      if (event.key === "/") {
+        event.preventDefault();
+        setPaletteOpen(true);
+      } else if (event.key.toLowerCase() === "r") {
         void loadData();
-      }
-
-      if (!typing && event.key.toLowerCase() === "n") {
-        setView("services");
-      }
-
-      if (event.key === "Escape") {
-        // no overlay panels in the simplified UI
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [view]);
+  }, []);
 
   async function logout() {
     await apiSend("/api/auth/logout", "POST");
@@ -327,31 +378,20 @@ export function App() {
     if (typeof body.favorite === "boolean") {
       setData((current) => {
         const isFavorite = body.favorite as boolean;
-        const resources = current.resources.map((resource) =>
-          resource.id === id ? { ...resource, favorite: isFavorite } : resource
-        );
-        const groups = current.groups.map((group) => ({
-          ...group,
-          resources: group.resources.map((resource) =>
-            resource.id === id ? { ...resource, favorite: isFavorite } : resource
-          )
-        }));
-
         const dashboard = {
           ...current.dashboard,
-          groups,
+          groups: current.dashboard.groups.map((group) => ({
+            ...group,
+            resources: group.resources.map((resource) =>
+              resource.id === id ? { ...resource, favorite: isFavorite } : resource
+            )
+          })),
           ungroupedResources: current.dashboard.ungroupedResources.map((resource) =>
             resource.id === id ? { ...resource, favorite: isFavorite } : resource
           )
         };
 
-        return {
-          ...current,
-          resources,
-          groups,
-          dashboard,
-          checks: current.checks
-        };
+        return deriveAppData(dashboard);
       });
     }
 
@@ -364,6 +404,12 @@ export function App() {
     await loadData();
   }
 
+  async function reorderResources(orderedIds: string[]) {
+    setData((current) => applyLocalOrder(current, orderedIds));
+    await apiSend("/api/resources/reorder", "POST", { ids: orderedIds });
+    await loadData();
+  }
+
   async function patchSystemSettings(next: SystemSettingsDto) {
     await apiSend("/api/settings", "PATCH", next);
     await loadSystemSettings();
@@ -372,6 +418,11 @@ export function App() {
   function openServicesForCreate() {
     setView("services");
     setOpenAddServiceForm(true);
+  }
+
+  function openServicesForEdit(resource: DashboardResource) {
+    setEditServiceId(resource.id);
+    setView("services");
   }
 
   async function runResourceHealthCheck(resource: DashboardResource) {
@@ -408,6 +459,24 @@ export function App() {
     await apiSend(`/api/health-checks/${checkId}/run`, "POST");
     await loadData();
   }
+
+  const paletteCommands: PaletteCommand[] = [
+    { id: "nav-dashboard", label: "Go to Dashboard", run: () => setView("dashboard") },
+    { id: "nav-services", label: "Go to Services", run: () => setView("services") },
+    { id: "nav-admin", label: "Go to Admin", run: () => setView("settings") },
+    { id: "add-service", label: "Add a service", run: openServicesForCreate },
+    { id: "refresh", label: "Refresh data", hint: "R", run: () => void loadData() },
+    {
+      id: "theme",
+      label: `Switch to ${theme === "dark" ? "light" : "dark"} mode`,
+      run: toggleTheme
+    },
+    {
+      id: "status-page",
+      label: "Open public status page",
+      run: () => window.open("/status", "_blank", "noopener,noreferrer")
+    }
+  ];
 
   if (authenticated === null || setupStatus === null) {
     return <div className="loading-screen">Loading</div>;
@@ -452,6 +521,10 @@ export function App() {
         }}
         sidebarMode={sidebarMode}
         onCycleSidebar={cycleSidebar}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onOpenPalette={() => setPaletteOpen(true)}
+        onLogout={() => void logout()}
       />
 
       <div className="content-shell">
@@ -462,11 +535,14 @@ export function App() {
           {view === "dashboard" ? (
             <DashboardConsole
               data={data}
+              username={username}
               onRefresh={loadData}
               onPatchResource={patchResource}
               onRunCheck={runResourceHealthCheck}
               onPatchGroup={patchGroup}
               onOpenServices={openServicesForCreate}
+              onEditService={openServicesForEdit}
+              onReorder={reorderResources}
             />
           ) : null}
 
@@ -477,6 +553,8 @@ export function App() {
               autoPingIntervalSeconds={systemSettings.autoPingIntervalSeconds}
               openAddServiceForm={openAddServiceForm}
               onOpenAddServiceFormHandled={() => setOpenAddServiceForm(false)}
+              editServiceId={editServiceId}
+              onEditServiceHandled={() => setEditServiceId(null)}
             />
           ) : null}
 
@@ -485,8 +563,6 @@ export function App() {
               username={username}
               authSource={authSource}
               onRefresh={loadData}
-              theme={theme}
-              onToggleTheme={toggleTheme}
               systemSettings={systemSettings}
               onSaveSettings={patchSystemSettings}
             />
@@ -494,9 +570,19 @@ export function App() {
         </div>
       </div>
 
-      <button className="sign-out-sticky" type="button" onClick={() => void logout()} title="Log out">
-        Log out
-      </button>
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        resources={data.resources}
+        commands={paletteCommands}
+        onLaunch={(resource) => {
+          if (resource.url) {
+            window.open(resource.url, "_blank", "noopener,noreferrer");
+          } else {
+            setView("dashboard");
+          }
+        }}
+      />
     </div>
   );
 }

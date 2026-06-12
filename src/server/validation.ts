@@ -50,6 +50,10 @@ export const settingsSchema = z.object({
   autoPingIntervalSeconds: z.number().int().min(15).max(86400)
 });
 
+export const reorderSchema = z.object({
+  ids: z.array(z.string().cuid()).min(1).max(500)
+});
+
 export const idParamSchema = z.object({
   id: z.string().cuid()
 });

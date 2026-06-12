@@ -19,6 +19,7 @@ import {
   healthCheckSchema,
   idParamSchema,
   loginSchema,
+  reorderSchema,
   resourcePatchSchema,
   resourceSchema,
   settingsSchema
@@ -336,6 +337,18 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   await registerStatusRoutes({ app, prisma, env });
 
+  const dashboardCheckInclude = {
+    healthChecks: {
+      include: {
+        results: {
+          orderBy: { checkedAt: "desc" },
+          take: 60,
+          select: { id: true, status: true, latencyMs: true, checkedAt: true }
+        }
+      }
+    }
+  } as const;
+
   app.get("/api/dashboard", async () => {
     const [groups, ungroupedResources] = await Promise.all([
       prisma.dashboardGroup.findMany({
@@ -343,18 +356,14 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
         include: {
           resources: {
             orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-            include: {
-              healthChecks: true
-            }
+            include: dashboardCheckInclude
           }
         }
       }),
       prisma.resource.findMany({
         where: { groupId: null },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-        include: {
-          healthChecks: true
-        }
+        include: dashboardCheckInclude
       })
     ]);
 
@@ -461,6 +470,23 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.delete("/api/resources/:id", async (request) => {
     const id = routeId(request);
     await prisma.resource.delete({ where: { id } });
+    return { ok: true };
+  });
+
+  app.post("/api/resources/reorder", async (request, reply) => {
+    const body = reorderSchema.parse(request.body);
+
+    try {
+      await prisma.$transaction(
+        body.ids.map((id, index) =>
+          prisma.resource.update({ where: { id }, data: { sortOrder: index } })
+        )
+      );
+    } catch {
+      reply.code(400);
+      return { error: "One or more resource ids are unknown" };
+    }
+
     return { ok: true };
   });
 
