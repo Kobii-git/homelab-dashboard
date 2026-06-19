@@ -413,6 +413,88 @@ describe("api routes", () => {
     });
   });
 
+  it("clears stale offline state when a health check target is edited", async () => {
+    const cookie = await loginCookie();
+
+    const resource = await app.inject({
+      method: "POST",
+      url: "/api/resources",
+      headers: { cookie },
+      payload: {
+        name: "Retargeted Web",
+        kind: "app",
+        url: "http://old-web.test"
+      }
+    });
+    expect(resource.statusCode).toBe(201);
+    const resourceId = resource.json<{ id: string }>().id;
+
+    const check = await prisma.healthCheck.findFirstOrThrow({
+      where: { resourceId, type: "http", target: "http://old-web.test" }
+    });
+
+    await prisma.healthCheck.update({
+      where: { id: check.id },
+      data: {
+        latestStatus: "offline",
+        latestLatencyMs: 3000,
+        latestCheckedAt: new Date(),
+        latestError: "fetch failed",
+        consecutiveFailures: 5,
+        consecutiveSuccesses: 0,
+        lastTransitionAt: new Date()
+      }
+    });
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: `/api/health-checks/${check.id}`,
+      headers: { cookie },
+      payload: { target: "http://new-web.test" }
+    });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json<{
+      target: string;
+      latestStatus: string;
+      latestLatencyMs: number | null;
+      latestCheckedAt: string | null;
+      latestError: string | null;
+      consecutiveFailures: number;
+      consecutiveSuccesses: number;
+      lastTransitionAt: string | null;
+    }>()).toMatchObject({
+      target: "http://new-web.test",
+      latestStatus: "unknown",
+      latestLatencyMs: null,
+      latestCheckedAt: null,
+      latestError: null,
+      consecutiveFailures: 0,
+      consecutiveSuccesses: 0,
+      lastTransitionAt: null
+    });
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok", { status: 200 }));
+    const run = await app.inject({
+      method: "POST",
+      url: `/api/health-checks/${check.id}/run`,
+      headers: { cookie }
+    });
+    expect(run.statusCode).toBe(200);
+    expect(run.json<{ status: string }>().status).toBe("online");
+
+    const dashboard = await app.inject({ method: "GET", url: "/api/dashboard", headers: { cookie } });
+    const entry = dashboard.json<{
+      ungroupedResources: Array<{
+        id: string;
+        healthChecks: Array<{ latestStatus: string; target: string }>;
+      }>;
+    }>().ungroupedResources.find((item) => item.id === resourceId);
+    expect(entry?.healthChecks).toContainEqual(expect.objectContaining({
+      target: "http://new-web.test",
+      latestStatus: "online"
+    }));
+  });
+
   it("runs a TCP health check and stores the latest result", async () => {
     const cookie = await loginCookie();
 

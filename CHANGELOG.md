@@ -6,6 +6,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.7.1] - 2026-06-20
+
+### Fixed
+- Editing a health check target, type, timeout, thresholds, or re-enabling a
+  paused check now clears stale offline state so the scheduler retries the
+  current endpoint instead of visually sticking red after an IP/service change.
+
 ## [0.7.0] - 2026-06-20
 
 ### Added

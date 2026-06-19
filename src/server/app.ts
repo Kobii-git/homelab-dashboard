@@ -44,6 +44,15 @@ const AUTO_PING_INTERVAL_KEY = "auto_ping_interval_seconds";
 const AUTO_PING_INTERVAL_DEFAULT = 60;
 const AUTO_PING_INTERVAL_MIN = 15;
 const AUTO_PING_INTERVAL_MAX = 86400;
+const resetHealthCheckState = {
+  latestStatus: "unknown",
+  latestLatencyMs: null,
+  latestCheckedAt: null,
+  latestError: null,
+  consecutiveFailures: 0,
+  consecutiveSuccesses: 0,
+  lastTransitionAt: null
+} as const;
 
 function resolveClientDist(): string | null {
   const candidates = [
@@ -138,6 +147,24 @@ function healthCheckMatchesTarget(check: Pick<HealthCheck, "type" | "target">, t
   return check.type === target.type && check.target === target.target;
 }
 
+function shouldResetHealthCheckAfterPatch(
+  previous: Pick<
+    HealthCheck,
+    "resourceId" | "type" | "target" | "timeoutMs" | "failureThreshold" | "successThreshold" | "enabled"
+  >,
+  patch: z.infer<typeof healthCheckPatchSchema>
+): boolean {
+  return (
+    (patch.resourceId !== undefined && patch.resourceId !== previous.resourceId) ||
+    (patch.type !== undefined && patch.type !== previous.type) ||
+    (patch.target !== undefined && patch.target !== previous.target) ||
+    (patch.timeoutMs !== undefined && patch.timeoutMs !== previous.timeoutMs) ||
+    (patch.failureThreshold !== undefined && patch.failureThreshold !== previous.failureThreshold) ||
+    (patch.successThreshold !== undefined && patch.successThreshold !== previous.successThreshold) ||
+    (patch.enabled === true && !previous.enabled)
+  );
+}
+
 function isAutoManagedCheckCandidate(
   check: Pick<HealthCheck, "type" | "timeoutMs" | "failureThreshold" | "successThreshold">
 ): boolean {
@@ -201,13 +228,7 @@ async function syncDefaultHealthCheckTarget(
       type: nextTarget.type,
       target: nextTarget.target,
       enabled: true,
-      latestStatus: "unknown",
-      latestLatencyMs: null,
-      latestCheckedAt: null,
-      latestError: null,
-      consecutiveFailures: 0,
-      consecutiveSuccesses: 0,
-      lastTransitionAt: null
+      ...resetHealthCheckState
     }
   });
 }
@@ -847,7 +868,25 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.patch("/api/health-checks/:id", async (request) => {
     const id = routeId(request);
     const body = healthCheckPatchSchema.parse(request.body);
-    return prisma.healthCheck.update({ where: { id }, data: body, include: { resource: true } });
+    const previousCheck = await prisma.healthCheck.findUniqueOrThrow({
+      where: { id },
+      select: {
+        resourceId: true,
+        type: true,
+        target: true,
+        timeoutMs: true,
+        failureThreshold: true,
+        successThreshold: true,
+        enabled: true
+      }
+    });
+    const resetState = shouldResetHealthCheckAfterPatch(previousCheck, body);
+
+    return prisma.healthCheck.update({
+      where: { id },
+      data: resetState ? { ...body, ...resetHealthCheckState } : body,
+      include: { resource: true }
+    });
   });
 
   app.delete("/api/health-checks/:id", async (request) => {
