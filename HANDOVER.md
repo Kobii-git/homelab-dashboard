@@ -4,7 +4,7 @@ This document captures the current state of the project so the next session can 
 
 - **Repo:** https://github.com/Kobii-git/homelab-dashboard
 - **Image:** `ghcr.io/kobii-git/homelab-dashboard`
-- **Current version:** `0.6.1`
+- **Current version:** `0.7.0`
 - **Port:** `4173`
 - **Current branch:** `main`
 
@@ -12,7 +12,7 @@ This document captures the current state of the project so the next session can 
 
 ## What It Is Now
 
-Homelab Dashboard is a private, single-admin, self-hosted service launcher and health dashboard. It is focused on manually managed hosted services: web apps, Docker-hosted services, websites, VMs, servers, and other devices.
+Homelab Dashboard is a private, single-admin, self-hosted service launcher, health dashboard, and lab-vitals console. It is focused on manually managed hosted services and optional Glances host monitors.
 
 The current product is deliberately not a remote-management platform. SSH, RDP, VNC, Guacamole, credential vaults, session history, incidents, alert delivery, backup/restore, tags, notes, and dashboard widgets were removed from the active scope.
 
@@ -35,6 +35,8 @@ The active Prisma models are:
 - `DashboardGroup`
 - `HealthCheck`
 - `HealthResult`
+- `HostMonitor`
+- `HostMetricSample`
 - `AdminAccount`
 - `SystemConfig`
 
@@ -77,13 +79,21 @@ ADMIN_PASSWORD: your-password
 COOKIE_SECRET: random-32-char-string
 ```
 
+Optional host metrics use trusted LAN/VPN Glances endpoints:
+
+```sh
+glances -w --disable-webui --bind 0.0.0.0
+```
+
 ---
 
 ## Feature State
 
 ### Dashboard
 
-- Compact metric strip for total services, launchable services, online, and offline.
+- Operations header with overall service and host status.
+- Lab Vitals cards show Glances CPU, RAM, disk, network, temperature, container counts, and recent trends.
+- Daily Briefing summarizes offline services, recent transitions, host pressure, stale checks, and unmonitored automatic services.
 - Service cards open saved URLs in a new tab.
 - Favorite stars update optimistically.
 - Status and latency chips run the service health check.
@@ -102,6 +112,7 @@ COOKIE_SECRET: random-32-char-string
 ### Admin
 
 - Password change for database-managed admin accounts.
+- Host monitor management for unauthenticated LAN/VPN Glances endpoints.
 - Theme toggle.
 - Public `/status` page link and build/version information.
 - Setup can be dismissed and demo data can be loaded.

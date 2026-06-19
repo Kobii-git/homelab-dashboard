@@ -6,6 +6,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.7.0] - 2026-06-20
+
+### Added
+- Glances-based host monitors with CPU, RAM, disk, network, temperature, and
+  container metrics.
+- Lab Vitals dashboard cards with recent resource history and pressure states.
+- Daily Briefing for offline services, recent status changes, host pressure,
+  stale checks, and unmonitored automatic services.
+- Admin host monitor management with test connection, pause/resume, and delete.
+
+### Changed
+- Dashboard first screen now uses an operations header and richer resource
+  palette while keeping the existing service launcher workflow.
+- Version and setup docs now describe the v0.7 metrics release.
+
 ## [0.6.1] - 2026-06-20
 
 ### Fixed

@@ -420,6 +420,10 @@ export function App() {
     setOpenAddServiceForm(true);
   }
 
+  function openSettings() {
+    setView("settings");
+  }
+
   function openServicesForEdit(resource: DashboardResource) {
     setEditServiceId(resource.id);
     setView("services");
@@ -465,6 +469,7 @@ export function App() {
     { id: "nav-services", label: "Go to Services", run: () => setView("services") },
     { id: "nav-admin", label: "Go to Admin", run: () => setView("settings") },
     { id: "add-service", label: "Add a service", run: openServicesForCreate },
+    { id: "add-host-monitor", label: "Add a host monitor", run: openSettings },
     { id: "refresh", label: "Refresh data", hint: "R", run: () => void loadData() },
     {
       id: "theme",
@@ -541,6 +546,7 @@ export function App() {
               onRunCheck={runResourceHealthCheck}
               onPatchGroup={patchGroup}
               onOpenServices={openServicesForCreate}
+              onOpenSettings={openSettings}
               onEditService={openServicesForEdit}
               onReorder={reorderResources}
             />

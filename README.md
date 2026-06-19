@@ -2,20 +2,21 @@
 
 A private, self-hosted dashboard for the services you run at home. It is a simple LAN/VPN app for launching hosted web services, grouping them, favoriting the important ones, and seeing basic health status without turning the project into a remote desktop manager.
 
-![Version](https://img.shields.io/badge/version-0.6.1-2dd4bf)
+![Version](https://img.shields.io/badge/version-0.7.0-2dd4bf)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
 
 ## Features
 
-- **Dashboard** - greeting + clock hero, favorites strip, drag-and-drop card layout, grid/list density toggle, status filters, and an attention strip for anything that is down
+- **Dashboard** - operations header, Lab Vitals host metrics, Daily Briefing, favorites strip, drag-and-drop card layout, grid/list density toggle, status filters, and an attention strip for anything that is down
 - **Heartbeat monitoring** - Uptime-Kuma-style heartbeat bars, uptime %, and latency on every card, plus a detail drawer with a latency sparkline and per-check errors
+- **Host metrics** - optional Glances endpoints for CPU, RAM, disk, network, temperature, container counts, and recent 24-hour trends
 - **Real service icons** - auto-resolved from the service name via the [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) CDN, with favicon and letter-avatar fallbacks
 - **Command palette** - `⌘K` (or `/`) to search and launch any service or action from anywhere
 - **Services** - manual catalog for apps, websites, Docker services, VMs, servers, and other devices
 - **Health checks** - HTTP, TCP, ping, and SSL checks with latest status, latency, failure reason, thresholds, and check history
-- **Admin** - password change, public status page, build info, and demo-data controls
+- **Admin** - password change, Glances host monitors, public status page, build info, and demo-data controls
 - **Status page** - unauthenticated `/status` wallboard with heartbeats and uptime per service
 
 Remote SSH/RDP/VNC access, Guacamole, saved credentials, vaults, alert channels, incidents, widgets, backup/restore, tags, and notes are intentionally out of the current app scope.
@@ -24,9 +25,9 @@ Remote SSH/RDP/VNC access, Guacamole, saved credentials, vaults, alert channels,
 
 ## Current Scope
 
-Version `0.6.1` is a focused service dashboard. The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles, network discovery, Docker discovery, Hyper-V discovery, or built-in HTTPS termination.
+Version `0.7.0` is a focused service and lab-vitals dashboard. The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles, network discovery, Docker discovery, Hyper-V discovery, or built-in HTTPS termination.
 
-The active database model is intentionally small: `Resource`, `DashboardGroup`, `HealthCheck`, `HealthResult`, `AdminAccount`, and `SystemConfig`.
+The active database model is intentionally small: `Resource`, `DashboardGroup`, `HealthCheck`, `HealthResult`, `HostMonitor`, `HostMetricSample`, `AdminAccount`, and `SystemConfig`.
 
 ---
 
@@ -65,6 +66,16 @@ COOKIE_SECRET: random-32-char-string # optional; persistent sessions across DB r
 | `PORT` | No | HTTP port; default `4173` |
 
 Keep this behind a LAN, VPN, or private mesh network. If exposing it beyond that, put a reverse proxy such as Caddy, nginx, or Traefik in front and enable HTTPS.
+
+### Optional Host Metrics
+
+Run Glances on a trusted host, then add the endpoint in **Admin > Host metrics**:
+
+```sh
+glances -w --disable-webui --bind 0.0.0.0
+```
+
+The dashboard expects unauthenticated LAN/VPN Glances endpoints in v1 and does not store Glances credentials.
 
 ---
 
@@ -132,7 +143,7 @@ docker compose -f docker-compose.build.yml up -d --build
 
 ## Versioning
 
-Current: **v0.6.1**
+Current: **v0.7.0**
 
 Verify the running build:
 

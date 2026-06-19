@@ -1,26 +1,35 @@
 import {
+  Activity,
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  Cpu,
   ExternalLink,
+  HardDrive,
   Info,
   LayoutGrid,
+  MemoryStick,
+  Network,
   Plus,
   RefreshCw,
   Rows3,
   Search,
   Server,
-  Star
+  Star,
+  Thermometer
 } from "lucide-react";
-import type { DragEvent, KeyboardEvent } from "react";
+import type { DragEvent, KeyboardEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import type { DashboardResource } from "../../../shared/types";
+import type { DashboardResource, HostMetricSampleDto, HostMonitorDto } from "../../../shared/types";
 import { EmptyPanel } from "../../components/Primitives";
 import { Heartbeat } from "../../components/Heartbeat";
 import { ServiceDrawer } from "../../components/ServiceDrawer";
 import { ServiceIcon } from "../../components/ServiceIcon";
 import {
   dashboardResources,
+  formatByteRate,
+  formatBytes,
+  formatPercent,
   formatUptime,
   greetingFor,
   latestCheckedAt,
@@ -63,6 +72,116 @@ function useClock(): Date {
 }
 
 type DragState = { id: string; container: string } | null;
+type MetricKey = "cpuPercent" | "memoryPercent" | "diskPercent";
+
+function metricLevel(value: number | null | undefined): "ok" | "warn" | "critical" | "unknown" {
+  if (value == null) return "unknown";
+  if (value >= 90) return "critical";
+  if (value >= 80) return "warn";
+  return "ok";
+}
+
+function sortSamples(samples: HostMetricSampleDto[] | undefined): HostMetricSampleDto[] {
+  return [...(samples ?? [])].sort((left, right) => left.sampledAt.localeCompare(right.sampledAt));
+}
+
+function MetricSparkline({ samples, metric }: { samples: HostMetricSampleDto[] | undefined; metric: MetricKey }) {
+  const values = sortSamples(samples)
+    .map((sample) => sample[metric])
+    .filter((value): value is number => typeof value === "number");
+
+  if (values.length < 2) {
+    return <div className="metric-sparkline metric-sparkline-empty" aria-hidden />;
+  }
+
+  const points = values.map((value, index) => {
+    const x = values.length === 1 ? 0 : (index / (values.length - 1)) * 100;
+    const y = 36 - (Math.max(0, Math.min(100, value)) / 100) * 32;
+    return `${x},${y}`;
+  }).join(" ");
+
+  return (
+    <svg className="metric-sparkline" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden>
+      <polyline points={points} />
+    </svg>
+  );
+}
+
+function MetricBar({
+  icon,
+  label,
+  value,
+  detail
+}: {
+  icon: ReactNode;
+  label: string;
+  value: number | null | undefined;
+  detail?: string;
+}) {
+  const percent = value == null ? 0 : Math.max(0, Math.min(100, value));
+  const level = metricLevel(value);
+
+  return (
+    <div className={`metric-row metric-${level}`}>
+      <span className="metric-row-label">{icon}<span>{label}</span></span>
+      <strong>{formatPercent(value)}</strong>
+      <div className="metric-bar" aria-hidden><i style={{ width: `${percent}%` }} /></div>
+      {detail ? <small>{detail}</small> : null}
+    </div>
+  );
+}
+
+function HostVitalsCard({ host }: { host: HostMonitorDto }) {
+  const samples = sortSamples(host.samples);
+  const latestSample = samples[samples.length - 1];
+  const status = host.latestStatus;
+  const updated = host.latestSampledAt ?? latestSample?.sampledAt ?? null;
+  const networkTotal = (host.latestNetworkRxBytesPerSec ?? 0) + (host.latestNetworkTxBytesPerSec ?? 0);
+
+  return (
+    <article className={`host-card host-${status}`}>
+      <header className="host-card-head">
+        <span className="host-icon"><Server size={18} /></span>
+        <span>
+          <strong>{host.name}</strong>
+          <small>{host.baseUrl}</small>
+        </span>
+        <i className={`svc-dot dot-${status}`} title={status} />
+      </header>
+
+      <div className="host-spark-grid">
+        <MetricSparkline samples={host.samples} metric="cpuPercent" />
+        <MetricSparkline samples={host.samples} metric="memoryPercent" />
+        <MetricSparkline samples={host.samples} metric="diskPercent" />
+      </div>
+
+      <div className="host-metrics">
+        <MetricBar icon={<Cpu size={13} />} label="CPU" value={host.latestCpuPercent} />
+        <MetricBar
+          icon={<MemoryStick size={13} />}
+          label="RAM"
+          value={host.latestMemoryPercent}
+          detail={`${formatBytes(host.latestMemoryUsedBytes)} / ${formatBytes(host.latestMemoryTotalBytes)}`}
+        />
+        <MetricBar
+          icon={<HardDrive size={13} />}
+          label={host.primaryMount}
+          value={host.latestDiskPercent}
+          detail={`${formatBytes(host.latestDiskUsedBytes)} / ${formatBytes(host.latestDiskTotalBytes)}`}
+        />
+      </div>
+
+      <footer className="host-card-foot">
+        <span title="Network throughput"><Network size={13} /> {formatByteRate(networkTotal || null)}</span>
+        {host.latestTemperatureC != null ? <span title="Temperature"><Thermometer size={13} /> {host.latestTemperatureC.toFixed(1)}°C</span> : null}
+        {host.latestContainersTotal != null ? <span title="Containers"><Activity size={13} /> {host.latestContainersRunning ?? 0}/{host.latestContainersTotal}</span> : null}
+        <span title="Last sampled">{relativeTime(updated)}</span>
+      </footer>
+
+      {status === "offline" && host.latestError ? <p className="host-error">{host.latestError}</p> : null}
+    </article>
+  );
+}
 
 function ServiceCard({
   resource,
@@ -186,6 +305,7 @@ export function DashboardConsole({
   onRunCheck,
   onPatchGroup,
   onOpenServices,
+  onOpenSettings,
   onEditService,
   onReorder
 }: {
@@ -196,6 +316,7 @@ export function DashboardConsole({
   onRunCheck: (resource: DashboardResource) => Promise<void>;
   onPatchGroup: (id: string, body: Record<string, unknown>) => Promise<void>;
   onOpenServices: () => void;
+  onOpenSettings: () => void;
   onEditService: (resource: DashboardResource) => void;
   onReorder: (orderedIds: string[]) => Promise<void>;
 }) {
@@ -216,10 +337,21 @@ export function DashboardConsole({
     () => dashboardResources(data.dashboard.groups, data.dashboard.ungroupedResources),
     [data.dashboard]
   );
+  const hostMonitors = data.dashboard.hostMonitors ?? [];
+  const briefing = data.dashboard.dailyBriefing;
   const totals = summarizeResourceStatus(resources);
   const favorites = resources.filter((resource) => resource.favorite);
   const offlineResources = resources.filter((resource) => statusFor(resource) === "offline");
   const inspected = inspectedId ? resources.find((resource) => resource.id === inspectedId) ?? null : null;
+  const offlineHosts = hostMonitors.filter((host) => host.latestStatus === "offline").length;
+  const pressureHosts = briefing.hostsUnderPressure.length;
+  const dailyIssueCount = offlineResources.length + offlineHosts + pressureHosts + briefing.staleChecks.length + briefing.unmonitoredServices.length;
+  const lastUpdatedAt = [
+    ...resources.map(latestCheckedAt),
+    ...hostMonitors.map((host) => host.latestSampledAt)
+  ]
+    .filter((value): value is string => Boolean(value))
+    .sort((left, right) => right.localeCompare(left))[0] ?? null;
 
   const filters: Array<{ id: StatusFilter; label: string; count: number }> = [
     { id: "all", label: "All", count: resources.length },
@@ -342,13 +474,16 @@ export function DashboardConsole({
 
   return (
     <main className="view-shell dashboard-view">
-      <header className="dash-hero">
+      <header className="dash-hero ops-hero">
         <div className="dash-hero-copy">
-          <h2>{greetingFor(now)}{username ? `, ${username}` : ""}</h2>
+          <span className="ops-eyebrow">{greetingFor(now)}{username ? `, ${username}` : ""}</span>
+          <h2>Lab operations</h2>
           <p>
             {dateLine}
             <span className="dash-hero-sep">·</span>
             {resources.length} service{resources.length === 1 ? "" : "s"}
+            <span className="dash-hero-sep">·</span>
+            {hostMonitors.length} host monitor{hostMonitors.length === 1 ? "" : "s"}
             <span className="dash-hero-pulse dot-online" /> {totals.online} online
             {totals.offline > 0 ? (
               <>
@@ -362,8 +497,100 @@ export function DashboardConsole({
             ) : null}
           </p>
         </div>
-        <div className="dash-clock" aria-hidden>{clock}</div>
+        <div className="ops-status-panel">
+          <div className="dash-clock" aria-hidden>{clock}</div>
+          <span className={`ops-state ${dailyIssueCount > 0 ? "ops-state-attention" : "ops-state-ok"}`}>
+            {dailyIssueCount > 0 ? `${dailyIssueCount} item${dailyIssueCount === 1 ? "" : "s"} need attention` : "All clear"}
+          </span>
+          <small>{lastUpdatedAt ? `Updated ${relativeTime(lastUpdatedAt)}` : "No samples yet"}</small>
+        </div>
       </header>
+
+      <section className="lab-vitals">
+        <div className="section-heading compact-section-heading">
+          <h3>Lab Vitals</h3>
+          <button className="icon-text-button" type="button" onClick={onOpenSettings}>
+            <Plus size={14} /> Host monitor
+          </button>
+        </div>
+        {hostMonitors.length > 0 ? (
+          <div className="host-grid">
+            {hostMonitors.map((host) => <HostVitalsCard key={host.id} host={host} />)}
+          </div>
+        ) : (
+          <div className="metrics-empty-panel">
+            <Server size={26} />
+            <span>
+              <strong>No host metrics yet</strong>
+              <small>Add a Glances endpoint to show CPU, RAM, disk, network, containers, and 24h trends.</small>
+            </span>
+            <button className="primary-button" type="button" onClick={onOpenSettings}>
+              <Plus size={15} /> Add Glances host
+            </button>
+          </div>
+        )}
+      </section>
+
+      <section className="daily-briefing">
+        <div className="section-heading compact-section-heading">
+          <h3>Daily Briefing</h3>
+          <span className="group-meta">last 24h</span>
+        </div>
+        <div className="briefing-grid">
+          <article className={`briefing-card ${briefing.offlineServices.length > 0 ? "briefing-danger" : ""}`}>
+            <strong><AlertTriangle size={15} /> Offline services</strong>
+            {briefing.offlineServices.length > 0 ? (
+              briefing.offlineServices.map((item) => (
+                <button key={item.id} type="button" onClick={() => setInspectedId(item.id)}>
+                  <span>{item.name}</span>
+                  <small>{item.error ?? "offline"}</small>
+                </button>
+              ))
+            ) : <p>No services are down.</p>}
+          </article>
+
+          <article className={briefing.hostsUnderPressure.length > 0 ? "briefing-card briefing-warning" : "briefing-card"}>
+            <strong><Cpu size={15} /> Host pressure</strong>
+            {briefing.hostsUnderPressure.length > 0 ? (
+              briefing.hostsUnderPressure.map((item) => (
+                <span key={`${item.id}-${item.metric}`}>
+                  <i>{item.name}</i>
+                  <small>{item.metric} {formatPercent(item.value)}</small>
+                </span>
+              ))
+            ) : <p>CPU, RAM, and disk pressure look normal.</p>}
+          </article>
+
+          <article className="briefing-card">
+            <strong><Activity size={15} /> Recent changes</strong>
+            {briefing.recentChanges.length > 0 ? (
+              briefing.recentChanges.map((item) => (
+                <button key={`${item.resourceId}-${item.changedAt}`} type="button" onClick={() => setInspectedId(item.resourceId)}>
+                  <span>{item.name}</span>
+                  <small>{item.status} · {relativeTime(item.changedAt)}</small>
+                </button>
+              ))
+            ) : <p>No status transitions in the last day.</p>}
+          </article>
+
+          <article className={briefing.staleChecks.length + briefing.unmonitoredServices.length > 0 ? "briefing-card briefing-warning" : "briefing-card"}>
+            <strong><RefreshCw size={15} /> Monitoring gaps</strong>
+            {briefing.staleChecks.slice(0, 4).map((item) => (
+              <button key={item.checkId} type="button" onClick={() => setInspectedId(item.resourceId)}>
+                <span>{item.resourceName}</span>
+                <small>stale · {item.lastCheckedAt ? relativeTime(item.lastCheckedAt) : "never"}</small>
+              </button>
+            ))}
+            {briefing.unmonitoredServices.slice(0, 4).map((item) => (
+              <button key={item.id} type="button" onClick={() => setInspectedId(item.id)}>
+                <span>{item.name}</span>
+                <small>no active checks</small>
+              </button>
+            ))}
+            {briefing.staleChecks.length === 0 && briefing.unmonitoredServices.length === 0 ? <p>All automatic services have fresh checks.</p> : null}
+          </article>
+        </div>
+      </section>
 
       <div className="dash-toolbar">
         <label className="search-box service-search">

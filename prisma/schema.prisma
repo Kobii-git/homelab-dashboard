@@ -42,8 +42,6 @@ model Resource {
   @@index([favorite])
 }
 
-
-
 model HealthCheck {
   id              String         @id @default(cuid())
   resourceId      String
@@ -81,6 +79,61 @@ model HealthResult {
 
   @@index([checkId])
   @@index([checkedAt])
+}
+
+model HostMonitor {
+  id                       String             @id @default(cuid())
+  name                     String
+  baseUrl                  String
+  enabled                  Boolean            @default(true)
+  sortOrder                Int                @default(0)
+  primaryMount             String             @default("/")
+  networkInterface         String?
+  latestStatus             String             @default("unknown")
+  latestError              String?
+  latestSampledAt          DateTime?
+  latestCpuPercent         Float?
+  latestMemoryPercent      Float?
+  latestMemoryUsedBytes    Float?
+  latestMemoryTotalBytes   Float?
+  latestDiskPercent        Float?
+  latestDiskUsedBytes      Float?
+  latestDiskTotalBytes     Float?
+  latestNetworkRxBytesPerSec Float?
+  latestNetworkTxBytesPerSec Float?
+  latestTemperatureC       Float?
+  latestContainersRunning  Int?
+  latestContainersTotal    Int?
+  samples                  HostMetricSample[]
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+
+  @@index([enabled])
+  @@index([sortOrder])
+}
+
+model HostMetricSample {
+  id                 String      @id @default(cuid())
+  monitorId          String
+  monitor            HostMonitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  status             String
+  error              String?
+  cpuPercent         Float?
+  memoryPercent      Float?
+  memoryUsedBytes    Float?
+  memoryTotalBytes   Float?
+  diskPercent        Float?
+  diskUsedBytes      Float?
+  diskTotalBytes     Float?
+  networkRxBytesPerSec Float?
+  networkTxBytesPerSec Float?
+  temperatureC       Float?
+  containersRunning  Int?
+  containersTotal    Int?
+  sampledAt          DateTime    @default(now())
+
+  @@index([monitorId])
+  @@index([sampledAt])
 }
 
 model AdminAccount {

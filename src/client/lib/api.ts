@@ -1,4 +1,11 @@
-import type { DashboardGroupDto, DashboardResource, HealthTick } from "../../shared/types";
+import type {
+  DailyBriefingDto,
+  DashboardGroupDto,
+  DashboardResource,
+  HealthTick,
+  HostMetricSampleDto,
+  HostMonitorDto
+} from "../../shared/types";
 
 export type HealthCheckDto = {
   id: string;
@@ -24,6 +31,8 @@ export type HealthCheckDto = {
 export type DashboardDto = {
   groups: DashboardGroupDto[];
   ungroupedResources: DashboardResource[];
+  hostMonitors: HostMonitorDto[];
+  dailyBriefing: DailyBriefingDto;
   layout: Record<string, unknown>;
 };
 
@@ -31,7 +40,7 @@ export type SystemSettingsDto = {
   autoPingIntervalSeconds: number;
 };
 
-export type { DashboardGroupDto, DashboardResource };
+export type { DashboardGroupDto, DashboardResource, DailyBriefingDto, HostMetricSampleDto, HostMonitorDto };
 
 
 type ApiErrorBody = {

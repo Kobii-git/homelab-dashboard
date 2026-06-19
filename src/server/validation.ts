@@ -46,6 +46,31 @@ export const healthCheckSchema = z.object({
 
 export const healthCheckPatchSchema = healthCheckSchema.partial();
 
+const glancesBaseUrl = z
+  .string()
+  .trim()
+  .min(1)
+  .max(500)
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === "http:" || url.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }, "Must be an HTTP or HTTPS URL");
+
+export const hostMonitorSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  baseUrl: glancesBaseUrl,
+  enabled: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).optional(),
+  primaryMount: z.string().trim().min(1).max(160).optional(),
+  networkInterface: z.string().trim().min(1).max(120).optional().nullable()
+});
+
+export const hostMonitorPatchSchema = hostMonitorSchema.partial();
+
 export const settingsSchema = z.object({
   autoPingIntervalSeconds: z.number().int().min(15).max(86400)
 });

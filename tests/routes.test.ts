@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/server/app";
 import { runHealthCheck } from "../src/server/healthChecks";
 
@@ -14,8 +14,13 @@ const env = {
 };
 
 const app = await createApp({ prisma, env, monitor: false, logger: false });
+let cachedCookie: string | null = null;
 
 async function loginCookie(): Promise<string> {
+  if (cachedCookie) {
+    return cachedCookie;
+  }
+
   const login = await app.inject({
     method: "POST",
     url: "/api/auth/login",
@@ -23,12 +28,46 @@ async function loginCookie(): Promise<string> {
   });
 
   expect(login.statusCode).toBe(200);
-  return login.cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+  cachedCookie = login.cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+  return cachedCookie;
+}
+
+function mockGlancesFetch(options: { optionalFailure?: boolean; offline?: boolean } = {}) {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = String(input);
+    if (options.offline && url.includes("/quicklook")) {
+      return new Response("offline", { status: 503 });
+    }
+    if (options.optionalFailure && (url.includes("/fs") || url.includes("/network") || url.includes("/containers"))) {
+      return new Response("optional failure", { status: 500 });
+    }
+
+    const body = url.includes("/quicklook")
+      ? { cpu: 42.4, mem: 55.2, temperature: 47.8 }
+      : url.includes("/mem")
+        ? { percent: 55.2, used: 5_520_000_000, total: 10_000_000_000 }
+        : url.includes("/fs")
+          ? [{ mnt_point: "/", percent: 70.1, used: 700_000_000_000, size: 1_000_000_000_000 }]
+          : url.includes("/network")
+            ? [{ interface_name: "eth0", rx: 1024, tx: 2048 }]
+            : url.includes("/containers")
+              ? [{ status: "running" }, { status: "exited" }]
+              : {};
+
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  });
 }
 
 describe("api routes", () => {
   beforeAll(async () => {
     await app.ready();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   afterAll(async () => {
@@ -38,6 +77,8 @@ describe("api routes", () => {
   it("requires authentication for protected routes", async () => {
     const response = await app.inject({ method: "GET", url: "/api/resources" });
     expect(response.statusCode).toBe(401);
+    const metrics = await app.inject({ method: "GET", url: "/api/metrics/hosts" });
+    expect(metrics.statusCode).toBe(401);
   });
 
   it("allows env-managed admins to dismiss first-run setup after login", async () => {
@@ -98,6 +139,129 @@ describe("api routes", () => {
     });
     expect(dashboard.statusCode).toBe(200);
     expect(dashboard.body).toContain("Router");
+  });
+
+  it("creates Glances host monitors and includes metrics in the dashboard", async () => {
+    const cookie = await loginCookie();
+    mockGlancesFetch();
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/metrics/hosts",
+      headers: { cookie },
+      payload: {
+        name: "Docker Host",
+        baseUrl: "http://glances.local:61208/",
+        primaryMount: "/",
+        networkInterface: "eth0"
+      }
+    });
+    expect(created.statusCode).toBe(201);
+    const hostId = created.json<{ id: string; baseUrl: string }>().id;
+    expect(created.json<{ baseUrl: string }>().baseUrl).toBe("http://glances.local:61208");
+
+    const run = await app.inject({
+      method: "POST",
+      url: `/api/metrics/hosts/${hostId}/run`,
+      headers: { cookie }
+    });
+    expect(run.statusCode).toBe(200);
+    expect(run.json<{ status: string; cpuPercent: number }>().status).toBe("online");
+    expect(run.json<{ cpuPercent: number }>().cpuPercent).toBe(42.4);
+
+    const dashboard = await app.inject({ method: "GET", url: "/api/dashboard", headers: { cookie } });
+    expect(dashboard.statusCode).toBe(200);
+    const body = dashboard.json<{
+      hostMonitors: Array<{ id: string; latestStatus: string; latestMemoryPercent: number; samples: unknown[] }>;
+      dailyBriefing: { offlineServices: unknown[]; hostsUnderPressure: unknown[] };
+    }>();
+    const monitor = body.hostMonitors.find((host) => host.id === hostId);
+    expect(monitor).toMatchObject({
+      latestStatus: "online",
+      latestMemoryPercent: 55.2
+    });
+    expect(monitor!.samples.length).toBeGreaterThan(0);
+    expect(body.dailyBriefing.offlineServices).toBeDefined();
+    expect(body.dailyBriefing.hostsUnderPressure).toBeDefined();
+  });
+
+  it("keeps Glances host samples online when optional endpoints fail", async () => {
+    const cookie = await loginCookie();
+    mockGlancesFetch({ optionalFailure: true });
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/metrics/hosts",
+      headers: { cookie },
+      payload: {
+        name: "Partial Host",
+        baseUrl: "http://partial-glances.local:61208"
+      }
+    });
+    const hostId = created.json<{ id: string }>().id;
+    const run = await app.inject({ method: "POST", url: `/api/metrics/hosts/${hostId}/run`, headers: { cookie } });
+
+    expect(run.statusCode).toBe(200);
+    expect(run.json<{ status: string }>().status).toBe("online");
+    const monitor = await prisma.hostMonitor.findUniqueOrThrow({ where: { id: hostId } });
+    expect(monitor.latestStatus).toBe("online");
+    expect(monitor.latestDiskPercent).toBeNull();
+  });
+
+  it("marks Glances host samples offline when core metrics fail", async () => {
+    const cookie = await loginCookie();
+    mockGlancesFetch({ offline: true });
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/metrics/hosts",
+      headers: { cookie },
+      payload: {
+        name: "Offline Host",
+        baseUrl: "http://offline-glances.local:61208"
+      }
+    });
+    const hostId = created.json<{ id: string }>().id;
+    const run = await app.inject({ method: "POST", url: `/api/metrics/hosts/${hostId}/run`, headers: { cookie } });
+
+    expect(run.statusCode).toBe(200);
+    expect(run.json<{ status: string }>().status).toBe("offline");
+    const sample = await prisma.hostMetricSample.findFirstOrThrow({
+      where: { monitorId: hostId },
+      orderBy: { sampledAt: "desc" }
+    });
+    expect(sample.status).toBe("offline");
+    expect(sample.error).toContain("HTTP 503");
+  });
+
+  it("prunes Glances host metric history to the retention limit", async () => {
+    const cookie = await loginCookie();
+    mockGlancesFetch();
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/metrics/hosts",
+      headers: { cookie },
+      payload: {
+        name: "Retention Host",
+        baseUrl: "http://retention-glances.local:61208"
+      }
+    });
+    const hostId = created.json<{ id: string }>().id;
+
+    await prisma.hostMetricSample.createMany({
+      data: Array.from({ length: 1441 }, (_, index) => ({
+        monitorId: hostId,
+        status: "online",
+        cpuPercent: index % 100,
+        sampledAt: new Date(Date.now() - (1441 - index) * 1000)
+      }))
+    });
+
+    await app.inject({ method: "POST", url: `/api/metrics/hosts/${hostId}/run`, headers: { cookie } });
+
+    const count = await prisma.hostMetricSample.count({ where: { monitorId: hostId } });
+    expect(count).toBe(1440);
   });
 
   it("syncs the default health check when a service address changes", async () => {

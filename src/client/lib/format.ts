@@ -102,6 +102,34 @@ export function formatUptime(value: number | null): string {
   return Number.isInteger(value) ? `${value}%` : `${value.toFixed(1)}%`;
 }
 
+export function formatPercent(value: number | null | undefined): string {
+  if (value == null) {
+    return "—";
+  }
+  return Number.isInteger(value) ? `${value}%` : `${value.toFixed(1)}%`;
+}
+
+export function formatBytes(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) {
+    return "—";
+  }
+
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = Math.max(0, value);
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+
+  return `${size >= 10 || unit === 0 ? Math.round(size) : size.toFixed(1)} ${units[unit]}`;
+}
+
+export function formatByteRate(value: number | null | undefined): string {
+  const formatted = formatBytes(value);
+  return formatted === "—" ? formatted : `${formatted}/s`;
+}
+
 export function latestLatency(resource: DashboardResource): number | null {
   const latencies = activeHealthChecks(resource)
     .map((check) => check.latestLatencyMs)

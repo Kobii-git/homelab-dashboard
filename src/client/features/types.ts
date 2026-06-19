@@ -11,7 +11,19 @@ export type AppData = {
 };
 
 export const emptyAppData: AppData = {
-  dashboard: { groups: [], ungroupedResources: [], layout: {} },
+  dashboard: {
+    groups: [],
+    ungroupedResources: [],
+    hostMonitors: [],
+    dailyBriefing: {
+      offlineServices: [],
+      recentChanges: [],
+      hostsUnderPressure: [],
+      staleChecks: [],
+      unmonitoredServices: []
+    },
+    layout: {}
+  },
   resources: [],
   groups: [],
   checks: []
