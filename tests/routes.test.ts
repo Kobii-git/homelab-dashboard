@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/server/app";
+import { runHealthCheck } from "../src/server/healthChecks";
 
 const prisma = new PrismaClient();
 const env = {
@@ -99,6 +100,155 @@ describe("api routes", () => {
     expect(dashboard.body).toContain("Router");
   });
 
+  it("syncs the default health check when a service address changes", async () => {
+    const cookie = await loginCookie();
+
+    const resource = await app.inject({
+      method: "POST",
+      url: "/api/resources",
+      headers: { cookie },
+      payload: {
+        name: "Moving Host",
+        kind: "server",
+        host: "192.0.2.10"
+      }
+    });
+    expect(resource.statusCode).toBe(201);
+    const resourceId = resource.json<{ id: string }>().id;
+
+    const defaultCheck = await prisma.healthCheck.findFirstOrThrow({
+      where: { resourceId, type: "ping", target: "192.0.2.10" }
+    });
+
+    const custom = await app.inject({
+      method: "POST",
+      url: "/api/health-checks",
+      headers: { cookie },
+      payload: {
+        resourceId,
+        type: "tcp",
+        target: "192.0.2.10:443",
+        timeoutMs: 250,
+        intervalSeconds: 15
+      }
+    });
+    expect(custom.statusCode).toBe(201);
+    const customCheckId = custom.json<{ id: string }>().id;
+
+    await prisma.healthCheck.update({
+      where: { id: defaultCheck.id },
+      data: {
+        latestStatus: "offline",
+        latestLatencyMs: 3000,
+        latestCheckedAt: new Date(),
+        latestError: "Timeout",
+        consecutiveFailures: 4,
+        lastTransitionAt: new Date()
+      }
+    });
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: `/api/resources/${resourceId}`,
+      headers: { cookie },
+      payload: { host: "192.0.2.11" }
+    });
+    expect(patched.statusCode).toBe(200);
+
+    const body = patched.json<{
+      healthChecks: Array<{
+        id: string;
+        type: string;
+        target: string;
+        enabled: boolean;
+        latestStatus: string;
+        latestLatencyMs: number | null;
+        latestCheckedAt: string | null;
+        latestError: string | null;
+        consecutiveFailures: number;
+      }>;
+    }>();
+
+    expect(body.healthChecks.find((check) => check.id === defaultCheck.id)).toMatchObject({
+      type: "ping",
+      target: "192.0.2.11",
+      enabled: true,
+      latestStatus: "unknown",
+      latestLatencyMs: null,
+      latestCheckedAt: null,
+      latestError: null,
+      consecutiveFailures: 0
+    });
+    expect(body.healthChecks.find((check) => check.id === customCheckId)).toMatchObject({
+      type: "tcp",
+      target: "192.0.2.10:443"
+    });
+  });
+
+  it("repairs an already stale auto-created health check target", async () => {
+    const cookie = await loginCookie();
+
+    const resource = await app.inject({
+      method: "POST",
+      url: "/api/resources",
+      headers: { cookie },
+      payload: {
+        name: "Previously Moved Host",
+        kind: "server",
+        host: "192.0.2.20"
+      }
+    });
+    expect(resource.statusCode).toBe(201);
+    const resourceId = resource.json<{ id: string }>().id;
+
+    const defaultCheck = await prisma.healthCheck.findFirstOrThrow({
+      where: { resourceId, type: "ping", target: "192.0.2.20" }
+    });
+
+    await prisma.resource.update({
+      where: { id: resourceId },
+      data: { host: "192.0.2.21" }
+    });
+    await prisma.healthCheck.update({
+      where: { id: defaultCheck.id },
+      data: {
+        latestStatus: "offline",
+        latestLatencyMs: 3000,
+        latestCheckedAt: new Date(),
+        latestError: "Timeout",
+        consecutiveFailures: 4,
+        lastTransitionAt: new Date()
+      }
+    });
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: `/api/resources/${resourceId}`,
+      headers: { cookie },
+      payload: { favorite: true }
+    });
+    expect(patched.statusCode).toBe(200);
+
+    const body = patched.json<{
+      healthChecks: Array<{
+        id: string;
+        target: string;
+        latestStatus: string;
+        latestCheckedAt: string | null;
+        latestError: string | null;
+        consecutiveFailures: number;
+      }>;
+    }>();
+
+    expect(body.healthChecks.find((check) => check.id === defaultCheck.id)).toMatchObject({
+      target: "192.0.2.21",
+      latestStatus: "unknown",
+      latestCheckedAt: null,
+      latestError: null,
+      consecutiveFailures: 0
+    });
+  });
+
   it("runs a TCP health check and stores the latest result", async () => {
     const cookie = await loginCookie();
 
@@ -135,6 +285,52 @@ describe("api routes", () => {
 
     expect(run.statusCode).toBe(200);
     expect(run.json<{ status: string }>().status).toBe("offline");
+  });
+
+  it("ignores stale health check outcomes after the target changes", async () => {
+    const cookie = await loginCookie();
+
+    const resource = await app.inject({
+      method: "POST",
+      url: "/api/resources",
+      headers: { cookie },
+      payload: {
+        name: "Race Check Host",
+        kind: "other"
+      }
+    });
+    expect(resource.statusCode).toBe(201);
+    const resourceId = resource.json<{ id: string }>().id;
+
+    const check = await app.inject({
+      method: "POST",
+      url: "/api/health-checks",
+      headers: { cookie },
+      payload: {
+        resourceId,
+        type: "tcp",
+        target: "127.0.0.1:1",
+        timeoutMs: 250,
+        intervalSeconds: 15
+      }
+    });
+    expect(check.statusCode).toBe(201);
+    const checkId = check.json<{ id: string }>().id;
+    const staleCheck = await prisma.healthCheck.findUniqueOrThrow({ where: { id: checkId } });
+
+    await prisma.healthCheck.update({
+      where: { id: checkId },
+      data: { target: "127.0.0.1:2", latestStatus: "unknown" }
+    });
+
+    await runHealthCheck(prisma, staleCheck);
+
+    const currentCheck = await prisma.healthCheck.findUniqueOrThrow({
+      where: { id: checkId },
+      include: { results: true }
+    });
+    expect(currentCheck.latestStatus).toBe("unknown");
+    expect(currentCheck.results).toHaveLength(0);
   });
 
   it("reorders resources and persists sort order", async () => {

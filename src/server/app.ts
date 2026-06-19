@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import staticFiles from "@fastify/static";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type HealthCheck } from "@prisma/client";
 import Fastify, { type FastifyInstance } from "fastify";
 import { z, ZodError } from "zod";
 import { isAuthenticated, createAuthToken, SESSION_COOKIE, verifyAdminPassword, verifyAdminLogin, hashPassword } from "./auth.js";
@@ -78,15 +78,36 @@ function routeId(request: { params: unknown }): string {
   return idParamSchema.parse(request.params).id;
 }
 
-function normalizedAutoPingTarget(resource: {
+type AutoPingTarget = { type: "http" | "ping"; target: string };
+
+type ResourceAddress = {
   url: string | null;
   host: string | null;
-  monitoringMode?: string | null;
-}): { type: "http" | "ping"; target: string } | null {
-  if (resource.monitoringMode === "manual" || resource.monitoringMode === "disabled") {
-    return null;
-  }
+};
 
+type ResourceWithHealthChecks = ResourceAddress & {
+  id: string;
+  monitoringMode?: string | null;
+  healthChecks: Pick<
+    HealthCheck,
+    | "id"
+    | "type"
+    | "target"
+    | "timeoutMs"
+    | "enabled"
+    | "latestStatus"
+    | "latestLatencyMs"
+    | "latestCheckedAt"
+    | "latestError"
+    | "consecutiveFailures"
+    | "consecutiveSuccesses"
+    | "failureThreshold"
+    | "successThreshold"
+    | "lastTransitionAt"
+  >[];
+};
+
+function normalizedResourceTarget(resource: ResourceAddress): AutoPingTarget | null {
   const url = resource.url?.trim();
   if (url) {
     const hasScheme = /^https?:\/\//i.test(url);
@@ -99,6 +120,101 @@ function normalizedAutoPingTarget(resource: {
   }
 
   return null;
+}
+
+function normalizedAutoPingTarget(resource: ResourceAddress & { monitoringMode?: string | null }): AutoPingTarget | null {
+  if (resource.monitoringMode === "manual" || resource.monitoringMode === "disabled") {
+    return null;
+  }
+
+  return normalizedResourceTarget(resource);
+}
+
+function healthCheckMatchesTarget(check: Pick<HealthCheck, "type" | "target">, target: AutoPingTarget): boolean {
+  return check.type === target.type && check.target === target.target;
+}
+
+function isAutoManagedCheckCandidate(
+  check: Pick<HealthCheck, "type" | "timeoutMs" | "failureThreshold" | "successThreshold">
+): boolean {
+  return (
+    (check.type === "http" || check.type === "ping") &&
+    check.timeoutMs === 3000 &&
+    check.failureThreshold === 1 &&
+    check.successThreshold === 1
+  );
+}
+
+async function syncDefaultHealthCheckTarget(
+  prisma: PrismaClient,
+  previousResource: ResourceAddress,
+  resource: ResourceWithHealthChecks
+): Promise<void> {
+  const nextTarget = normalizedAutoPingTarget(resource);
+
+  if (!nextTarget) {
+    return;
+  }
+
+  const previousTarget = normalizedResourceTarget(previousResource);
+  const matchingDefaultCheck = previousTarget
+    ? resource.healthChecks.find((check) => healthCheckMatchesTarget(check, previousTarget))
+    : undefined;
+  const autoManagedCandidates = resource.healthChecks.filter(isAutoManagedCheckCandidate);
+  const defaultCheck = matchingDefaultCheck ?? (
+    autoManagedCandidates.length === 1 ? autoManagedCandidates[0] : undefined
+  );
+
+  if (!defaultCheck) {
+    if (resource.healthChecks.length === 0) {
+      const intervalSeconds = await getAutoPingIntervalSeconds(prisma);
+      await prisma.healthCheck.create({
+        data: {
+          resourceId: resource.id,
+          type: nextTarget.type,
+          target: nextTarget.target,
+          intervalSeconds,
+          timeoutMs: 3000,
+          failureThreshold: 1,
+          successThreshold: 1,
+          enabled: true
+        }
+      });
+    }
+    return;
+  }
+
+  const targetChanged = !healthCheckMatchesTarget(defaultCheck, nextTarget);
+  const wasPaused = !defaultCheck.enabled;
+
+  if (!targetChanged && !wasPaused) {
+    return;
+  }
+
+  await prisma.healthCheck.update({
+    where: { id: defaultCheck.id },
+    data: {
+      type: nextTarget.type,
+      target: nextTarget.target,
+      enabled: true,
+      latestStatus: "unknown",
+      latestLatencyMs: null,
+      latestCheckedAt: null,
+      latestError: null,
+      consecutiveFailures: 0,
+      consecutiveSuccesses: 0,
+      lastTransitionAt: null
+    }
+  });
+}
+
+async function syncAutoHealthCheckTargets(prisma: PrismaClient): Promise<void> {
+  const resources = await prisma.resource.findMany({
+    where: { monitoringMode: "auto" },
+    include: { healthChecks: true }
+  });
+
+  await Promise.all(resources.map((resource) => syncDefaultHealthCheckTarget(prisma, resource, resource)));
 }
 
 function clampAutoPingInterval(value: number | null): number {
@@ -452,6 +568,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       data.manualStatus = null;
     }
 
+    const previousResource = await prisma.resource.findUniqueOrThrow({ where: { id }, include: { healthChecks: true } });
     const resource = await prisma.resource.update({ where: { id }, data, include: { healthChecks: true, group: true } });
 
     if (resource.monitoringMode === "disabled") {
@@ -461,10 +578,11 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
     if (body.monitoringMode === "auto") {
       await prisma.healthCheck.updateMany({ where: { resourceId: id }, data: { enabled: true } });
-      return prisma.resource.findUniqueOrThrow({ where: { id }, include: { healthChecks: true, group: true } });
     }
 
-    return resource;
+    await syncDefaultHealthCheckTarget(prisma, previousResource, resource);
+
+    return prisma.resource.findUniqueOrThrow({ where: { id }, include: { healthChecks: true, group: true } });
   });
 
   app.delete("/api/resources/:id", async (request) => {
@@ -542,6 +660,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const shouldMonitor = options.monitor ?? env.nodeEnv !== "test";
 
   if (shouldMonitor) {
+    await syncAutoHealthCheckTargets(prisma);
     stopScheduler = startHealthScheduler(prisma);
   }
 

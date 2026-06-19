@@ -128,6 +128,32 @@ async function applyHealthOutcome(
   outcome: CheckOutcome
 ): Promise<void> {
   await prisma.$transaction(async (tx) => {
+    const currentCheck = await tx.healthCheck.findUnique({
+      where: { id: check.id },
+      select: {
+        type: true,
+        target: true,
+        enabled: true,
+        latestStatus: true,
+        consecutiveFailures: true,
+        consecutiveSuccesses: true,
+        lastTransitionAt: true,
+        resource: {
+          select: { monitoringMode: true }
+        }
+      }
+    });
+
+    if (
+      !currentCheck ||
+      !currentCheck.enabled ||
+      currentCheck.resource.monitoringMode !== "auto" ||
+      currentCheck.type !== check.type ||
+      currentCheck.target !== check.target
+    ) {
+      return;
+    }
+
     await tx.healthResult.create({
       data: {
         checkId: check.id,
@@ -137,9 +163,9 @@ async function applyHealthOutcome(
       }
     });
 
-    const nextFailures = outcome.status === "offline" ? check.consecutiveFailures + 1 : 0;
-    const nextSuccesses = outcome.status === "online" ? check.consecutiveSuccesses + 1 : 0;
-    const transitioned = check.latestStatus !== outcome.status;
+    const nextFailures = outcome.status === "offline" ? currentCheck.consecutiveFailures + 1 : 0;
+    const nextSuccesses = outcome.status === "online" ? currentCheck.consecutiveSuccesses + 1 : 0;
+    const transitioned = currentCheck.latestStatus !== outcome.status;
 
     await tx.healthCheck.update({
       where: { id: check.id },
@@ -150,7 +176,7 @@ async function applyHealthOutcome(
         latestError: outcome.error ?? null,
         consecutiveFailures: nextFailures,
         consecutiveSuccesses: nextSuccesses,
-        lastTransitionAt: transitioned ? new Date() : check.lastTransitionAt
+        lastTransitionAt: transitioned ? new Date() : currentCheck.lastTransitionAt
       }
     });
 

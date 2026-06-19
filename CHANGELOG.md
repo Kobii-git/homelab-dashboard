@@ -6,6 +6,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.6.1] - 2026-06-20
+
+### Fixed
+- Automatic service checks now follow updated service URLs/hosts, reset stale
+  failure state after target changes, and repair stale auto-created check
+  targets on startup.
+- Stale in-flight health check results are ignored if the check target or
+  monitoring mode changed while the probe was running.
+- Dashboard status, heartbeat, uptime, latency, and error summaries now ignore
+  disabled checks, matching the public status API.
+
 ## [0.6.0] - 2026-06-12
 
 A full dashboard revamp inspired by the best of Homarr, Homepage, Glance, and

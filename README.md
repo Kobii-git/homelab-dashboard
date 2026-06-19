@@ -2,7 +2,7 @@
 
 A private, self-hosted dashboard for the services you run at home. It is a simple LAN/VPN app for launching hosted web services, grouping them, favoriting the important ones, and seeing basic health status without turning the project into a remote desktop manager.
 
-![Version](https://img.shields.io/badge/version-0.6.0-2dd4bf)
+![Version](https://img.shields.io/badge/version-0.6.1-2dd4bf)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -24,7 +24,7 @@ Remote SSH/RDP/VNC access, Guacamole, saved credentials, vaults, alert channels,
 
 ## Current Scope
 
-Version `0.6.0` is a focused service dashboard. The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles, network discovery, Docker discovery, Hyper-V discovery, or built-in HTTPS termination.
+Version `0.6.1` is a focused service dashboard. The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles, network discovery, Docker discovery, Hyper-V discovery, or built-in HTTPS termination.
 
 The active database model is intentionally small: `Resource`, `DashboardGroup`, `HealthCheck`, `HealthResult`, `AdminAccount`, and `SystemConfig`.
 
@@ -132,7 +132,7 @@ docker compose -f docker-compose.build.yml up -d --build
 
 ## Versioning
 
-Current: **v0.6.0**
+Current: **v0.6.1**
 
 Verify the running build:
 
