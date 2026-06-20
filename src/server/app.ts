@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import staticFiles from "@fastify/static";
-import { PrismaClient, type HealthCheck } from "@prisma/client";
+import { PrismaClient, type HealthCheck, type HostMonitor } from "@prisma/client";
 import Fastify, { type FastifyInstance } from "fastify";
 import { z, ZodError } from "zod";
 import { isAuthenticated, createAuthToken, SESSION_COOKIE, verifyAdminPassword, verifyAdminLogin, hashPassword } from "./auth.js";
@@ -52,6 +52,23 @@ const resetHealthCheckState = {
   consecutiveFailures: 0,
   consecutiveSuccesses: 0,
   lastTransitionAt: null
+} as const;
+const resetHostMonitorState = {
+  latestStatus: "unknown",
+  latestError: null,
+  latestSampledAt: null,
+  latestCpuPercent: null,
+  latestMemoryPercent: null,
+  latestMemoryUsedBytes: null,
+  latestMemoryTotalBytes: null,
+  latestDiskPercent: null,
+  latestDiskUsedBytes: null,
+  latestDiskTotalBytes: null,
+  latestNetworkRxBytesPerSec: null,
+  latestNetworkTxBytesPerSec: null,
+  latestTemperatureC: null,
+  latestContainersRunning: null,
+  latestContainersTotal: null
 } as const;
 
 function resolveClientDist(): string | null {
@@ -428,6 +445,17 @@ function patchHostMonitorData(input: z.infer<typeof hostMonitorPatchSchema>) {
   return data;
 }
 
+function shouldResetHostMonitorAfterPatch(
+  previous: Pick<HostMonitor, "baseUrl" | "primaryMount" | "networkInterface">,
+  patch: ReturnType<typeof patchHostMonitorData>
+): boolean {
+  return (
+    (patch.baseUrl !== undefined && patch.baseUrl !== previous.baseUrl) ||
+    (patch.primaryMount !== undefined && patch.primaryMount !== previous.primaryMount) ||
+    (patch.networkInterface !== undefined && patch.networkInterface !== previous.networkInterface)
+  );
+}
+
 export async function createApp(options: CreateAppOptions = {}): Promise<FastifyInstance> {
   const raw = options.env ?? getEnv();
   const env: AppEnv = {
@@ -717,10 +745,29 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.patch("/api/metrics/hosts/:id", async (request) => {
     const id = routeId(request);
     const body = hostMonitorPatchSchema.parse(request.body);
-    const monitor = await prisma.hostMonitor.update({
+    const data = patchHostMonitorData(body);
+    const previousMonitor = await prisma.hostMonitor.findUniqueOrThrow({
       where: { id },
-      data: patchHostMonitorData(body),
-      include: hostMonitorInclude
+      select: {
+        baseUrl: true,
+        primaryMount: true,
+        networkInterface: true
+      }
+    });
+    const resetState = shouldResetHostMonitorAfterPatch(previousMonitor, data);
+    const monitor = await prisma.$transaction(async (tx) => {
+      const updated = await tx.hostMonitor.update({
+        where: { id },
+        data: resetState ? { ...data, ...resetHostMonitorState } : data,
+        include: hostMonitorInclude
+      });
+
+      if (resetState) {
+        await tx.hostMetricSample.deleteMany({ where: { monitorId: id } });
+        updated.samples = [];
+      }
+
+      return updated;
     });
     return toHostMonitorDto(monitor);
   });

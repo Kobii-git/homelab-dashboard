@@ -167,6 +167,7 @@ export function SettingsView({
   }
 
   async function deleteHostMonitor(monitor: HostMonitorDto) {
+    if (!window.confirm(`Delete "${monitor.name}" and its metric history? This cannot be undone.`)) return;
     await runFormAction(
       async () => {
         await apiSend(`/api/metrics/hosts/${monitor.id}`, "DELETE");

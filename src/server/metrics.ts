@@ -151,13 +151,30 @@ function parseNetwork(raw: unknown, networkInterface: string | null): Pick<
 > {
   const network = pickNetwork(raw, networkInterface);
   return {
-    networkRxBytesPerSec: firstNumber(network, ["rx", "bytes_recv_rate", "rx_rate", "download", "cumulative_rx"]),
-    networkTxBytesPerSec: firstNumber(network, ["tx", "bytes_sent_rate", "tx_rate", "upload", "cumulative_tx"])
+    networkRxBytesPerSec: firstNumber(network, [
+      "bytes_recv_rate_per_sec",
+      "bytes_recv_rate",
+      "rx_rate",
+      "rx_rate_per_sec",
+      "download",
+      "rx",
+      "cumulative_rx"
+    ]),
+    networkTxBytesPerSec: firstNumber(network, [
+      "bytes_sent_rate_per_sec",
+      "bytes_sent_rate",
+      "tx_rate",
+      "tx_rate_per_sec",
+      "upload",
+      "tx",
+      "cumulative_tx"
+    ])
   };
 }
 
 function parseContainers(raw: unknown): Pick<GlancesOutcome, "containersRunning" | "containersTotal"> {
-  const containers = asArray(raw).map(asRecord);
+  const containersRaw = Array.isArray(raw) ? raw : asArray(asRecord(raw).containers);
+  const containers = containersRaw.map(asRecord);
   const running = containers.filter((container) => {
     const status = `${stringValue(container.status) ?? ""} ${stringValue(container.state) ?? ""}`.toLowerCase();
     return status.includes("running") || status.includes("up");
@@ -254,18 +271,18 @@ export async function runHostMetricSample(
         latestStatus: outcome.status,
         latestError: outcome.error ?? null,
         latestSampledAt: new Date(),
-        latestCpuPercent: outcome.cpuPercent,
-        latestMemoryPercent: outcome.memoryPercent,
-        latestMemoryUsedBytes: outcome.memoryUsedBytes,
-        latestMemoryTotalBytes: outcome.memoryTotalBytes,
-        latestDiskPercent: outcome.diskPercent,
-        latestDiskUsedBytes: outcome.diskUsedBytes,
-        latestDiskTotalBytes: outcome.diskTotalBytes,
-        latestNetworkRxBytesPerSec: outcome.networkRxBytesPerSec,
-        latestNetworkTxBytesPerSec: outcome.networkTxBytesPerSec,
-        latestTemperatureC: outcome.temperatureC,
-        latestContainersRunning: outcome.containersRunning,
-        latestContainersTotal: outcome.containersTotal
+        latestCpuPercent: outcome.cpuPercent ?? null,
+        latestMemoryPercent: outcome.memoryPercent ?? null,
+        latestMemoryUsedBytes: outcome.memoryUsedBytes ?? null,
+        latestMemoryTotalBytes: outcome.memoryTotalBytes ?? null,
+        latestDiskPercent: outcome.diskPercent ?? null,
+        latestDiskUsedBytes: outcome.diskUsedBytes ?? null,
+        latestDiskTotalBytes: outcome.diskTotalBytes ?? null,
+        latestNetworkRxBytesPerSec: outcome.networkRxBytesPerSec ?? null,
+        latestNetworkTxBytesPerSec: outcome.networkTxBytesPerSec ?? null,
+        latestTemperatureC: outcome.temperatureC ?? null,
+        latestContainersRunning: outcome.containersRunning ?? null,
+        latestContainersTotal: outcome.containersTotal ?? null
       }
     });
 

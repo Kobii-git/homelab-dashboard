@@ -4,7 +4,7 @@ This document captures the current state of the project so the next session can 
 
 - **Repo:** https://github.com/Kobii-git/homelab-dashboard
 - **Image:** `ghcr.io/kobii-git/homelab-dashboard`
-- **Current version:** `0.7.1`
+- **Current version:** `0.7.2`
 - **Port:** `4173`
 - **Current branch:** `main`
 

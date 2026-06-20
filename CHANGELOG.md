@@ -6,6 +6,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.7.2] - 2026-06-20
+
+### Fixed
+- Glances network throughput now reads current v4 rate fields.
+- Offline Glances samples now clear stale latest CPU, RAM, disk, network,
+  temperature, and container values on host cards.
+- Editing a Glances host URL, mount, or network interface now resets latest
+  state and old metric history for that monitor.
+- Deleting a host monitor now asks for confirmation before removing its metric
+  history.
+
 ## [0.7.1] - 2026-06-20
 
 ### Fixed

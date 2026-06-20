@@ -49,9 +49,9 @@ function mockGlancesFetch(options: { optionalFailure?: boolean; offline?: boolea
         : url.includes("/fs")
           ? [{ mnt_point: "/", percent: 70.1, used: 700_000_000_000, size: 1_000_000_000_000 }]
           : url.includes("/network")
-            ? [{ interface_name: "eth0", rx: 1024, tx: 2048 }]
+            ? [{ interface_name: "eth0", bytes_recv_rate_per_sec: 1024, bytes_sent_rate_per_sec: 2048 }]
             : url.includes("/containers")
-              ? [{ status: "running" }, { status: "exited" }]
+              ? { containers: [{ status: "running" }, { status: "exited" }] }
               : {};
 
     return new Response(JSON.stringify(body), {
@@ -168,6 +168,10 @@ describe("api routes", () => {
     expect(run.statusCode).toBe(200);
     expect(run.json<{ status: string; cpuPercent: number }>().status).toBe("online");
     expect(run.json<{ cpuPercent: number }>().cpuPercent).toBe(42.4);
+    expect(run.json<{ networkRxBytesPerSec: number; networkTxBytesPerSec: number }>()).toMatchObject({
+      networkRxBytesPerSec: 1024,
+      networkTxBytesPerSec: 2048
+    });
 
     const dashboard = await app.inject({ method: "GET", url: "/api/dashboard", headers: { cookie } });
     expect(dashboard.statusCode).toBe(200);
@@ -232,6 +236,84 @@ describe("api routes", () => {
     });
     expect(sample.status).toBe("offline");
     expect(sample.error).toContain("HTTP 503");
+  });
+
+  it("clears stale Glances host metrics when a host goes offline", async () => {
+    const cookie = await loginCookie();
+    mockGlancesFetch();
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/metrics/hosts",
+      headers: { cookie },
+      payload: {
+        name: "Flapping Host",
+        baseUrl: "http://flapping-glances.local:61208"
+      }
+    });
+    const hostId = created.json<{ id: string }>().id;
+
+    await app.inject({ method: "POST", url: `/api/metrics/hosts/${hostId}/run`, headers: { cookie } });
+    let monitor = await prisma.hostMonitor.findUniqueOrThrow({ where: { id: hostId } });
+    expect(monitor.latestCpuPercent).toBe(42.4);
+    expect(monitor.latestNetworkRxBytesPerSec).toBe(1024);
+
+    vi.restoreAllMocks();
+    mockGlancesFetch({ offline: true });
+    await app.inject({ method: "POST", url: `/api/metrics/hosts/${hostId}/run`, headers: { cookie } });
+
+    monitor = await prisma.hostMonitor.findUniqueOrThrow({ where: { id: hostId } });
+    expect(monitor.latestStatus).toBe("offline");
+    expect(monitor.latestCpuPercent).toBeNull();
+    expect(monitor.latestMemoryPercent).toBeNull();
+    expect(monitor.latestDiskPercent).toBeNull();
+    expect(monitor.latestNetworkRxBytesPerSec).toBeNull();
+    expect(monitor.latestNetworkTxBytesPerSec).toBeNull();
+  });
+
+  it("resets Glances host latest state and history when monitor identity changes", async () => {
+    const cookie = await loginCookie();
+    mockGlancesFetch();
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/metrics/hosts",
+      headers: { cookie },
+      payload: {
+        name: "Moved Metrics Host",
+        baseUrl: "http://old-glances.local:61208",
+        networkInterface: "eth0"
+      }
+    });
+    const hostId = created.json<{ id: string }>().id;
+    await app.inject({ method: "POST", url: `/api/metrics/hosts/${hostId}/run`, headers: { cookie } });
+    expect(await prisma.hostMetricSample.count({ where: { monitorId: hostId } })).toBe(1);
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: `/api/metrics/hosts/${hostId}`,
+      headers: { cookie },
+      payload: {
+        baseUrl: "http://new-glances.local:61208/",
+        networkInterface: "en0"
+      }
+    });
+
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json<{
+      baseUrl: string;
+      latestStatus: string;
+      latestSampledAt: string | null;
+      latestCpuPercent: number | null;
+      samples: unknown[];
+    }>()).toMatchObject({
+      baseUrl: "http://new-glances.local:61208",
+      latestStatus: "unknown",
+      latestSampledAt: null,
+      latestCpuPercent: null,
+      samples: []
+    });
+    expect(await prisma.hostMetricSample.count({ where: { monitorId: hostId } })).toBe(0);
   });
 
   it("prunes Glances host metric history to the retention limit", async () => {
