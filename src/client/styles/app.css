@@ -1328,6 +1328,19 @@ label textarea {
     linear-gradient(145deg, rgba(96, 165, 250, 0.08), transparent 42%),
     var(--surface);
   box-shadow: var(--shadow-1);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-1) var(--ease),
+    transform var(--dur-1) var(--ease),
+    box-shadow var(--dur-1) var(--ease);
+}
+
+.host-card:hover,
+.host-card:focus-visible {
+  border-color: color-mix(in srgb, var(--info) 44%, var(--border));
+  box-shadow: var(--shadow-2);
+  transform: translateY(-1px);
+  outline: none;
 }
 
 .host-card.host-offline {
@@ -1508,8 +1521,37 @@ label textarea {
 
 .briefing-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--space-3);
+}
+
+.briefing-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.briefing-summary-strip span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.briefing-summary-strip small {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+.briefing-summary-strip strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .briefing-card {
@@ -1566,6 +1608,35 @@ label textarea {
   white-space: nowrap;
 }
 
+.briefing-action-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: stretch;
+}
+
+.briefing-card .briefing-main-action {
+  min-width: 0;
+}
+
+.briefing-card .briefing-action-row .svc-action {
+  display: inline-grid;
+  width: 34px;
+  height: auto;
+  min-height: 34px;
+  padding: 0;
+  place-items: center;
+  border-color: var(--line-soft);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  background: var(--surface-3);
+}
+
+.briefing-card .briefing-action-row .svc-action:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
 .briefing-danger {
   border-color: rgba(242, 100, 100, 0.34);
   background: linear-gradient(180deg, rgba(242, 100, 100, 0.08), var(--surface));
@@ -1574,6 +1645,42 @@ label textarea {
 .briefing-warning {
   border-color: rgba(240, 184, 74, 0.34);
   background: linear-gradient(180deg, rgba(240, 184, 74, 0.08), var(--surface));
+}
+
+.host-detail-drawer {
+  width: min(520px, 100vw);
+}
+
+.host-detail-section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.host-detail-trends {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.host-detail-trends > div {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.host-detail-trends span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.host-detail-trends .metric-sparkline {
+  height: 58px;
+}
+
+.host-detail-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 /* ── Dashboard: toolbar & chips ───────────────────────────────────── */
@@ -2488,6 +2595,41 @@ label textarea {
   background: var(--accent-subtle);
 }
 
+.service-template-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.service-template-strip > span {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.service-template-strip button {
+  min-height: 30px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  background: var(--surface);
+  font-size: var(--text-xs);
+}
+
+.service-template-strip button:hover {
+  color: var(--text);
+  border-color: rgba(96, 165, 250, 0.45);
+}
+
 .row-list {
   display: grid;
   gap: 8px;
@@ -2676,6 +2818,75 @@ label textarea {
 .host-monitor-stats i {
   font-style: normal;
   white-space: nowrap;
+}
+
+.runtime-key-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.runtime-count-grid,
+.scheduler-runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.runtime-count-grid span,
+.scheduler-runtime-card {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.runtime-count-grid small,
+.scheduler-runtime-card small,
+.scheduler-runtime-card span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-count-grid strong,
+.scheduler-runtime-card strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scheduler-ok {
+  border-color: color-mix(in srgb, var(--success) 36%, var(--line-soft));
+}
+
+.scheduler-error {
+  border-color: color-mix(in srgb, var(--danger) 44%, var(--line-soft));
+}
+
+.runtime-command-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.runtime-command-grid code {
+  min-width: 0;
+  overflow-x: auto;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  color: var(--info);
+  background: var(--surface-3);
+  font-size: var(--text-xs);
 }
 
 /* ── Login & setup ────────────────────────────────────────────────── */
@@ -2945,6 +3156,12 @@ label textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .briefing-summary-strip,
+  .runtime-key-grid,
+  .host-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .host-monitor-form {
     grid-template-columns: 1fr;
   }
@@ -3026,6 +3243,14 @@ label textarea {
     flex: 1;
   }
 
+  .service-template-strip {
+    align-items: stretch;
+  }
+
+  .service-template-strip button {
+    flex: 1 1 140px;
+  }
+
   .section-actions,
   .form-actions,
   .service-list-heading {
@@ -3053,6 +3278,13 @@ label textarea {
 @media (max-width: 620px) {
   .host-grid,
   .briefing-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .briefing-summary-strip,
+  .runtime-key-grid,
+  .host-detail-grid,
+  .runtime-command-grid {
     grid-template-columns: 1fr;
   }
 

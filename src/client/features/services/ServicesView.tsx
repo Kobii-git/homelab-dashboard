@@ -1,4 +1,4 @@
-import { Activity, ChevronDown, ChevronUp, Plus, Pencil, Save, Server, Trash2, Wifi } from "lucide-react";
+import { Activity, ChevronDown, ChevronUp, Copy, Plus, Pencil, Save, Server, Trash2, Wifi } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { HEALTH_CHECK_TYPES, HEALTH_STATUSES, MONITORING_MODES, RESOURCE_KINDS } from "../../../shared/types";
 import { MetricCard, PageHeader, StatusBadge } from "../../components/Primitives";
@@ -19,6 +19,31 @@ const serviceTabs: Array<{ id: ServiceTab; label: string }> = [
 
 type EditMode = "resource" | "check" | null;
 type FormMode = "group" | "resource" | "check" | null;
+
+type ServiceTemplate = {
+  name: string;
+  kind: DashboardResource["kind"];
+  icon: string;
+  color: string;
+  url: string;
+  description: string;
+  groupHint: string;
+};
+
+const serviceTemplates: ServiceTemplate[] = [
+  { name: "Portainer", kind: "docker", icon: "portainer", color: "#60a5fa", url: "https://portainer.lab.local", description: "Docker stack management.", groupHint: "Applications" },
+  { name: "Proxmox", kind: "server", icon: "proxmox", color: "#f97316", url: "https://proxmox.lab.local:8006", description: "Virtualization cluster.", groupHint: "Infrastructure" },
+  { name: "Home Assistant", kind: "app", icon: "home-assistant", color: "#38bdf8", url: "https://homeassistant.lab.local", description: "Home automation controller.", groupHint: "Applications" },
+  { name: "Pi-hole", kind: "app", icon: "pi-hole", color: "#ef4444", url: "https://pihole.lab.local/admin", description: "DNS filtering and local resolver.", groupHint: "Network" },
+  { name: "TrueNAS", kind: "server", icon: "truenas", color: "#0284c7", url: "https://truenas.lab.local", description: "Storage and shares.", groupHint: "Infrastructure" },
+  { name: "Jellyfin", kind: "app", icon: "jellyfin", color: "#a855f7", url: "https://jellyfin.lab.local", description: "Media library.", groupHint: "Media" },
+  { name: "Grafana", kind: "app", icon: "grafana", color: "#f97316", url: "https://grafana.lab.local", description: "Dashboards and observability.", groupHint: "Monitoring" },
+  { name: "Nginx Proxy Manager", kind: "app", icon: "nginx-proxy-manager", color: "#22c55e", url: "https://npm.lab.local", description: "Reverse proxy management.", groupHint: "Network" },
+  { name: "Vaultwarden", kind: "app", icon: "vaultwarden", color: "#64748b", url: "https://vaultwarden.lab.local", description: "Password vault service.", groupHint: "Applications" },
+  { name: "UniFi", kind: "app", icon: "unifi", color: "#0ea5e9", url: "https://unifi.lab.local", description: "Network controller.", groupHint: "Network" },
+  { name: "Nextcloud", kind: "app", icon: "nextcloud", color: "#2563eb", url: "https://nextcloud.lab.local", description: "Private cloud files.", groupHint: "Applications" },
+  { name: "Uptime Kuma", kind: "app", icon: "uptime-kuma", color: "#22c55e", url: "https://uptime.lab.local", description: "External uptime monitor.", groupHint: "Monitoring" }
+];
 
 function Field({
   label,
@@ -64,6 +89,8 @@ export function ServicesView({
   const [editMode, setEditMode] = useState<EditMode>(null);
   const [formMode, setFormMode] = useState<FormMode>(null);
   const [editResource, setEditResource] = useState<DashboardResource | null>(null);
+  const [resourceDraft, setResourceDraft] = useState<Partial<DashboardResource> | null>(null);
+  const [resourceFormKey, setResourceFormKey] = useState(0);
   const [editCheck, setEditCheck] = useState<HealthCheckDto | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -96,6 +123,7 @@ export function ServicesView({
 
   function startEditResource(resource: DashboardResource) {
     setEditResource(resource);
+    setResourceDraft(null);
     setEditMode("resource");
     setEditCheck(null);
     setFormMode("resource");
@@ -112,7 +140,34 @@ export function ServicesView({
     setEditMode(null);
     setFormMode(null);
     setEditResource(null);
+    setResourceDraft(null);
     setEditCheck(null);
+  }
+
+  function groupIdForHint(groupHint: string): string | null {
+    const lowerHint = groupHint.toLowerCase();
+    return data.groups.find((group) => group.name.toLowerCase() === lowerHint)?.id ?? null;
+  }
+
+  function applyTemplate(template: ServiceTemplate) {
+    setEditResource(null);
+    setEditCheck(null);
+    setEditMode(null);
+    setActiveTab("resource");
+    setFormMode("resource");
+    setResourceDraft({
+      name: template.name,
+      kind: template.kind,
+      url: template.url,
+      description: template.description,
+      icon: template.icon,
+      color: template.color,
+      groupId: groupIdForHint(template.groupHint),
+      monitoringMode: "auto",
+      manualStatus: null,
+      favorite: false
+    });
+    setResourceFormKey((key) => key + 1);
   }
 
   async function submitGroup(event: FormEvent<HTMLFormElement>) {
@@ -149,6 +204,7 @@ export function ServicesView({
       await apiSend("/api/resources", "POST", body);
       await onRefresh();
       setFormMode(null);
+      setResourceDraft(null);
     }, setActionError, setSubmitting, editResource ? "Resource updated" : "Resource added");
   }
 
@@ -200,8 +256,29 @@ export function ServicesView({
     }, setActionError, setSubmitting);
   }
 
+  async function duplicateResource(resource: DashboardResource) {
+    await runFormAction(async () => {
+      await apiSend("/api/resources", "POST", {
+        name: `${resource.name} Copy`,
+        kind: resource.kind,
+        url: resource.url,
+        host: resource.host,
+        icon: resource.icon,
+        color: resource.color,
+        description: resource.description,
+        groupId: resource.groupId,
+        monitoringMode: resource.monitoringMode,
+        manualStatus: resource.manualStatus,
+        favorite: false,
+        sortOrder: resource.sortOrder + 1
+      });
+      await onRefresh();
+    }, setActionError, setSubmitting, "Service duplicated");
+  }
+
   function beginCreate(mode: FormMode, tab: ServiceTab) {
     cancelEdit();
+    setResourceFormKey((key) => key + 1);
     setActiveTab(tab);
     setFormMode(mode);
   }
@@ -220,6 +297,8 @@ export function ServicesView({
     await apiSend(`/api/resources/${swap.id}`, "PATCH", { sortOrder: resource.sortOrder });
     await onRefresh();
   }
+
+  const resourceDefaults = editResource ?? resourceDraft;
 
   return (
     <main className="view-shell services-view">
@@ -272,6 +351,15 @@ export function ServicesView({
             </div>
           </div>
 
+          <div className="service-template-strip" aria-label="Service templates">
+            <span>Templates</span>
+            {serviceTemplates.map((template) => (
+              <button key={template.name} type="button" onClick={() => applyTemplate(template)}>
+                {template.name}
+              </button>
+            ))}
+          </div>
+
           {formMode === "group" ? (
             <form className="tool-panel service-form-panel" onSubmit={submitGroup}>
               <h3>New group</h3>
@@ -284,37 +372,37 @@ export function ServicesView({
           ) : null}
 
           {(formMode === "resource" || editResource) ? (
-            <form key={editResource?.id ?? "new-resource"} className="tool-panel service-form-panel service-form-grid" onSubmit={submitResource}>
+            <form key={editResource?.id ?? `new-resource-${resourceFormKey}`} className="tool-panel service-form-panel service-form-grid" onSubmit={submitResource}>
               <h3>{editResource ? <><Pencil size={15} /> Edit service</> : "New service"}</h3>
-              <Field label="Name" name="name" defaultValue={editResource?.name} required />
+              <Field label="Name" name="name" defaultValue={resourceDefaults?.name ?? ""} required />
               <label>
                 Kind
-                <select name="kind" defaultValue={editResource?.kind ?? "app"}>
+                <select name="kind" defaultValue={resourceDefaults?.kind ?? "app"}>
                   {RESOURCE_KINDS.map((kind) => <option key={kind} value={kind}>{kind}</option>)}
                 </select>
               </label>
-              <Field label="URL" name="url" placeholder="https://service.local" defaultValue={editResource?.url ?? ""} />
-              <Field label="Host" name="host" placeholder="192.168.1.10" defaultValue={editResource?.host ?? ""} />
+              <Field label="URL" name="url" placeholder="https://service.local" defaultValue={resourceDefaults?.url ?? ""} />
+              <Field label="Host" name="host" placeholder="192.168.1.10" defaultValue={resourceDefaults?.host ?? ""} />
               <Field
                 label="Icon (auto-detected from name if empty)"
                 name="icon"
                 placeholder="plex, home-assistant, or https://… image"
-                defaultValue={editResource?.icon ?? ""}
+                defaultValue={resourceDefaults?.icon ?? ""}
               />
               <label>
                 Color
-                <input name="color" type="color" defaultValue={editResource?.color ?? "#2dd4bf"} style={{ height: 38, cursor: "pointer" }} />
+                <input name="color" type="color" defaultValue={resourceDefaults?.color ?? "#2dd4bf"} style={{ height: 38, cursor: "pointer" }} />
               </label>
               <label>
                 Group
-                <select name="groupId" defaultValue={editResource?.groupId ?? ""}>
+                <select name="groupId" defaultValue={resourceDefaults?.groupId ?? ""}>
                   <option value="">Ungrouped</option>
                   {data.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
                 </select>
               </label>
               <label>
                 Monitoring
-                <select name="monitoringMode" defaultValue={editResource?.monitoringMode ?? "auto"}>
+                <select name="monitoringMode" defaultValue={resourceDefaults?.monitoringMode ?? "auto"}>
                   {MONITORING_MODES.map((mode) => (
                     <option key={mode} value={mode}>
                       {mode === "auto" ? "Automatic checks" : mode === "manual" ? "Manual status" : "Disabled"}
@@ -324,17 +412,17 @@ export function ServicesView({
               </label>
               <label>
                 Manual status
-                <select name="manualStatus" defaultValue={editResource?.manualStatus ?? ""}>
+                <select name="manualStatus" defaultValue={resourceDefaults?.manualStatus ?? ""}>
                   <option value="">Unknown</option>
                   {HEALTH_STATUSES.filter((status) => status !== "unknown").map((status) => (
                     <option key={status} value={status}>{status}</option>
                   ))}
                 </select>
               </label>
-              <label>Notes</label>
-              <textarea name="description" rows={2} defaultValue={editResource?.description ?? ""} />
+              <label>Description</label>
+              <textarea name="description" rows={2} defaultValue={resourceDefaults?.description ?? ""} />
               <label className="checkbox-row">
-                <input name="favorite" type="checkbox" defaultChecked={editResource?.favorite} />
+                <input name="favorite" type="checkbox" defaultChecked={resourceDefaults?.favorite} />
                 Favorite
               </label>
               <div className="form-actions">
@@ -389,6 +477,9 @@ export function ServicesView({
                 </button>
                 <button className="icon-button" type="button" title="Edit" onClick={() => startEditResource(resource)}>
                   <Pencil size={14} />
+                </button>
+                <button className="icon-button" type="button" title="Duplicate" onClick={() => void duplicateResource(resource)}>
+                  <Copy size={14} />
                 </button>
                 <button className="icon-button danger" type="button" title="Delete" onClick={() => void remove(`/api/resources/${resource.id}`, resource.name)}>
                   <Trash2 size={14} />

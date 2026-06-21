@@ -79,6 +79,10 @@ describe("api routes", () => {
     expect(response.statusCode).toBe(401);
     const metrics = await app.inject({ method: "GET", url: "/api/metrics/hosts" });
     expect(metrics.statusCode).toBe(401);
+    const hostDetail = await app.inject({ method: "GET", url: "/api/metrics/hosts/cm0unauthenticated000000000000" });
+    expect(hostDetail.statusCode).toBe(401);
+    const runtime = await app.inject({ method: "GET", url: "/api/admin/runtime" });
+    expect(runtime.statusCode).toBe(401);
   });
 
   it("allows env-managed admins to dismiss first-run setup after login", async () => {
@@ -344,6 +348,158 @@ describe("api routes", () => {
 
     const count = await prisma.hostMetricSample.count({ where: { monitorId: hostId } });
     expect(count).toBe(1440);
+  });
+
+  it("returns authenticated Glances host detail with 24h samples", async () => {
+    const cookie = await loginCookie();
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/metrics/hosts",
+      headers: { cookie },
+      payload: {
+        name: "Detail Host",
+        baseUrl: "http://detail-glances.local:61208"
+      }
+    });
+    const hostId = created.json<{ id: string }>().id;
+
+    await prisma.hostMetricSample.createMany({
+      data: Array.from({ length: 1445 }, (_, index) => ({
+        monitorId: hostId,
+        status: "online",
+        cpuPercent: index % 100,
+        memoryPercent: 50,
+        sampledAt: new Date(Date.now() - index * 60_000)
+      }))
+    });
+
+    const detail = await app.inject({
+      method: "GET",
+      url: `/api/metrics/hosts/${hostId}`,
+      headers: { cookie }
+    });
+
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json<{ id: string; samples: unknown[] }>()).toMatchObject({ id: hostId });
+    expect(detail.json<{ samples: unknown[] }>().samples).toHaveLength(1440);
+  });
+
+  it("exposes runtime diagnostics without secrets", async () => {
+    const cookie = await loginCookie();
+
+    const runtime = await app.inject({
+      method: "GET",
+      url: "/api/admin/runtime",
+      headers: { cookie }
+    });
+
+    expect(runtime.statusCode).toBe(200);
+    const body = runtime.json<{
+      build: { version: string };
+      auth: { source: string };
+      database: { ok: boolean; counts: { resources: number } };
+      schedulers: { health: { enabled: boolean }; metrics: { enabled: boolean } };
+    }>();
+    expect(body.build.version).toBe("0.8.0");
+    expect(body.auth.source).toBe("env");
+    expect(body.database.ok).toBe(true);
+    expect(body.database.counts.resources).toBeGreaterThanOrEqual(0);
+    expect(body.schedulers.health.enabled).toBe(false);
+    expect(runtime.body).not.toContain("test-pass");
+    expect(runtime.body).not.toContain("test-cookie-secret");
+  });
+
+  it("uses health thresholds as stable status gates and surfaces pending checks", async () => {
+    const cookie = await loginCookie();
+
+    const resource = await app.inject({
+      method: "POST",
+      url: "/api/resources",
+      headers: { cookie },
+      payload: {
+        name: "Threshold Web",
+        kind: "app"
+      }
+    });
+    const resourceId = resource.json<{ id: string }>().id;
+
+    const check = await app.inject({
+      method: "POST",
+      url: "/api/health-checks",
+      headers: { cookie },
+      payload: {
+        resourceId,
+        type: "http",
+        target: "http://threshold-web.test",
+        intervalSeconds: 15,
+        timeoutMs: 250,
+        failureThreshold: 3,
+        successThreshold: 2
+      }
+    });
+    const checkId = check.json<{ id: string }>().id;
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("down", { status: 503 }));
+
+    await app.inject({ method: "POST", url: `/api/health-checks/${checkId}/run`, headers: { cookie } });
+    let current = await prisma.healthCheck.findUniqueOrThrow({ where: { id: checkId } });
+    expect(current.latestStatus).toBe("unknown");
+    expect(current.consecutiveFailures).toBe(1);
+
+    await app.inject({ method: "POST", url: `/api/health-checks/${checkId}/run`, headers: { cookie } });
+    current = await prisma.healthCheck.findUniqueOrThrow({ where: { id: checkId } });
+    expect(current.latestStatus).toBe("unknown");
+    expect(current.consecutiveFailures).toBe(2);
+
+    let dashboard = await app.inject({ method: "GET", url: "/api/dashboard", headers: { cookie } });
+    let briefing = dashboard.json<{
+      dailyBriefing: {
+        summary: { pendingFailures: number; pendingRecoveries: number };
+        watchlist: Array<{ checkId: string; direction: string; consecutive: number; threshold: number }>;
+      };
+    }>().dailyBriefing;
+    expect(briefing.watchlist).toContainEqual(expect.objectContaining({
+      checkId,
+      direction: "failing",
+      consecutive: 2,
+      threshold: 3
+    }));
+    expect(briefing.summary.pendingFailures).toBeGreaterThanOrEqual(1);
+
+    await app.inject({ method: "POST", url: `/api/health-checks/${checkId}/run`, headers: { cookie } });
+    current = await prisma.healthCheck.findUniqueOrThrow({ where: { id: checkId } });
+    expect(current.latestStatus).toBe("offline");
+    expect(current.consecutiveFailures).toBe(3);
+
+    vi.restoreAllMocks();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok", { status: 200 }));
+
+    await app.inject({ method: "POST", url: `/api/health-checks/${checkId}/run`, headers: { cookie } });
+    current = await prisma.healthCheck.findUniqueOrThrow({ where: { id: checkId } });
+    expect(current.latestStatus).toBe("offline");
+    expect(current.consecutiveSuccesses).toBe(1);
+
+    dashboard = await app.inject({ method: "GET", url: "/api/dashboard", headers: { cookie } });
+    briefing = dashboard.json<{
+      dailyBriefing: {
+        summary: { pendingFailures: number; pendingRecoveries: number };
+        watchlist: Array<{ checkId: string; direction: string; consecutive: number; threshold: number }>;
+      };
+    }>().dailyBriefing;
+    expect(briefing.watchlist).toContainEqual(expect.objectContaining({
+      checkId,
+      direction: "recovering",
+      consecutive: 1,
+      threshold: 2
+    }));
+    expect(briefing.summary.pendingRecoveries).toBeGreaterThanOrEqual(1);
+
+    await app.inject({ method: "POST", url: `/api/health-checks/${checkId}/run`, headers: { cookie } });
+    current = await prisma.healthCheck.findUniqueOrThrow({ where: { id: checkId } });
+    expect(current.latestStatus).toBe("online");
+    expect(current.consecutiveSuccesses).toBe(2);
+    expect(await prisma.healthResult.count({ where: { checkId } })).toBe(5);
   });
 
   it("syncs the default health check when a service address changes", async () => {

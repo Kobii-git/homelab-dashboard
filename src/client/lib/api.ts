@@ -40,6 +40,56 @@ export type SystemSettingsDto = {
   autoPingIntervalSeconds: number;
 };
 
+export type RuntimeStatusDto = {
+  build: {
+    version: string;
+    gitSha: string;
+    buildTime: string | null;
+  };
+  process: {
+    nodeEnv: string;
+    nodeVersion: string;
+    platform: string;
+    arch: string;
+    host: string;
+    port: number;
+    uptimeSeconds: number;
+    startedAt: string;
+  };
+  auth: {
+    source: "env" | "database";
+    cookieSecure: boolean;
+  };
+  database: {
+    ok: boolean;
+    url: string;
+    counts: {
+      groups: number;
+      resources: number;
+      healthChecks: number;
+      healthResults: number;
+      hostMonitors: number;
+      hostMetricSamples: number;
+    };
+  };
+  schedulers: {
+    health: SchedulerRuntimeDto;
+    metrics: SchedulerRuntimeDto;
+  };
+};
+
+export type SchedulerRuntimeDto = {
+  enabled: boolean;
+  running: boolean;
+  intervalMs: number;
+  lastTickAt: string | null;
+  lastCompletedAt: string | null;
+  lastError: string | null;
+  lastDueCount: number | null;
+  lastDurationMs: number | null;
+  skippedTickAt: string | null;
+};
+
 export type { DashboardGroupDto, DashboardResource, DailyBriefingDto, HostMetricSampleDto, HostMonitorDto };
 
 

@@ -157,7 +157,7 @@ export function ServiceDrawer({
 
         {resource.description ? (
           <section className="drawer-section">
-            <h4>Notes</h4>
+            <h4>Description</h4>
             <p className="muted-copy">{resource.description}</p>
           </section>
         ) : null}

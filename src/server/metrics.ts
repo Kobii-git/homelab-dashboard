@@ -1,5 +1,6 @@
 import type { HostMetricSample, HostMonitor, PrismaClient } from "@prisma/client";
 import type { HostMonitorDto } from "../shared/types.js";
+import type { SchedulerUpdate } from "./healthChecks.js";
 
 const SAMPLE_RETENTION = 1440;
 const DEFAULT_SAMPLE_INTERVAL_MS = 60_000;
@@ -306,16 +307,20 @@ export async function runHostMetricSample(
 export function startMetricsScheduler(
   prisma: PrismaClient,
   intervalMs = 15_000,
-  sampleIntervalMs = DEFAULT_SAMPLE_INTERVAL_MS
+  sampleIntervalMs = DEFAULT_SAMPLE_INTERVAL_MS,
+  observer?: (update: SchedulerUpdate) => void
 ): () => void {
   let running = false;
 
   const tick = async () => {
     if (running) {
+      observer?.({ skippedTickAt: new Date() });
       return;
     }
 
+    const startedAt = Date.now();
     running = true;
+    observer?.({ running: true, lastTickAt: new Date(), lastError: null });
     try {
       const monitors = await prisma.hostMonitor.findMany({ where: { enabled: true } });
       const now = Date.now();
@@ -326,7 +331,21 @@ export function startMetricsScheduler(
         return now - monitor.latestSampledAt.getTime() >= sampleIntervalMs;
       });
 
+      observer?.({ lastDueCount: due.length });
       await Promise.allSettled(due.map((monitor) => runHostMetricSample(prisma, monitor)));
+      observer?.({
+        running: false,
+        lastCompletedAt: new Date(),
+        lastDurationMs: Date.now() - startedAt,
+        lastError: null
+      });
+    } catch (error) {
+      observer?.({
+        running: false,
+        lastCompletedAt: new Date(),
+        lastDurationMs: Date.now() - startedAt,
+        lastError: error instanceof Error ? error.message : "Metrics scheduler failed"
+      });
     } finally {
       running = false;
     }

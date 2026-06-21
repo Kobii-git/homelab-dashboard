@@ -16,12 +16,13 @@ import {
   Search,
   Server,
   Star,
-  Thermometer
+  Thermometer,
+  X
 } from "lucide-react";
 import type { DragEvent, KeyboardEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { DashboardResource, HostMetricSampleDto, HostMonitorDto } from "../../../shared/types";
-import { EmptyPanel } from "../../components/Primitives";
+import { EmptyPanel, StatusBadge } from "../../components/Primitives";
 import { Heartbeat } from "../../components/Heartbeat";
 import { ServiceDrawer } from "../../components/ServiceDrawer";
 import { ServiceIcon } from "../../components/ServiceIcon";
@@ -42,6 +43,7 @@ import {
   summarizeResourceStatus,
   uptimePercent
 } from "../../lib/format";
+import { apiGet } from "../../lib/api";
 import { type AppData } from "../types";
 
 type StatusFilter = "all" | "favorites" | "online" | "offline" | "unknown";
@@ -131,7 +133,7 @@ function MetricBar({
   );
 }
 
-function HostVitalsCard({ host }: { host: HostMonitorDto }) {
+function HostVitalsCard({ host, onInspect }: { host: HostMonitorDto; onInspect: (host: HostMonitorDto) => void }) {
   const samples = sortSamples(host.samples);
   const latestSample = samples[samples.length - 1];
   const status = host.latestStatus;
@@ -139,7 +141,19 @@ function HostVitalsCard({ host }: { host: HostMonitorDto }) {
   const networkTotal = (host.latestNetworkRxBytesPerSec ?? 0) + (host.latestNetworkTxBytesPerSec ?? 0);
 
   return (
-    <article className={`host-card host-${status}`}>
+    <article
+      className={`host-card host-${status}`}
+      role="button"
+      tabIndex={0}
+      title={`Inspect ${host.name} metrics`}
+      onClick={() => onInspect(host)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          onInspect(host);
+        }
+      }}
+    >
       <header className="host-card-head">
         <span className="host-icon"><Server size={18} /></span>
         <span>
@@ -180,6 +194,121 @@ function HostVitalsCard({ host }: { host: HostMonitorDto }) {
 
       {status === "offline" && host.latestError ? <p className="host-error">{host.latestError}</p> : null}
     </article>
+  );
+}
+
+function NetworkSparkline({ samples }: { samples: HostMetricSampleDto[] | undefined }) {
+  const values = sortSamples(samples)
+    .map((sample) => (sample.networkRxBytesPerSec ?? 0) + (sample.networkTxBytesPerSec ?? 0))
+    .filter((value) => value > 0);
+
+  if (values.length < 2) {
+    return <div className="metric-sparkline metric-sparkline-empty" aria-hidden />;
+  }
+
+  const max = Math.max(...values, 1);
+  const points = values.map((value, index) => {
+    const x = values.length === 1 ? 0 : (index / (values.length - 1)) * 100;
+    const y = 36 - (Math.max(0, Math.min(max, value)) / max) * 32;
+    return `${x},${y}`;
+  }).join(" ");
+
+  return (
+    <svg className="metric-sparkline host-detail-sparkline" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden>
+      <polyline points={points} />
+    </svg>
+  );
+}
+
+function HostDetailDrawer({
+  host,
+  loading,
+  error,
+  onClose
+}: {
+  host: HostMonitorDto;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const samples = sortSamples(host.samples);
+  const newest = samples[samples.length - 1];
+  const oldest = samples[0];
+  const networkTotal = (host.latestNetworkRxBytesPerSec ?? 0) + (host.latestNetworkTxBytesPerSec ?? 0);
+
+  useEffect(() => {
+    function onKey(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <>
+      <div className="drawer-backdrop" onMouseDown={onClose} />
+      <aside className="service-drawer host-detail-drawer" role="dialog" aria-label={`${host.name} host metrics`}>
+        <header className="drawer-head">
+          <span className="host-icon"><Server size={20} /></span>
+          <div className="drawer-title">
+            <h2>{host.name}</h2>
+            <small>{host.baseUrl}</small>
+          </div>
+          <StatusBadge status={host.latestStatus} />
+          <button className="icon-button drawer-close" type="button" title="Close" onClick={onClose}>
+            <X size={16} />
+          </button>
+        </header>
+
+        <div className="drawer-stats">
+          <span><small>CPU</small><strong>{formatPercent(host.latestCpuPercent)}</strong></span>
+          <span><small>RAM</small><strong>{formatPercent(host.latestMemoryPercent)}</strong></span>
+          <span><small>Disk</small><strong>{formatPercent(host.latestDiskPercent)}</strong></span>
+          <span><small>Network</small><strong>{formatByteRate(networkTotal || null)}</strong></span>
+        </div>
+
+        {loading ? <p className="muted-copy">Loading 24h host history...</p> : null}
+        {error ? <div className="app-error">{error}</div> : null}
+
+        <section className="drawer-section host-detail-section">
+          <h4>24h trends</h4>
+          <div className="host-detail-trends">
+            <div>
+              <span><Cpu size={14} /> CPU</span>
+              <MetricSparkline samples={samples} metric="cpuPercent" />
+            </div>
+            <div>
+              <span><MemoryStick size={14} /> RAM</span>
+              <MetricSparkline samples={samples} metric="memoryPercent" />
+            </div>
+            <div>
+              <span><HardDrive size={14} /> Disk</span>
+              <MetricSparkline samples={samples} metric="diskPercent" />
+            </div>
+            <div>
+              <span><Network size={14} /> Network</span>
+              <NetworkSparkline samples={samples} />
+            </div>
+          </div>
+        </section>
+
+        <section className="drawer-section">
+          <h4>Latest sample</h4>
+          <div className="key-value-grid host-detail-grid">
+            <span><span>Collected</span><strong>{relativeTime(host.latestSampledAt ?? newest?.sampledAt ?? null)}</strong></span>
+            <span><span>Range</span><strong>{oldest ? `${relativeTime(oldest.sampledAt)} to now` : "No history"}</strong></span>
+            <span><span>Memory</span><strong>{formatBytes(host.latestMemoryUsedBytes)} / {formatBytes(host.latestMemoryTotalBytes)}</strong></span>
+            <span><span>Disk {host.primaryMount}</span><strong>{formatBytes(host.latestDiskUsedBytes)} / {formatBytes(host.latestDiskTotalBytes)}</strong></span>
+            <span><span>Containers</span><strong>{host.latestContainersTotal == null ? "—" : `${host.latestContainersRunning ?? 0}/${host.latestContainersTotal}`}</strong></span>
+            <span><span>Temperature</span><strong>{host.latestTemperatureC == null ? "—" : `${host.latestTemperatureC.toFixed(1)}°C`}</strong></span>
+          </div>
+          {host.latestError ? <p className="drawer-check-error">{host.latestError}</p> : null}
+        </section>
+      </aside>
+    </>
   );
 }
 
@@ -326,6 +455,10 @@ export function DashboardConsole({
   const [checkingResourceId, setCheckingResourceId] = useState<string | null>(null);
   const [checkError, setCheckError] = useState<string | null>(null);
   const [inspectedId, setInspectedId] = useState<string | null>(null);
+  const [inspectedHostId, setInspectedHostId] = useState<string | null>(null);
+  const [hostDetail, setHostDetail] = useState<HostMonitorDto | null>(null);
+  const [hostDetailLoading, setHostDetailLoading] = useState(false);
+  const [hostDetailError, setHostDetailError] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState>(null);
   const now = useClock();
 
@@ -343,9 +476,18 @@ export function DashboardConsole({
   const favorites = resources.filter((resource) => resource.favorite);
   const offlineResources = resources.filter((resource) => statusFor(resource) === "offline");
   const inspected = inspectedId ? resources.find((resource) => resource.id === inspectedId) ?? null : null;
+  const inspectedHost = inspectedHostId
+    ? hostDetail ?? hostMonitors.find((host) => host.id === inspectedHostId) ?? null
+    : null;
   const offlineHosts = hostMonitors.filter((host) => host.latestStatus === "offline").length;
   const pressureHosts = briefing.hostsUnderPressure.length;
-  const dailyIssueCount = offlineResources.length + offlineHosts + pressureHosts + briefing.staleChecks.length + briefing.unmonitoredServices.length;
+  const dailyIssueCount =
+    offlineResources.length +
+    offlineHosts +
+    pressureHosts +
+    briefing.staleChecks.length +
+    briefing.unmonitoredServices.length +
+    briefing.watchlist.length;
   const lastUpdatedAt = [
     ...resources.map(latestCheckedAt),
     ...hostMonitors.map((host) => host.latestSampledAt)
@@ -382,9 +524,59 @@ export function DashboardConsole({
 
   const reorderEnabled = query === "" && statusFilter === "all";
 
+  useEffect(() => {
+    if (!inspectedHostId) {
+      setHostDetail(null);
+      setHostDetailError(null);
+      setHostDetailLoading(false);
+      return;
+    }
+
+    let active = true;
+    setHostDetailLoading(true);
+    setHostDetailError(null);
+
+    apiGet<HostMonitorDto>(`/api/metrics/hosts/${inspectedHostId}`)
+      .then((host) => {
+        if (active) setHostDetail(host);
+      })
+      .catch((error) => {
+        if (active) setHostDetailError(error instanceof Error ? error.message : "Host metrics failed to load");
+      })
+      .finally(() => {
+        if (active) setHostDetailLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [inspectedHostId]);
+
   function openResource(resource: DashboardResource) {
     if (resource.url) {
       window.open(resource.url, "_blank", "noopener,noreferrer");
+    }
+  }
+
+  function resourceById(id: string): DashboardResource | null {
+    return resources.find((resource) => resource.id === id) ?? null;
+  }
+
+  function inspectResource(id: string) {
+    setInspectedId(id);
+  }
+
+  function editResource(id: string) {
+    const resource = resourceById(id);
+    if (resource) {
+      onEditService(resource);
+    }
+  }
+
+  function runResourceById(id: string) {
+    const resource = resourceById(id);
+    if (resource) {
+      void runCheck(resource);
     }
   }
 
@@ -515,7 +707,9 @@ export function DashboardConsole({
         </div>
         {hostMonitors.length > 0 ? (
           <div className="host-grid">
-            {hostMonitors.map((host) => <HostVitalsCard key={host.id} host={host} />)}
+            {hostMonitors.map((host) => (
+              <HostVitalsCard key={host.id} host={host} onInspect={(item) => setInspectedHostId(item.id)} />
+            ))}
           </div>
         ) : (
           <div className="metrics-empty-panel">
@@ -536,16 +730,32 @@ export function DashboardConsole({
           <h3>Daily Briefing</h3>
           <span className="group-meta">last 24h</span>
         </div>
+        <div className="briefing-summary-strip">
+          <span><small>Services</small><strong>{briefing.summary.servicesOnline}/{briefing.summary.servicesTotal} online</strong></span>
+          <span><small>Attention</small><strong>{dailyIssueCount}</strong></span>
+          <span><small>Hosts</small><strong>{briefing.summary.hostsOffline} offline · {briefing.summary.hostsUnderPressure} pressure</strong></span>
+          <span><small>Watchlist</small><strong>{briefing.summary.pendingFailures} failing · {briefing.summary.pendingRecoveries} recovering</strong></span>
+        </div>
         <div className="briefing-grid">
           <article className={`briefing-card ${briefing.offlineServices.length > 0 ? "briefing-danger" : ""}`}>
             <strong><AlertTriangle size={15} /> Offline services</strong>
             {briefing.offlineServices.length > 0 ? (
-              briefing.offlineServices.map((item) => (
-                <button key={item.id} type="button" onClick={() => setInspectedId(item.id)}>
-                  <span>{item.name}</span>
-                  <small>{item.error ?? "offline"}</small>
-                </button>
-              ))
+              briefing.offlineServices.map((item) => {
+                const resource = resourceById(item.id);
+                return (
+                  <div className="briefing-action-row" key={item.id}>
+                    <button className="briefing-main-action" type="button" onClick={() => inspectResource(item.id)}>
+                      <span>{item.name}</span>
+                      <small>{item.error ?? "offline"}</small>
+                    </button>
+                    {resource?.monitoringMode === "auto" ? (
+                      <button className="svc-action" type="button" title="Run check" onClick={() => runResourceById(item.id)}>
+                        <RefreshCw size={13} />
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })
             ) : <p>No services are down.</p>}
           </article>
 
@@ -562,10 +772,10 @@ export function DashboardConsole({
           </article>
 
           <article className="briefing-card">
-            <strong><Activity size={15} /> Recent changes</strong>
+            <strong><Activity size={15} /> 24h timeline</strong>
             {briefing.recentChanges.length > 0 ? (
               briefing.recentChanges.map((item) => (
-                <button key={`${item.resourceId}-${item.changedAt}`} type="button" onClick={() => setInspectedId(item.resourceId)}>
+                <button key={`${item.resourceId}-${item.changedAt}`} type="button" onClick={() => inspectResource(item.resourceId)}>
                   <span>{item.name}</span>
                   <small>{item.status} · {relativeTime(item.changedAt)}</small>
                 </button>
@@ -573,19 +783,48 @@ export function DashboardConsole({
             ) : <p>No status transitions in the last day.</p>}
           </article>
 
+          <article className={briefing.watchlist.length > 0 ? "briefing-card briefing-warning" : "briefing-card"}>
+            <strong><RefreshCw size={15} /> Threshold watchlist</strong>
+            {briefing.watchlist.length > 0 ? (
+              briefing.watchlist.map((item) => (
+                <div className="briefing-action-row" key={item.checkId}>
+                  <button className="briefing-main-action" type="button" onClick={() => inspectResource(item.resourceId)}>
+                    <span>{item.resourceName}</span>
+                    <small>
+                      {item.direction === "failing" ? "failing" : "recovering"} · {item.consecutive}/{item.threshold}
+                    </small>
+                  </button>
+                  <button className="svc-action" type="button" title="Run check" onClick={() => runResourceById(item.resourceId)}>
+                    <RefreshCw size={13} />
+                  </button>
+                </div>
+              ))
+            ) : <p>No checks are waiting on thresholds.</p>}
+          </article>
+
           <article className={briefing.staleChecks.length + briefing.unmonitoredServices.length > 0 ? "briefing-card briefing-warning" : "briefing-card"}>
             <strong><RefreshCw size={15} /> Monitoring gaps</strong>
             {briefing.staleChecks.slice(0, 4).map((item) => (
-              <button key={item.checkId} type="button" onClick={() => setInspectedId(item.resourceId)}>
-                <span>{item.resourceName}</span>
-                <small>stale · {item.lastCheckedAt ? relativeTime(item.lastCheckedAt) : "never"}</small>
-              </button>
+              <div className="briefing-action-row" key={item.checkId}>
+                <button className="briefing-main-action" type="button" onClick={() => inspectResource(item.resourceId)}>
+                  <span>{item.resourceName}</span>
+                  <small>stale · {item.lastCheckedAt ? relativeTime(item.lastCheckedAt) : "never"}</small>
+                </button>
+                <button className="svc-action" type="button" title="Run check" onClick={() => runResourceById(item.resourceId)}>
+                  <RefreshCw size={13} />
+                </button>
+              </div>
             ))}
             {briefing.unmonitoredServices.slice(0, 4).map((item) => (
-              <button key={item.id} type="button" onClick={() => setInspectedId(item.id)}>
-                <span>{item.name}</span>
-                <small>no active checks</small>
-              </button>
+              <div className="briefing-action-row" key={item.id}>
+                <button className="briefing-main-action" type="button" onClick={() => inspectResource(item.id)}>
+                  <span>{item.name}</span>
+                  <small>no active checks</small>
+                </button>
+                <button className="svc-action" type="button" title="Edit service" onClick={() => editResource(item.id)}>
+                  <Info size={13} />
+                </button>
+              </div>
             ))}
             {briefing.staleChecks.length === 0 && briefing.unmonitoredServices.length === 0 ? <p>All automatic services have fresh checks.</p> : null}
           </article>
@@ -748,6 +987,15 @@ export function DashboardConsole({
             setInspectedId(null);
             onEditService(item);
           }}
+        />
+      ) : null}
+
+      {inspectedHost ? (
+        <HostDetailDrawer
+          host={inspectedHost}
+          loading={hostDetailLoading}
+          error={hostDetailError}
+          onClose={() => setInspectedHostId(null)}
         />
       ) : null}
     </main>

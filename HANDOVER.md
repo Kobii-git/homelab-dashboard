@@ -4,7 +4,7 @@ This document captures the current state of the project so the next session can 
 
 - **Repo:** https://github.com/Kobii-git/homelab-dashboard
 - **Image:** `ghcr.io/kobii-git/homelab-dashboard`
-- **Current version:** `0.7.2`
+- **Current version:** `0.8.0`
 - **Port:** `4173`
 - **Current branch:** `main`
 
@@ -92,8 +92,8 @@ glances -w --disable-webui --bind 0.0.0.0
 ### Dashboard
 
 - Operations header with overall service and host status.
-- Lab Vitals cards show Glances CPU, RAM, disk, network, temperature, container counts, and recent trends.
-- Daily Briefing summarizes offline services, recent transitions, host pressure, stale checks, and unmonitored automatic services.
+- Lab Vitals cards show Glances CPU, RAM, disk, network, temperature, container counts, recent trends, and a click-through 24-hour host detail drawer.
+- Daily Briefing summarizes online/offline counts, threshold watchlist items, recent transitions, host pressure, stale checks, and unmonitored automatic services.
 - Service cards open saved URLs in a new tab.
 - Favorite stars update optimistically.
 - Status and latency chips run the service health check.
@@ -105,14 +105,18 @@ glances -w --disable-webui --bind 0.0.0.0
 
 - Manual catalog for service resources and groups.
 - Add/edit/delete resources.
+- Common service templates can prefill new service forms.
+- Duplicate action copies a service's launcher/catalog fields.
 - Add/edit/delete health checks.
 - Reorder resources.
 - Health check types: `http`, `tcp`, `ping`, `ssl`.
+- Failure/recovery thresholds gate stable red/green state while every raw sample is still stored in `HealthResult`.
 
 ### Admin
 
 - Password change for database-managed admin accounts.
 - Host monitor management for unauthenticated LAN/VPN Glances endpoints.
+- Runtime Health panel shows build info, process uptime, safe DB counts, scheduler state, and copyable Docker log commands.
 - Theme toggle.
 - Public `/status` page link and build/version information.
 - Setup can be dismissed and demo data can be loaded.
@@ -127,6 +131,19 @@ glances -w --disable-webui --bind 0.0.0.0
 - `COOKIE_SECURE=false` by default because the target deployment is plain HTTP on a private LAN. Set it to `true` only behind HTTPS.
 - Public unauthenticated routes are limited to login/setup/version/health/status style endpoints.
 - Protected API routes require the session cookie.
+- `GET /api/admin/runtime` is authenticated and intentionally avoids secret env values.
+- `GET /api/metrics/hosts/:id` is authenticated and returns up to 1,440 recent host samples for the detail drawer.
+
+---
+
+## What Codex Changed In 0.8.0
+
+- Implemented threshold-gated stable health status while preserving every raw health result.
+- Expanded Daily Briefing with summary counters and threshold watchlist entries.
+- Added Lab Vitals host detail drawer and authenticated host-detail API.
+- Added Services templates and duplicate-service action.
+- Added Admin Runtime Health diagnostics and production startup smoke coverage.
+- Build now cleans `dist` before compiling.
 
 ---
 
@@ -163,13 +180,15 @@ npm run build
 
 The test script creates a timestamped SQLite database under `data/` and runs Vitest sequentially (`fileParallelism: false` in `vitest.config.ts`) to avoid cross-test SQLite contention.
 
+`npm run build` runs `npm run clean` first so stale compiled files from removed routes cannot linger in `dist`.
+
 ---
 
 ## Versioning And Release
 
 - Version lives in `package.json`.
 - `src/shared/version.ts` reads the package version and exposes it through the UI and `/api/version`.
-- `.github/workflows/docker.yml` publishes Docker images to GHCR on pushes to `main` and on `v*` tags.
+- `.github/workflows/docker.yml` typechecks, tests, builds, runs a production startup smoke test, then publishes Docker images to GHCR on pushes to `main` and on `v*` tags.
 - Tag pushes publish semver image tags. The workflow does not currently create a GitHub Release page.
 
 Release checklist:

@@ -1,8 +1,8 @@
-import { Activity, Cpu, ExternalLink, Gauge, Play, RefreshCw, Save, Trash2 } from "lucide-react";
+import { Activity, Clipboard, Cpu, ExternalLink, Gauge, Play, RefreshCw, Save, Trash2 } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { PageHeader } from "../../components/Primitives";
 import { FormErrorBanner, runFormAction } from "../../lib/forms";
-import { apiGet, apiSend, type HostMonitorDto, type SystemSettingsDto } from "../../lib/api";
+import { apiGet, apiSend, type HostMonitorDto, type RuntimeStatusDto, type SchedulerRuntimeDto, type SystemSettingsDto } from "../../lib/api";
 import { formatByteRate, formatPercent, relativeTime } from "../../lib/format";
 
 type HostMonitorForm = {
@@ -23,6 +23,27 @@ const emptyHostMonitorForm: HostMonitorForm = {
   enabled: true
 };
 
+function formatUptimeSeconds(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+function SchedulerRuntimeCard({ label, state }: { label: string; state: SchedulerRuntimeDto }) {
+  return (
+    <div className={`scheduler-runtime-card ${state.lastError ? "scheduler-error" : state.enabled ? "scheduler-ok" : ""}`}>
+      <strong>{label}</strong>
+      <span>{state.enabled ? (state.running ? "running" : "ready") : "disabled"}</span>
+      <small>last tick {relativeTime(state.lastTickAt)}</small>
+      <small>due {state.lastDueCount ?? "—"} · {state.lastDurationMs ?? "—"} ms</small>
+      {state.lastError ? <small className="drawer-check-error">{state.lastError}</small> : null}
+    </div>
+  );
+}
+
 export function SettingsView({
   username,
   authSource,
@@ -42,6 +63,8 @@ export function SettingsView({
   const [autoPingIntervalSeconds, setAutoPingIntervalSeconds] = useState(systemSettings.autoPingIntervalSeconds.toString());
   const [hostMonitors, setHostMonitors] = useState<HostMonitorDto[]>([]);
   const [hostForm, setHostForm] = useState<HostMonitorForm>(emptyHostMonitorForm);
+  const [runtime, setRuntime] = useState<RuntimeStatusDto | null>(null);
+  const [runtimeLoading, setRuntimeLoading] = useState(false);
   const [testingHostId, setTestingHostId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -51,12 +74,25 @@ export function SettingsView({
   }, [systemSettings.autoPingIntervalSeconds]);
 
   useEffect(() => {
-    void loadHostMonitors();
+    void Promise.all([loadHostMonitors(), loadRuntime()]);
   }, []);
 
   async function loadHostMonitors() {
     const monitors = await apiGet<HostMonitorDto[]>("/api/metrics/hosts");
     setHostMonitors(monitors);
+  }
+
+  async function loadRuntime() {
+    setRuntimeLoading(true);
+    try {
+      setRuntime(await apiGet<RuntimeStatusDto>("/api/admin/runtime"));
+    } finally {
+      setRuntimeLoading(false);
+    }
+  }
+
+  async function copyText(text: string) {
+    await navigator.clipboard?.writeText(text);
   }
 
   async function changePassword(event: FormEvent) {
@@ -326,6 +362,53 @@ export function SettingsView({
               onClick={() => window.open("/status", "_blank", "noopener,noreferrer")}
             >
               <ExternalLink size={16} /> Public status page
+            </button>
+          </div>
+        </section>
+
+        <section className="table-panel settings-wide-panel">
+          <h3><Gauge size={16} /> Runtime Health</h3>
+          {runtime ? (
+            <>
+              <div className="key-value-grid runtime-key-grid">
+                <span><span>Version</span><strong>v{runtime.build.version} · {runtime.build.gitSha}</strong></span>
+                <span><span>Started</span><strong>{relativeTime(runtime.process.startedAt)}</strong></span>
+                <span><span>Uptime</span><strong>{formatUptimeSeconds(runtime.process.uptimeSeconds)}</strong></span>
+                <span><span>Node</span><strong>{runtime.process.nodeVersion}</strong></span>
+                <span><span>Listen</span><strong>{runtime.process.host}:{runtime.process.port}</strong></span>
+                <span><span>Database</span><strong>{runtime.database.ok ? runtime.database.url : "unavailable"}</strong></span>
+              </div>
+
+              <div className="runtime-count-grid">
+                <span><small>Services</small><strong>{runtime.database.counts.resources}</strong></span>
+                <span><small>Checks</small><strong>{runtime.database.counts.healthChecks}</strong></span>
+                <span><small>Results</small><strong>{runtime.database.counts.healthResults}</strong></span>
+                <span><small>Hosts</small><strong>{runtime.database.counts.hostMonitors}</strong></span>
+                <span><small>Samples</small><strong>{runtime.database.counts.hostMetricSamples}</strong></span>
+              </div>
+
+              <div className="scheduler-runtime-grid">
+                <SchedulerRuntimeCard label="Health checks" state={runtime.schedulers.health} />
+                <SchedulerRuntimeCard label="Host metrics" state={runtime.schedulers.metrics} />
+              </div>
+
+              <div className="runtime-command-grid">
+                <code>docker logs --tail=200 homelab-dashboard</code>
+                <button className="icon-button" type="button" title="Copy logs command" onClick={() => void copyText("docker logs --tail=200 homelab-dashboard")}>
+                  <Clipboard size={14} />
+                </button>
+                <code>docker compose ps && docker compose logs --tail=200 dashboard</code>
+                <button className="icon-button" type="button" title="Copy compose command" onClick={() => void copyText("docker compose ps && docker compose logs --tail=200 dashboard")}>
+                  <Clipboard size={14} />
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="muted-copy">{runtimeLoading ? "Loading runtime health..." : "Runtime health is not loaded."}</p>
+          )}
+          <div className="settings-actions">
+            <button className="icon-text-button" type="button" onClick={() => void loadRuntime()} disabled={runtimeLoading}>
+              <RefreshCw size={16} className={runtimeLoading ? "spin" : ""} /> Refresh runtime
             </button>
           </div>
         </section>

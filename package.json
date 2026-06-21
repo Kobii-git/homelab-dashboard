@@ -1,20 +1,21 @@
 {
   "name": "homelab-dashboard",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "scripts": {
     "postinstall": "prisma generate",
     "dev": "sh -c 'npm run db:push && PORT=\"${API_PORT:-4173}\" tsx watch src/server/index.ts'",
-    "db:push": "sh -c 'export DATABASE_URL=\"${DATABASE_URL:-file:../data/homelab.db}\" RUST_LOG=debug; prisma db push --skip-generate && prisma generate'",
+    "db:push": "sh -c 'mkdir -p data; export DATABASE_URL=\"${DATABASE_URL:-file:../data/homelab.db}\" RUST_LOG=debug; prisma db push --skip-generate && prisma generate'",
     "dev:client": "vite --host 0.0.0.0",
     "dev:all": "concurrently \"npm:dev\" \"npm:dev:client\"",
     "dev:preview": "sh -c 'export DATABASE_URL=\"file:../data/preview.db\"; npm run dev:all'",
-    "build": "prisma generate && tsc -p tsconfig.server.json && vite build",
+    "clean": "rm -rf dist",
+    "build": "npm run clean && prisma generate && tsc -p tsconfig.server.json && vite build",
     "start": "node dist/server/index.js",
     "db:studio": "prisma studio",
     "seed:demo": "tsx src/server/seed.ts",
-    "test": "sh -c 'export NODE_ENV=test DATABASE_URL=\"file:../data/test-$(date +%s)-$$.db\" ADMIN_PASSWORD=test-pass COOKIE_SECRET=test-cookie-secret-with-more-than-32-chars PRISMA_SCHEMA_ENGINE_LOG_LEVEL=trace RUST_LOG=debug; prisma generate && prisma db push --skip-generate && vitest run'",
+    "test": "sh -c 'mkdir -p data; export NODE_ENV=test DATABASE_URL=\"file:../data/test-$(date +%s)-$$.db\" ADMIN_PASSWORD=test-pass COOKIE_SECRET=test-cookie-secret-with-more-than-32-chars PRISMA_SCHEMA_ENGINE_LOG_LEVEL=trace RUST_LOG=debug; prisma generate && prisma db push --skip-generate && vitest run'",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

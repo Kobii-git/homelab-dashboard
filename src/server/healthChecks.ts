@@ -12,6 +12,18 @@ type CheckOutcome = {
   error?: string;
 };
 
+export type SchedulerUpdate = {
+  running?: boolean;
+  lastTickAt?: Date;
+  lastCompletedAt?: Date;
+  lastError?: string | null;
+  lastDueCount?: number;
+  lastDurationMs?: number;
+  skippedTickAt?: Date;
+};
+
+type SchedulerObserver = (update: SchedulerUpdate) => void;
+
 function elapsedSince(startedAt: number): number {
   return Math.max(1, Date.now() - startedAt);
 }
@@ -137,6 +149,8 @@ async function applyHealthOutcome(
         latestStatus: true,
         consecutiveFailures: true,
         consecutiveSuccesses: true,
+        failureThreshold: true,
+        successThreshold: true,
         lastTransitionAt: true,
         resource: {
           select: { monitoringMode: true }
@@ -165,18 +179,25 @@ async function applyHealthOutcome(
 
     const nextFailures = outcome.status === "offline" ? currentCheck.consecutiveFailures + 1 : 0;
     const nextSuccesses = outcome.status === "online" ? currentCheck.consecutiveSuccesses + 1 : 0;
-    const transitioned = currentCheck.latestStatus !== outcome.status;
+    const nextStableStatus =
+      outcome.status === "offline" && nextFailures >= currentCheck.failureThreshold
+        ? "offline"
+        : outcome.status === "online" && nextSuccesses >= currentCheck.successThreshold
+          ? "online"
+          : currentCheck.latestStatus;
+    const transitioned = currentCheck.latestStatus !== nextStableStatus;
+    const checkedAt = new Date();
 
     await tx.healthCheck.update({
       where: { id: check.id },
       data: {
-        latestStatus: outcome.status,
+        latestStatus: nextStableStatus,
         latestLatencyMs: outcome.latencyMs,
-        latestCheckedAt: new Date(),
+        latestCheckedAt: checkedAt,
         latestError: outcome.error ?? null,
         consecutiveFailures: nextFailures,
         consecutiveSuccesses: nextSuccesses,
-        lastTransitionAt: transitioned ? new Date() : currentCheck.lastTransitionAt
+        lastTransitionAt: transitioned ? checkedAt : currentCheck.lastTransitionAt
       }
     });
 
@@ -218,15 +239,22 @@ export async function runHealthCheck(
   return outcome;
 }
 
-export function startHealthScheduler(prisma: PrismaClient, intervalMs = 15000): () => void {
+export function startHealthScheduler(
+  prisma: PrismaClient,
+  intervalMs = 15000,
+  observer?: SchedulerObserver
+): () => void {
   let running = false;
 
   const tick = async () => {
     if (running) {
+      observer?.({ skippedTickAt: new Date() });
       return;
     }
 
+    const startedAt = Date.now();
     running = true;
+    observer?.({ running: true, lastTickAt: new Date(), lastError: null });
     try {
       const checks = await prisma.healthCheck.findMany({
         where: {
@@ -245,7 +273,21 @@ export function startHealthScheduler(prisma: PrismaClient, intervalMs = 15000): 
         return now - check.latestCheckedAt.getTime() >= check.intervalSeconds * 1000;
       });
 
+      observer?.({ lastDueCount: due.length });
       await Promise.allSettled(due.map((check) => runHealthCheck(prisma, check)));
+      observer?.({
+        running: false,
+        lastCompletedAt: new Date(),
+        lastDurationMs: Date.now() - startedAt,
+        lastError: null
+      });
+    } catch (error) {
+      observer?.({
+        running: false,
+        lastCompletedAt: new Date(),
+        lastDurationMs: Date.now() - startedAt,
+        lastError: error instanceof Error ? error.message : "Health scheduler failed"
+      });
     } finally {
       running = false;
     }

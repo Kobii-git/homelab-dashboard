@@ -16,11 +16,25 @@ export const emptyAppData: AppData = {
     ungroupedResources: [],
     hostMonitors: [],
     dailyBriefing: {
+      summary: {
+        servicesTotal: 0,
+        servicesOnline: 0,
+        servicesOffline: 0,
+        servicesUnknown: 0,
+        hostsTotal: 0,
+        hostsOffline: 0,
+        hostsUnderPressure: 0,
+        staleChecks: 0,
+        unmonitoredServices: 0,
+        pendingFailures: 0,
+        pendingRecoveries: 0
+      },
       offlineServices: [],
       recentChanges: [],
       hostsUnderPressure: [],
       staleChecks: [],
-      unmonitoredServices: []
+      unmonitoredServices: [],
+      watchlist: []
     },
     layout: {}
   },

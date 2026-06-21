@@ -6,6 +6,24 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.8.0] - 2026-06-21
+
+### Added
+- Host metric detail drawer with authenticated 24-hour sample history.
+- Expanded Daily Briefing with summary counters and threshold watchlist items.
+- Admin Runtime Health diagnostics with build, process, database count, scheduler,
+  and copyable Docker troubleshooting details.
+- Service templates for common homelab apps and a duplicate-service action.
+- CI production startup smoke coverage before Docker image publishing.
+
+### Changed
+- Health check failure and recovery thresholds now gate stable red/green status
+  while every raw result continues to be stored in `HealthResult`.
+- Production builds now clean `dist` before compiling to avoid stale removed
+  server files lingering in Docker images.
+- Service description UI no longer labels the active `description` field as
+  old-scope notes.
+
 ## [0.7.2] - 2026-06-20
 
 ### Fixed

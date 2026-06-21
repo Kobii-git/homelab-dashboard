@@ -106,6 +106,19 @@ export type HostMonitorDto = {
 };
 
 export type DailyBriefingDto = {
+  summary: {
+    servicesTotal: number;
+    servicesOnline: number;
+    servicesOffline: number;
+    servicesUnknown: number;
+    hostsTotal: number;
+    hostsOffline: number;
+    hostsUnderPressure: number;
+    staleChecks: number;
+    unmonitoredServices: number;
+    pendingFailures: number;
+    pendingRecoveries: number;
+  };
   offlineServices: Array<{
     id: string;
     name: string;
@@ -137,5 +150,18 @@ export type DailyBriefingDto = {
   unmonitoredServices: Array<{
     id: string;
     name: string;
+  }>;
+  watchlist: Array<{
+    resourceId: string;
+    resourceName: string;
+    checkId: string;
+    target: string;
+    direction: "failing" | "recovering";
+    currentStatus: HealthStatus;
+    latestRawStatus: "online" | "offline";
+    consecutive: number;
+    threshold: number;
+    lastCheckedAt: string | null;
+    error: string | null;
   }>;
 };

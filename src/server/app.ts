@@ -11,7 +11,7 @@ import { z, ZodError } from "zod";
 import { isAuthenticated, createAuthToken, SESSION_COOKIE, verifyAdminPassword, verifyAdminLogin, hashPassword } from "./auth.js";
 import { getEnv, type AppEnv } from "./env.js";
 import { getBuildInfo } from "../shared/version.js";
-import { runHealthCheck, startHealthScheduler } from "./healthChecks.js";
+import { runHealthCheck, startHealthScheduler, type SchedulerUpdate } from "./healthChecks.js";
 import { runHostMetricSample, startMetricsScheduler, toHostMonitorDto } from "./metrics.js";
 import type { DailyBriefingDto, HostMonitorDto } from "../shared/types.js";
 import {
@@ -37,6 +37,18 @@ type CreateAppOptions = {
   prisma?: PrismaClient;
   monitor?: boolean;
   logger?: boolean;
+};
+
+type SchedulerRuntime = {
+  enabled: boolean;
+  running: boolean;
+  intervalMs: number;
+  lastTickAt: Date | null;
+  lastCompletedAt: Date | null;
+  lastError: string | null;
+  lastDueCount: number | null;
+  lastDurationMs: number | null;
+  skippedTickAt: Date | null;
 };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -70,6 +82,63 @@ const resetHostMonitorState = {
   latestContainersRunning: null,
   latestContainersTotal: null
 } as const;
+
+function createSchedulerRuntime(intervalMs: number): SchedulerRuntime {
+  return {
+    enabled: false,
+    running: false,
+    intervalMs,
+    lastTickAt: null,
+    lastCompletedAt: null,
+    lastError: null,
+    lastDueCount: null,
+    lastDurationMs: null,
+    skippedTickAt: null
+  };
+}
+
+function applySchedulerUpdate(state: SchedulerRuntime, update: SchedulerUpdate): void {
+  if (update.running !== undefined) state.running = update.running;
+  if (update.lastTickAt !== undefined) state.lastTickAt = update.lastTickAt;
+  if (update.lastCompletedAt !== undefined) state.lastCompletedAt = update.lastCompletedAt;
+  if (update.lastError !== undefined) state.lastError = update.lastError;
+  if (update.lastDueCount !== undefined) state.lastDueCount = update.lastDueCount;
+  if (update.lastDurationMs !== undefined) state.lastDurationMs = update.lastDurationMs;
+  if (update.skippedTickAt !== undefined) state.skippedTickAt = update.skippedTickAt;
+}
+
+function serializeSchedulerRuntime(state: SchedulerRuntime) {
+  return {
+    enabled: state.enabled,
+    running: state.running,
+    intervalMs: state.intervalMs,
+    lastTickAt: state.lastTickAt?.toISOString() ?? null,
+    lastCompletedAt: state.lastCompletedAt?.toISOString() ?? null,
+    lastError: state.lastError,
+    lastDueCount: state.lastDueCount,
+    lastDurationMs: state.lastDurationMs,
+    skippedTickAt: state.skippedTickAt?.toISOString() ?? null
+  };
+}
+
+function safeDatabaseHint(databaseUrl: string): string {
+  if (databaseUrl.startsWith("file:")) {
+    return databaseUrl;
+  }
+
+  try {
+    const url = new URL(databaseUrl);
+    if (url.password) {
+      url.password = "redacted";
+    }
+    if (url.username) {
+      url.username = "redacted";
+    }
+    return url.toString();
+  } catch {
+    return "configured";
+  }
+}
 
 function resolveClientDist(): string | null {
   const candidates = [
@@ -298,6 +367,10 @@ type BriefingCheck = {
   latestStatus: string;
   latestError: string | null;
   latestCheckedAt: Date | null;
+  consecutiveFailures: number;
+  consecutiveSuccesses: number;
+  failureThreshold: number;
+  successThreshold: number;
   lastTransitionAt: Date | null;
 };
 
@@ -324,10 +397,14 @@ function resourceStatus(resource: BriefingResource): "online" | "offline" | "unk
 function buildDailyBriefing(resources: BriefingResource[], hostMonitors: HostMonitorDto[]): DailyBriefingDto {
   const now = Date.now();
   const dayAgo = now - 24 * 60 * 60 * 1000;
+  const statuses = resources.map((resource) => ({
+    resource,
+    status: resourceStatus(resource)
+  }));
 
-  const offlineServices = resources
-    .filter((resource) => resourceStatus(resource) === "offline")
-    .map((resource) => {
+  const offlineServices = statuses
+    .filter((item) => item.status === "offline")
+    .map(({ resource }) => {
       const failed = resource.healthChecks.find((check) => check.enabled && check.latestStatus === "offline");
       return {
         id: resource.id,
@@ -359,7 +436,7 @@ function buildDailyBriefing(resources: BriefingResource[], hostMonitors: HostMon
     .sort((left, right) => right.changedAt.localeCompare(left.changedAt))
     .slice(0, 8);
 
-  const hostsUnderPressure = hostMonitors
+  const hostsUnderPressureAll = hostMonitors
     .flatMap((host) => {
       const metrics: DailyBriefingDto["hostsUnderPressure"] = [];
       for (const [metric, value] of [
@@ -379,10 +456,10 @@ function buildDailyBriefing(resources: BriefingResource[], hostMonitors: HostMon
       }
       return metrics;
     })
-    .sort((left, right) => right.value - left.value)
-    .slice(0, 8);
+    .sort((left, right) => right.value - left.value);
+  const hostsUnderPressure = hostsUnderPressureAll.slice(0, 8);
 
-  const staleChecks = resources
+  const staleChecksAll = resources
     .flatMap((resource) =>
       resource.monitoringMode === "auto"
         ? resource.healthChecks
@@ -400,23 +477,96 @@ function buildDailyBriefing(resources: BriefingResource[], hostMonitors: HostMon
             lastCheckedAt: check.latestCheckedAt?.toISOString() ?? null
           }))
         : []
-    )
-    .slice(0, 8);
+    );
+  const staleChecks = staleChecksAll.slice(0, 8);
 
-  const unmonitoredServices = resources
+  const unmonitoredServicesAll = resources
     .filter((resource) =>
       resource.monitoringMode === "auto" &&
       resource.healthChecks.filter((check) => check.enabled).length === 0
     )
-    .map((resource) => ({ id: resource.id, name: resource.name }))
-    .slice(0, 8);
+    .map((resource) => ({ id: resource.id, name: resource.name }));
+  const unmonitoredServices = unmonitoredServicesAll.slice(0, 8);
+
+  const watchlistAll: DailyBriefingDto["watchlist"] = resources
+    .flatMap((resource) =>
+      resource.monitoringMode === "auto"
+        ? resource.healthChecks
+          .filter((check) => check.enabled)
+          .flatMap((check) => {
+            const entries: DailyBriefingDto["watchlist"] = [];
+
+            if (
+              check.consecutiveFailures > 0 &&
+              check.consecutiveFailures < check.failureThreshold &&
+              check.latestStatus !== "offline"
+            ) {
+              entries.push({
+                resourceId: resource.id,
+                resourceName: resource.name,
+                checkId: check.id,
+                target: check.target,
+                direction: "failing" as const,
+                currentStatus: check.latestStatus as "online" | "offline" | "unknown",
+                latestRawStatus: "offline" as const,
+                consecutive: check.consecutiveFailures,
+                threshold: check.failureThreshold,
+                lastCheckedAt: check.latestCheckedAt?.toISOString() ?? null,
+                error: check.latestError
+              });
+            }
+
+            if (
+              check.consecutiveSuccesses > 0 &&
+              check.consecutiveSuccesses < check.successThreshold &&
+              check.latestStatus === "offline"
+            ) {
+              entries.push({
+                resourceId: resource.id,
+                resourceName: resource.name,
+                checkId: check.id,
+                target: check.target,
+                direction: "recovering" as const,
+                currentStatus: check.latestStatus as "online" | "offline" | "unknown",
+                latestRawStatus: "online" as const,
+                consecutive: check.consecutiveSuccesses,
+                threshold: check.successThreshold,
+                lastCheckedAt: check.latestCheckedAt?.toISOString() ?? null,
+                error: check.latestError
+              });
+            }
+
+            return entries;
+          })
+        : []
+    )
+    .sort((left, right) => {
+      const directionPriority = left.direction === right.direction ? 0 : left.direction === "failing" ? -1 : 1;
+      if (directionPriority !== 0) return directionPriority;
+      return (right.lastCheckedAt ?? "").localeCompare(left.lastCheckedAt ?? "");
+    });
+  const watchlist = watchlistAll.slice(0, 8);
 
   return {
+    summary: {
+      servicesTotal: resources.length,
+      servicesOnline: statuses.filter((item) => item.status === "online").length,
+      servicesOffline: statuses.filter((item) => item.status === "offline").length,
+      servicesUnknown: statuses.filter((item) => item.status === "unknown").length,
+      hostsTotal: hostMonitors.length,
+      hostsOffline: hostMonitors.filter((host) => host.latestStatus === "offline").length,
+      hostsUnderPressure: hostsUnderPressureAll.length,
+      staleChecks: staleChecksAll.length,
+      unmonitoredServices: unmonitoredServicesAll.length,
+      pendingFailures: watchlistAll.filter((item) => item.direction === "failing").length,
+      pendingRecoveries: watchlistAll.filter((item) => item.direction === "recovering").length
+    },
     offlineServices,
     recentChanges,
     hostsUnderPressure,
     staleChecks,
-    unmonitoredServices
+    unmonitoredServices,
+    watchlist
   };
 }
 
@@ -465,6 +615,9 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const prisma = options.prisma ?? new PrismaClient();
   const loginLimiter = new RateLimiter(10, 60_000);
   const app = Fastify({ logger: options.logger ?? env.nodeEnv === "production" });
+  const startedAt = new Date();
+  const healthScheduler = createSchedulerRuntime(15_000);
+  const metricsScheduler = createSchedulerRuntime(15_000);
 
   await app.register(cookie, {
     secret: env.cookieSecret
@@ -724,12 +877,78 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return { autoPingIntervalSeconds: body.autoPingIntervalSeconds };
   });
 
+  app.get("/api/admin/runtime", async () => {
+    const [
+      resourceCount,
+      healthCheckCount,
+      healthResultCount,
+      hostMonitorCount,
+      hostMetricSampleCount,
+      groupCount
+    ] = await Promise.all([
+      prisma.resource.count(),
+      prisma.healthCheck.count(),
+      prisma.healthResult.count(),
+      prisma.hostMonitor.count(),
+      prisma.hostMetricSample.count(),
+      prisma.dashboardGroup.count()
+    ]);
+
+    return {
+      build: getBuildInfo(),
+      process: {
+        nodeEnv: env.nodeEnv,
+        nodeVersion: process.version,
+        platform: process.platform,
+        arch: process.arch,
+        host: env.host,
+        port: env.port,
+        uptimeSeconds: Math.floor(process.uptime()),
+        startedAt: startedAt.toISOString()
+      },
+      auth: {
+        source: env.adminPassword ? "env" : "database",
+        cookieSecure: env.cookieSecure
+      },
+      database: {
+        ok: true,
+        url: safeDatabaseHint(env.databaseUrl),
+        counts: {
+          groups: groupCount,
+          resources: resourceCount,
+          healthChecks: healthCheckCount,
+          healthResults: healthResultCount,
+          hostMonitors: hostMonitorCount,
+          hostMetricSamples: hostMetricSampleCount
+        }
+      },
+      schedulers: {
+        health: serializeSchedulerRuntime(healthScheduler),
+        metrics: serializeSchedulerRuntime(metricsScheduler)
+      }
+    };
+  });
+
   app.get("/api/metrics/hosts", async () => {
     const monitors = await prisma.hostMonitor.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: hostMonitorInclude
     });
     return monitors.map(toHostMonitorDto);
+  });
+
+  app.get("/api/metrics/hosts/:id", async (request) => {
+    const id = routeId(request);
+    const monitor = await prisma.hostMonitor.findUniqueOrThrow({
+      where: { id },
+      include: {
+        samples: {
+          orderBy: { sampledAt: "desc" },
+          take: 1440
+        }
+      }
+    });
+    return toHostMonitorDto(monitor);
   });
 
   app.post("/api/metrics/hosts", async (request, reply) => {
@@ -963,9 +1182,16 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const shouldMonitor = options.monitor ?? env.nodeEnv !== "test";
 
   if (shouldMonitor) {
+    healthScheduler.enabled = true;
+    metricsScheduler.enabled = true;
     await syncAutoHealthCheckTargets(prisma);
-    stopScheduler = startHealthScheduler(prisma);
-    stopMetricsScheduler = startMetricsScheduler(prisma);
+    stopScheduler = startHealthScheduler(prisma, healthScheduler.intervalMs, (update) => applySchedulerUpdate(healthScheduler, update));
+    stopMetricsScheduler = startMetricsScheduler(
+      prisma,
+      metricsScheduler.intervalMs,
+      undefined,
+      (update) => applySchedulerUpdate(metricsScheduler, update)
+    );
   }
 
   app.addHook("onClose", async () => {
