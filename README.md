@@ -38,6 +38,14 @@ The active database model is intentionally small: `Resource`, `DashboardGroup`, 
 
 ### Authenticate To The Private Image Registry
 
+This Forgejo registry is currently served over LAN HTTP. Before `docker login`, add `10.0.21.40:3000` to Docker's insecure registries on each Docker host, then restart Docker:
+
+```json
+{
+  "insecure-registries": ["10.0.21.40:3000"]
+}
+```
+
 ```sh
 echo YOUR_FORGEJO_TOKEN | docker login 10.0.21.40:3000 -u kobus --password-stdin
 ```
@@ -49,6 +57,12 @@ Create a Forgejo access token with package read access. Docker stores the login 
 ```sh
 curl -fsSL http://10.0.21.40:3000/kobus/homelabdashboard/raw/branch/main/docker-compose.yml \
   -o /tmp/homelab.yml && docker compose -f /tmp/homelab.yml up -d
+```
+
+Or pull the image directly:
+
+```sh
+docker pull 10.0.21.40:3000/kobus/homelabdashboard:latest
 ```
 
 Open **http://localhost:4173**. On first visit you will be prompted to create the admin account and optionally load demo data.
@@ -174,6 +188,19 @@ DATABASE_URL=file:../data/homelab.db npm run seed:demo
 
 ```sh
 docker compose -f docker-compose.build.yml up -d --build
+```
+
+To publish multi-architecture images to the LAN HTTP Forgejo registry from a workstation:
+
+```sh
+VERSION=$(node -p "require('./package.json').version")
+docker buildx create --name forgejo-http --driver docker-container --buildkitd-config .buildkitd-forgejo.toml --use --bootstrap
+docker buildx build --builder forgejo-http --platform linux/amd64,linux/arm64 \
+  --build-arg APP_GIT_SHA="$(git rev-parse --short=12 HEAD)" \
+  --build-arg APP_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -t "10.0.21.40:3000/kobus/homelabdashboard:${VERSION}" \
+  -t 10.0.21.40:3000/kobus/homelabdashboard:latest \
+  --push .
 ```
 
 ---

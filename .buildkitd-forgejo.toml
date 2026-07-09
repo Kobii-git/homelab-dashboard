@@ -1,0 +1,3 @@
+[registry."10.0.21.40:3000"]
+  http = true
+  insecure = true

@@ -54,6 +54,8 @@ Schema cleanup in `0.5.0` removes old pro-console models: widgets, layout, tags,
 
 The image is private, so authenticate once on the Docker host:
 
+This Forgejo registry is currently LAN HTTP, so each Docker host must trust `10.0.21.40:3000` as an insecure registry before login/pull unless Forgejo is moved behind HTTPS.
+
 ```sh
 echo <FORGEJO_TOKEN_with_package_read> | docker login 10.0.21.40:3000 -u kobus --password-stdin
 docker compose pull
