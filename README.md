@@ -39,15 +39,15 @@ The active database model is intentionally small: `Resource`, `DashboardGroup`, 
 ### Authenticate To The Private Image Registry
 
 ```sh
-echo YOUR_GITHUB_TOKEN | docker login ghcr.io -u Kobii-git --password-stdin
+echo YOUR_FORGEJO_TOKEN | docker login 10.0.21.40:3000 -u kobus --password-stdin
 ```
 
-Create a GitHub PAT with `read:packages` scope at <https://github.com/settings/tokens/new>. Docker stores the login in `~/.docker/config.json`, so you only need to do this once per machine.
+Create a Forgejo access token with package read access. Docker stores the login in `~/.docker/config.json`, so you only need to do this once per machine.
 
 ### Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Kobii-git/homelab-dashboard/main/docker-compose.yml \
+curl -fsSL http://10.0.21.40:3000/kobus/homelabdashboard/raw/branch/main/docker-compose.yml \
   -o /tmp/homelab.yml && docker compose -f /tmp/homelab.yml up -d
 ```
 
@@ -142,7 +142,7 @@ docker compose ps && docker compose logs --tail=200 dashboard
 ## Local Development
 
 ```sh
-git clone https://github.com/Kobii-git/homelab-dashboard
+git clone ssh://git@10.0.21.40:222/kobus/homelabdashboard.git
 cd homelab-dashboard
 npm install
 npm run db:push
@@ -185,7 +185,7 @@ docker compose -f docker-compose.build.yml up -d --build
 | Frontend | React 19, Vite, TypeScript |
 | Backend | Fastify 5, Zod, TypeScript |
 | Database | SQLite via Prisma ORM |
-| Container | Docker / GHCR |
+| Container | Docker / Forgejo package registry |
 
 ---
 

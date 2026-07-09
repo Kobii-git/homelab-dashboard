@@ -1,6 +1,6 @@
 services:
   dashboard:
-    image: ghcr.io/kobii-git/homelab-dashboard:latest
+    image: 10.0.21.40:3000/kobus/homelabdashboard:latest
     container_name: homelab-dashboard
     restart: unless-stopped
     environment:

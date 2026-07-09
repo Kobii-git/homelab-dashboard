@@ -2,8 +2,8 @@
 
 This document captures the current state of the project so the next session can continue without rediscovering the shape of the app.
 
-- **Repo:** https://github.com/Kobii-git/homelab-dashboard
-- **Image:** `ghcr.io/kobii-git/homelab-dashboard`
+- **Repo:** http://10.0.21.40:3000/kobus/homelabdashboard
+- **Image:** `10.0.21.40:3000/kobus/homelabdashboard`
 - **Current version:** `0.8.0`
 - **Port:** `4173`
 - **Current branch:** `main`
@@ -23,7 +23,7 @@ The current product is deliberately not a remote-management platform. SSH, RDP, 
 | Frontend | React 19 + Vite + TypeScript (`src/client/`) |
 | Backend | Fastify 5 + Zod + TypeScript (`src/server/`) |
 | Database | SQLite via Prisma (`prisma/schema.prisma`) |
-| Deploy | Docker Compose / GHCR |
+| Deploy | Docker Compose / Forgejo package registry |
 
 ---
 
@@ -55,7 +55,7 @@ Schema cleanup in `0.5.0` removes old pro-console models: widgets, layout, tags,
 The image is private, so authenticate once on the Docker host:
 
 ```sh
-echo <GH_PAT_with_read:packages> | docker login ghcr.io -u Kobii-git --password-stdin
+echo <FORGEJO_TOKEN_with_package_read> | docker login 10.0.21.40:3000 -u kobus --password-stdin
 docker compose pull
 docker compose up -d --force-recreate
 ```
