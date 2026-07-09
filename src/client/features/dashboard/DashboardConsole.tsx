@@ -10,18 +10,21 @@ import {
   LayoutGrid,
   MemoryStick,
   Network,
+  PanelsTopLeft,
   Plus,
   RefreshCw,
   Rows3,
   Search,
   Server,
+  ShieldCheck,
+  Sparkles,
   Star,
   Thermometer,
   X
 } from "lucide-react";
 import type { DragEvent, KeyboardEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import type { DashboardResource, HostMetricSampleDto, HostMonitorDto } from "../../../shared/types";
+import type { AiBriefingActionDto, AiBriefingDto, ApiWidgetDto, DashboardResource, HostMetricSampleDto, HostMonitorDto, IntegrationSampleDto, IntegrationSourceDto, OpnsenseSnapshotDto } from "../../../shared/types";
 import { EmptyPanel, StatusBadge } from "../../components/Primitives";
 import { Heartbeat } from "../../components/Heartbeat";
 import { ServiceDrawer } from "../../components/ServiceDrawer";
@@ -43,7 +46,7 @@ import {
   summarizeResourceStatus,
   uptimePercent
 } from "../../lib/format";
-import { apiGet } from "../../lib/api";
+import { apiGet, apiSend } from "../../lib/api";
 import { type AppData } from "../types";
 
 type StatusFilter = "all" | "favorites" | "online" | "offline" | "unknown";
@@ -312,6 +315,367 @@ function HostDetailDrawer({
   );
 }
 
+type IntegrationMetricKey = "cpuPercent" | "memoryPercent" | "diskPercent";
+
+function sortIntegrationSamples(samples: IntegrationSampleDto[] | undefined): IntegrationSampleDto[] {
+  return [...(samples ?? [])].sort((left, right) => left.sampledAt.localeCompare(right.sampledAt));
+}
+
+function latestNetworkRate(snapshot: OpnsenseSnapshotDto | null | undefined): number | null {
+  const total = snapshot?.interfaces.reduce(
+    (sum, item) => sum + (item.receivedBytesPerSec ?? 0) + (item.sentBytesPerSec ?? 0),
+    0
+  ) ?? 0;
+  return total > 0 ? total : null;
+}
+
+function gatewaySummary(snapshot: OpnsenseSnapshotDto | null | undefined): string {
+  const gateways = snapshot?.gateways ?? [];
+  if (gateways.length === 0) return "No gateways";
+  const online = gateways.filter((gateway) => gateway.status === "online").length;
+  return `${online}/${gateways.length} gateways`;
+}
+
+function IntegrationMetricSparkline({
+  samples,
+  metric
+}: {
+  samples: IntegrationSampleDto[] | undefined;
+  metric: IntegrationMetricKey;
+}) {
+  const values = sortIntegrationSamples(samples)
+    .map((sample) => sample.snapshot?.system[metric])
+    .filter((value): value is number => typeof value === "number");
+
+  if (values.length < 2) {
+    return <div className="metric-sparkline metric-sparkline-empty" aria-hidden />;
+  }
+
+  const points = values.map((value, index) => {
+    const x = values.length === 1 ? 0 : (index / (values.length - 1)) * 100;
+    const y = 36 - (Math.max(0, Math.min(100, value)) / 100) * 32;
+    return `${x},${y}`;
+  }).join(" ");
+
+  return (
+    <svg className="metric-sparkline" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden>
+      <polyline points={points} />
+    </svg>
+  );
+}
+
+function IntegrationCard({
+  source,
+  onInspect
+}: {
+  source: IntegrationSourceDto;
+  onInspect: (source: IntegrationSourceDto) => void;
+}) {
+  const snapshot = source.latestSnapshot;
+  const networkTotal = latestNetworkRate(snapshot);
+  const gatewaysOffline = snapshot?.gateways.filter((gateway) => gateway.status === "offline").length ?? 0;
+  const detailStatus = gatewaysOffline > 0 ? "offline" : source.status;
+
+  return (
+    <article
+      className={`host-card integration-card host-${detailStatus}`}
+      role="button"
+      tabIndex={0}
+      title={`Inspect ${source.name} integration`}
+      onClick={() => onInspect(source)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          onInspect(source);
+        }
+      }}
+    >
+      <header className="host-card-head">
+        <span className="host-icon integration-icon"><ShieldCheck size={18} /></span>
+        <span>
+          <strong>{source.name}</strong>
+          <small>{source.baseUrl}</small>
+        </span>
+        <i className={`svc-dot dot-${source.status}`} title={source.status} />
+      </header>
+
+      <div className="host-spark-grid">
+        <IntegrationMetricSparkline samples={source.samples} metric="cpuPercent" />
+        <IntegrationMetricSparkline samples={source.samples} metric="memoryPercent" />
+        <IntegrationMetricSparkline samples={source.samples} metric="diskPercent" />
+      </div>
+
+      <div className="host-metrics">
+        <MetricBar icon={<Cpu size={13} />} label="CPU" value={snapshot?.system.cpuPercent} />
+        <MetricBar icon={<MemoryStick size={13} />} label="RAM" value={snapshot?.system.memoryPercent} />
+        <MetricBar icon={<HardDrive size={13} />} label="Disk" value={snapshot?.system.diskPercent} />
+      </div>
+
+      <footer className="host-card-foot">
+        <span title="Gateway health"><Network size={13} /> {gatewaySummary(snapshot)}</span>
+        <span title="Interface throughput"><Activity size={13} /> {formatByteRate(networkTotal)}</span>
+        {snapshot?.firmware.version ? <span title="Firmware">{snapshot.firmware.version}</span> : null}
+        <span title="Last sampled">{relativeTime(source.latestSampledAt)}</span>
+      </footer>
+
+      {source.latestError ? <p className="host-error">{source.latestError}</p> : null}
+      {!source.latestSnapshot && source.status === "unknown" ? <p className="host-error">No OPNsense sample collected yet.</p> : null}
+    </article>
+  );
+}
+
+function IntegrationDetailDrawer({
+  source,
+  loading,
+  error,
+  onClose
+}: {
+  source: IntegrationSourceDto;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const snapshot = source.latestSnapshot;
+  const samples = sortIntegrationSamples(source.samples);
+  const newest = samples[samples.length - 1];
+  const oldest = samples[0];
+  const networkTotal = latestNetworkRate(snapshot);
+  const gatewaysOffline = snapshot?.gateways.filter((gateway) => gateway.status === "offline").length ?? 0;
+
+  useEffect(() => {
+    function onKey(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <>
+      <div className="drawer-backdrop" onMouseDown={onClose} />
+      <aside className="service-drawer host-detail-drawer integration-detail-drawer" role="dialog" aria-label={`${source.name} integration`}>
+        <header className="drawer-head">
+          <span className="host-icon integration-icon"><ShieldCheck size={20} /></span>
+          <div className="drawer-title">
+            <h2>{source.name}</h2>
+            <small>{source.baseUrl}</small>
+          </div>
+          <StatusBadge status={source.status} />
+          <button className="icon-button drawer-close" type="button" title="Close" onClick={onClose}>
+            <X size={16} />
+          </button>
+        </header>
+
+        <div className="drawer-stats">
+          <span><small>CPU</small><strong>{formatPercent(snapshot?.system.cpuPercent)}</strong></span>
+          <span><small>RAM</small><strong>{formatPercent(snapshot?.system.memoryPercent)}</strong></span>
+          <span><small>Gateways</small><strong>{gatewaySummary(snapshot)}</strong></span>
+          <span><small>Traffic</small><strong>{formatByteRate(networkTotal)}</strong></span>
+        </div>
+
+        {loading ? <p className="muted-copy">Loading integration history...</p> : null}
+        {error ? <div className="app-error">{error}</div> : null}
+        {source.latestError ? <p className="drawer-check-error">{source.latestError}</p> : null}
+
+        <section className="drawer-section host-detail-section">
+          <h4>24h trends</h4>
+          <div className="host-detail-trends">
+            <div>
+              <span><Cpu size={14} /> CPU</span>
+              <IntegrationMetricSparkline samples={samples} metric="cpuPercent" />
+            </div>
+            <div>
+              <span><MemoryStick size={14} /> RAM</span>
+              <IntegrationMetricSparkline samples={samples} metric="memoryPercent" />
+            </div>
+            <div>
+              <span><HardDrive size={14} /> Disk</span>
+              <IntegrationMetricSparkline samples={samples} metric="diskPercent" />
+            </div>
+            <div>
+              <span><Network size={14} /> Network</span>
+              <NetworkSparkline samples={samples.map((sample) => ({
+                id: sample.id,
+                monitorId: sample.sourceId,
+                status: sample.status,
+                error: sample.error,
+                cpuPercent: null,
+                memoryPercent: null,
+                memoryUsedBytes: null,
+                memoryTotalBytes: null,
+                diskPercent: null,
+                diskUsedBytes: null,
+                diskTotalBytes: null,
+                networkRxBytesPerSec: sample.snapshot?.interfaces.reduce((sum, item) => sum + (item.receivedBytesPerSec ?? 0), 0) ?? null,
+                networkTxBytesPerSec: sample.snapshot?.interfaces.reduce((sum, item) => sum + (item.sentBytesPerSec ?? 0), 0) ?? null,
+                temperatureC: null,
+                containersRunning: null,
+                containersTotal: null,
+                sampledAt: sample.sampledAt
+              }))} />
+            </div>
+          </div>
+        </section>
+
+        <section className="drawer-section">
+          <h4>System</h4>
+          <div className="key-value-grid host-detail-grid">
+            <span><span>Collected</span><strong>{relativeTime(source.latestSampledAt ?? newest?.sampledAt ?? null)}</strong></span>
+            <span><span>Range</span><strong>{oldest ? `${relativeTime(oldest.sampledAt)} to now` : "No history"}</strong></span>
+            <span><span>Hostname</span><strong>{snapshot?.system.hostname ?? "—"}</strong></span>
+            <span><span>Uptime</span><strong>{snapshot?.system.uptime ?? "—"}</strong></span>
+            <span><span>Firmware</span><strong>{snapshot?.firmware.version ?? snapshot?.system.version ?? "—"}</strong></span>
+            <span><span>PF states</span><strong>{snapshot?.firewall.stateCount ?? "—"}</strong></span>
+          </div>
+        </section>
+
+        <section className="drawer-section">
+          <h4>Gateways</h4>
+          <div className="integration-row-list">
+            {(snapshot?.gateways ?? []).map((gateway) => (
+              <span key={gateway.id}>
+                <i className={`svc-dot dot-${gateway.status}`} />
+                <strong>{gateway.name}</strong>
+                <small>{gateway.address ?? "no address"} · {gateway.delayMs == null ? "—" : `${gateway.delayMs} ms`} · loss {formatPercent(gateway.lossPercent)}</small>
+              </span>
+            ))}
+            {snapshot?.gateways.length === 0 ? <p className="muted-copy">No gateways returned by OPNsense.</p> : null}
+          </div>
+        </section>
+
+        <section className="drawer-section">
+          <h4>Interfaces</h4>
+          <div className="integration-row-list">
+            {(snapshot?.interfaces ?? []).map((item) => (
+              <span key={item.id}>
+                <i className={`svc-dot dot-${item.status}`} />
+                <strong>{item.name}</strong>
+                <small>{item.device ?? item.identifier ?? "interface"} · {item.ipv4 ?? item.ipv6 ?? "no address"} · {formatByteRate(((item.receivedBytesPerSec ?? 0) + (item.sentBytesPerSec ?? 0)) || null)}</small>
+              </span>
+            ))}
+            {snapshot?.interfaces.length === 0 ? <p className="muted-copy">No interfaces returned by OPNsense.</p> : null}
+          </div>
+        </section>
+
+        {snapshot?.warnings.length ? (
+          <section className="drawer-section">
+            <h4>Partial data</h4>
+            {snapshot.warnings.slice(0, 5).map((warning) => <p className="drawer-check-error" key={warning}>{warning}</p>)}
+          </section>
+        ) : null}
+      </aside>
+    </>
+  );
+}
+
+function ApiWidgetCard({ widget }: { widget: ApiWidgetDto }) {
+  const fields = widget.latestSnapshot?.fields ?? [];
+
+  return (
+    <article className={`api-widget-card host-${widget.latestStatus}`}>
+      <header className="host-card-head">
+        <span className="host-icon api-widget-icon"><PanelsTopLeft size={18} /></span>
+        <span>
+          <strong>{widget.name}</strong>
+          <small>{widget.baseUrl}{widget.endpointPath}</small>
+        </span>
+        <i className={`svc-dot dot-${widget.latestStatus}`} title={widget.latestStatus} />
+      </header>
+
+      <div className="api-widget-fields">
+        {fields.slice(0, 6).map((field) => (
+          <span key={`${field.label}-${field.value}`}>
+            <small>{field.label}</small>
+            <strong>{field.value}{field.suffix ?? ""}</strong>
+          </span>
+        ))}
+        {fields.length === 0 ? (
+          <span>
+            <small>Status</small>
+            <strong>{widget.latestStatus}</strong>
+          </span>
+        ) : null}
+      </div>
+
+      <footer className="host-card-foot">
+        <span title="Template">{widget.templateId}</span>
+        <span title="Last sampled">{relativeTime(widget.latestSampledAt)}</span>
+      </footer>
+      {widget.latestError ? <p className="host-error">{widget.latestError}</p> : null}
+    </article>
+  );
+}
+
+function CommandBriefingPanel({
+  briefing,
+  refreshing,
+  onRefresh,
+  onAction
+}: {
+  briefing: AiBriefingDto;
+  refreshing: boolean;
+  onRefresh: () => void;
+  onAction: (action: AiBriefingActionDto) => void;
+}) {
+  const generated = briefing.generatedAt ? `Generated ${relativeTime(briefing.generatedAt)}` : "Not generated yet";
+  const tone = briefing.severity === "critical" ? "critical" : briefing.severity === "warning" ? "warning" : briefing.severity === "ok" ? "ok" : "notice";
+
+  return (
+    <section className={`command-briefing command-${tone} ${briefing.stale ? "command-stale" : ""}`}>
+      <div className="section-heading compact-section-heading">
+        <h3><Sparkles size={16} /> Command Briefing</h3>
+        <button className="icon-text-button" type="button" onClick={onRefresh} disabled={refreshing}>
+          <RefreshCw size={14} className={refreshing ? "spin" : ""} /> Refresh
+        </button>
+      </div>
+
+      <div className="command-briefing-body">
+        <div className="command-briefing-lead">
+          <span className={`command-severity command-severity-${briefing.severity}`}>{briefing.severity}</span>
+          <h4>{briefing.headline}</h4>
+          <p>{briefing.summary}</p>
+          <div className="command-meta">
+            <span>{generated}</span>
+            {briefing.stale ? <span>stale</span> : null}
+            {briefing.model ? <span>{briefing.model}</span> : null}
+            <span>{briefing.confidence} confidence</span>
+          </div>
+          {briefing.error ? <p className="host-error">{briefing.error}</p> : null}
+        </div>
+
+        {briefing.items.length > 0 ? (
+          <div className="command-item-grid">
+            {briefing.items.map((item) => (
+              <article className={`command-item command-item-${item.severity}`} key={`${item.title}-${item.body}`}>
+                <strong>{item.title}</strong>
+                <p>{item.body}</p>
+                {item.evidenceIds.length > 0 ? (
+                  <div className="command-evidence">
+                    {item.evidenceIds.slice(0, 3).map((id) => <span key={id}>{id}</span>)}
+                  </div>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        ) : null}
+
+        {briefing.nextActions.length > 0 ? (
+          <div className="command-actions">
+            {briefing.nextActions.map((action) => (
+              <button className="icon-text-button" type="button" key={action.label} onClick={() => onAction(action)}>
+                <Info size={14} /> {action.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 function ServiceCard({
   resource,
   density,
@@ -459,6 +823,11 @@ export function DashboardConsole({
   const [hostDetail, setHostDetail] = useState<HostMonitorDto | null>(null);
   const [hostDetailLoading, setHostDetailLoading] = useState(false);
   const [hostDetailError, setHostDetailError] = useState<string | null>(null);
+  const [inspectedIntegrationId, setInspectedIntegrationId] = useState<string | null>(null);
+  const [integrationDetail, setIntegrationDetail] = useState<IntegrationSourceDto | null>(null);
+  const [integrationDetailLoading, setIntegrationDetailLoading] = useState(false);
+  const [integrationDetailError, setIntegrationDetailError] = useState<string | null>(null);
+  const [aiBriefingRefreshing, setAiBriefingRefreshing] = useState(false);
   const [drag, setDrag] = useState<DragState>(null);
   const now = useClock();
 
@@ -471,6 +840,9 @@ export function DashboardConsole({
     [data.dashboard]
   );
   const hostMonitors = data.dashboard.hostMonitors ?? [];
+  const integrations = data.dashboard.integrations ?? [];
+  const apiWidgets = data.dashboard.apiWidgets ?? [];
+  const aiBriefing = data.dashboard.aiBriefing ?? null;
   const briefing = data.dashboard.dailyBriefing;
   const totals = summarizeResourceStatus(resources);
   const favorites = resources.filter((resource) => resource.favorite);
@@ -479,18 +851,32 @@ export function DashboardConsole({
   const inspectedHost = inspectedHostId
     ? hostDetail ?? hostMonitors.find((host) => host.id === inspectedHostId) ?? null
     : null;
+  const inspectedIntegration = inspectedIntegrationId
+    ? integrationDetail ?? integrations.find((source) => source.id === inspectedIntegrationId) ?? null
+    : null;
   const offlineHosts = hostMonitors.filter((host) => host.latestStatus === "offline").length;
+  const offlineIntegrations = integrations.filter((source) => source.status === "offline").length;
+  const offlineApiWidgets = apiWidgets.filter((widget) => widget.latestStatus === "offline").length;
+  const offlineGateways = integrations.reduce(
+    (sum, source) => sum + (source.latestSnapshot?.gateways.filter((gateway) => gateway.status === "offline").length ?? 0),
+    0
+  );
   const pressureHosts = briefing.hostsUnderPressure.length;
   const dailyIssueCount =
     offlineResources.length +
     offlineHosts +
+    offlineIntegrations +
+    offlineApiWidgets +
+    offlineGateways +
     pressureHosts +
     briefing.staleChecks.length +
     briefing.unmonitoredServices.length +
     briefing.watchlist.length;
   const lastUpdatedAt = [
     ...resources.map(latestCheckedAt),
-    ...hostMonitors.map((host) => host.latestSampledAt)
+    ...hostMonitors.map((host) => host.latestSampledAt),
+    ...integrations.map((source) => source.latestSampledAt),
+    ...apiWidgets.map((widget) => widget.latestSampledAt)
   ]
     .filter((value): value is string => Boolean(value))
     .sort((left, right) => right.localeCompare(left))[0] ?? null;
@@ -552,6 +938,34 @@ export function DashboardConsole({
     };
   }, [inspectedHostId]);
 
+  useEffect(() => {
+    if (!inspectedIntegrationId) {
+      setIntegrationDetail(null);
+      setIntegrationDetailError(null);
+      setIntegrationDetailLoading(false);
+      return;
+    }
+
+    let active = true;
+    setIntegrationDetailLoading(true);
+    setIntegrationDetailError(null);
+
+    apiGet<IntegrationSourceDto>(`/api/integrations/${inspectedIntegrationId}`)
+      .then((source) => {
+        if (active) setIntegrationDetail(source);
+      })
+      .catch((error) => {
+        if (active) setIntegrationDetailError(error instanceof Error ? error.message : "Integration history failed to load");
+      })
+      .finally(() => {
+        if (active) setIntegrationDetailLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [inspectedIntegrationId]);
+
   function openResource(resource: DashboardResource) {
     if (resource.url) {
       window.open(resource.url, "_blank", "noopener,noreferrer");
@@ -577,6 +991,39 @@ export function DashboardConsole({
     const resource = resourceById(id);
     if (resource) {
       void runCheck(resource);
+    }
+  }
+
+  function resourceByCheckId(checkId: string | null | undefined): DashboardResource | null {
+    if (!checkId) return null;
+    return resources.find((resource) => resource.healthChecks?.some((check) => check.id === checkId)) ?? null;
+  }
+
+  function runAiAction(action: AiBriefingActionDto) {
+    const checkResource = resourceByCheckId(action.checkId);
+    if (checkResource) {
+      void runCheck(checkResource);
+      return;
+    }
+
+    if (action.resourceId) {
+      inspectResource(action.resourceId);
+      return;
+    }
+
+    onOpenSettings();
+  }
+
+  async function refreshAiBriefing() {
+    setAiBriefingRefreshing(true);
+    setCheckError(null);
+    try {
+      await apiSend<AiBriefingDto>("/api/ai/briefing/run", "POST");
+      await onRefresh();
+    } catch (error) {
+      setCheckError(error instanceof Error ? error.message : "AI briefing failed");
+    } finally {
+      setAiBriefingRefreshing(false);
     }
   }
 
@@ -669,13 +1116,25 @@ export function DashboardConsole({
       <header className="dash-hero ops-hero">
         <div className="dash-hero-copy">
           <span className="ops-eyebrow">{greetingFor(now)}{username ? `, ${username}` : ""}</span>
-          <h2>Lab operations</h2>
+          <h2>Lab Command Center</h2>
           <p>
             {dateLine}
             <span className="dash-hero-sep">·</span>
             {resources.length} service{resources.length === 1 ? "" : "s"}
             <span className="dash-hero-sep">·</span>
             {hostMonitors.length} host monitor{hostMonitors.length === 1 ? "" : "s"}
+            {integrations.length > 0 ? (
+              <>
+                <span className="dash-hero-sep">·</span>
+                {integrations.length} integration{integrations.length === 1 ? "" : "s"}
+              </>
+            ) : null}
+            {apiWidgets.length > 0 ? (
+              <>
+                <span className="dash-hero-sep">·</span>
+                {apiWidgets.length} API widget{apiWidgets.length === 1 ? "" : "s"}
+              </>
+            ) : null}
             <span className="dash-hero-pulse dot-online" /> {totals.online} online
             {totals.offline > 0 ? (
               <>
@@ -724,6 +1183,51 @@ export function DashboardConsole({
           </div>
         )}
       </section>
+
+      {integrations.length > 0 ? (
+        <section className="lab-vitals integration-vitals">
+          <div className="section-heading compact-section-heading">
+            <h3>OPNsense</h3>
+            <button className="icon-text-button" type="button" onClick={onOpenSettings}>
+              <RefreshCw size={14} /> Integration
+            </button>
+          </div>
+          <div className="host-grid integration-grid">
+            {integrations.map((source) => (
+              <IntegrationCard
+                key={source.id}
+                source={source}
+                onInspect={(item) => setInspectedIntegrationId(item.id)}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {apiWidgets.length > 0 ? (
+        <section className="lab-vitals api-widget-vitals">
+          <div className="section-heading compact-section-heading">
+            <h3>API Widgets</h3>
+            <button className="icon-text-button" type="button" onClick={onOpenSettings}>
+              <Plus size={14} /> Widget
+            </button>
+          </div>
+          <div className="api-widget-grid">
+            {apiWidgets.map((widget) => (
+              <ApiWidgetCard key={widget.id} widget={widget} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {aiBriefing ? (
+        <CommandBriefingPanel
+          briefing={aiBriefing}
+          refreshing={aiBriefingRefreshing}
+          onRefresh={() => void refreshAiBriefing()}
+          onAction={runAiAction}
+        />
+      ) : null}
 
       <section className="daily-briefing">
         <div className="section-heading compact-section-heading">
@@ -996,6 +1500,15 @@ export function DashboardConsole({
           loading={hostDetailLoading}
           error={hostDetailError}
           onClose={() => setInspectedHostId(null)}
+        />
+      ) : null}
+
+      {inspectedIntegration ? (
+        <IntegrationDetailDrawer
+          source={inspectedIntegration}
+          loading={integrationDetailLoading}
+          error={integrationDetailError}
+          onClose={() => setInspectedIntegrationId(null)}
         />
       ) : null}
     </main>

@@ -3,8 +3,14 @@ import type {
   DashboardGroupDto,
   DashboardResource,
   HealthTick,
+  AiBriefingDto,
+  AiRuntimeDto,
+  ApiWidgetDto,
+  ApiWidgetSuggestionDto,
+  ApiWidgetTemplateDto,
   HostMetricSampleDto,
-  HostMonitorDto
+  HostMonitorDto,
+  IntegrationSourceDto
 } from "../../shared/types";
 
 export type HealthCheckDto = {
@@ -32,6 +38,9 @@ export type DashboardDto = {
   groups: DashboardGroupDto[];
   ungroupedResources: DashboardResource[];
   hostMonitors: HostMonitorDto[];
+  integrations: IntegrationSourceDto[];
+  apiWidgets: ApiWidgetDto[];
+  aiBriefing?: AiBriefingDto | null;
   dailyBriefing: DailyBriefingDto;
   layout: Record<string, unknown>;
 };
@@ -70,11 +79,29 @@ export type RuntimeStatusDto = {
       healthResults: number;
       hostMonitors: number;
       hostMetricSamples: number;
+      integrationSources: number;
+      integrationSamples: number;
+      apiWidgets: number;
+      apiWidgetSamples: number;
     };
   };
+  integrations: {
+    opnsense: {
+      enabled: boolean;
+      configured: boolean;
+      name: string;
+      baseUrl: string | null;
+      tlsVerify: boolean;
+      pollIntervalSeconds: number;
+    };
+  };
+  ai: AiRuntimeDto;
   schedulers: {
     health: SchedulerRuntimeDto;
     metrics: SchedulerRuntimeDto;
+    integrations: SchedulerRuntimeDto;
+    apiWidgets: SchedulerRuntimeDto;
+    ai: SchedulerRuntimeDto;
   };
 };
 
@@ -90,7 +117,19 @@ export type SchedulerRuntimeDto = {
   skippedTickAt: string | null;
 };
 
-export type { DashboardGroupDto, DashboardResource, DailyBriefingDto, HostMetricSampleDto, HostMonitorDto };
+export type {
+  ApiWidgetDto,
+  ApiWidgetSuggestionDto,
+  ApiWidgetTemplateDto,
+  AiBriefingDto,
+  AiRuntimeDto,
+  DashboardGroupDto,
+  DashboardResource,
+  DailyBriefingDto,
+  HostMetricSampleDto,
+  HostMonitorDto,
+  IntegrationSourceDto
+};
 
 
 type ApiErrorBody = {

@@ -1,16 +1,44 @@
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/server/app";
+import { AI_BRIEFING_CACHE_KEY, buildAiBriefingEvidence, isAiBriefingDue } from "../src/server/aiBriefing";
+import type { AiEnvConfig } from "../src/server/env";
 import { runHealthCheck } from "../src/server/healthChecks";
+import { collectOpnsenseSnapshot } from "../src/server/opnsense";
 
 const prisma = new PrismaClient();
+const disabledAiEnv: AiEnvConfig = {
+  enabled: false,
+  configured: false,
+  providerName: "AI",
+  baseUrl: "https://api.openai.com/v1",
+  apiKey: null,
+  model: null,
+  tlsVerify: true,
+  briefingIntervalSeconds: 21600,
+  includeTargets: false
+};
 const env = {
   nodeEnv: "test",
   host: "127.0.0.1",
   port: 0,
   databaseUrl: "file:./data/test.db",
   adminPassword: "test-pass",
-  cookieSecret: "test-cookie-secret-with-more-than-32-chars"
+  cookieSecret: "test-cookie-secret-with-more-than-32-chars",
+  cookieSecure: false,
+  opnsense: {
+    enabled: false,
+    configured: false,
+    name: "OPNsense",
+    baseUrl: null,
+    apiKey: null,
+    apiSecret: null,
+    tlsVerify: true,
+    pollIntervalSeconds: 60
+  },
+  ai: disabledAiEnv
 };
 
 const app = await createApp({ prisma, env, monitor: false, logger: false });
@@ -61,6 +89,156 @@ function mockGlancesFetch(options: { optionalFailure?: boolean; offline?: boolea
   });
 }
 
+type MockOpnsenseOptions = {
+  optionalFailure?: boolean;
+  offline?: boolean;
+  invalidJson?: boolean;
+  authStatus?: number;
+};
+
+function opnsenseBody(pathname: string): unknown {
+  if (pathname.includes("/system_information")) {
+    return { hostname: "opnsense.lab", uptime: "2 days" };
+  }
+  if (pathname.includes("/system_resources")) {
+    return {
+      cpu: { percent: 12.5 },
+      memory: { percent: 44.2 },
+      swap: { percent: 1.1 }
+    };
+  }
+  if (pathname.includes("/system_disk")) {
+    return { disk: { percent: 58.4 } };
+  }
+  if (pathname.includes("/system_temperature")) {
+    return { temperature: 41.2 };
+  }
+  if (pathname.includes("/interfaces_info")) {
+    return {
+      rows: [
+        { identifier: "wan", name: "WAN", device: "igb0", status: "up", ipv4: "198.51.100.10" },
+        { identifier: "lan", name: "LAN", device: "igb1", status: "up", ipv4: "192.168.1.1" }
+      ]
+    };
+  }
+  if (pathname.includes("/get_interface_statistics")) {
+    return {
+      rows: [
+        { interface: "wan", bytes_recv_rate_per_sec: 1024, bytes_sent_rate_per_sec: 2048 },
+        { interface: "lan", bytes_recv_rate_per_sec: 512, bytes_sent_rate_per_sec: 256 }
+      ]
+    };
+  }
+  if (pathname.includes("/search_gateway")) {
+    return {
+      rows: [
+        { name: "WAN_DHCP", status: "online", gateway: "198.51.100.1", interface: "WAN", delay: "9.2 ms", loss: "0.0 %" }
+      ]
+    };
+  }
+  if (pathname.includes("/firmware/info")) {
+    return { product: "OPNsense", product_version: "26.1", latestVersion: "26.1", updateAvailable: false };
+  }
+  if (pathname.includes("/firmware/running")) {
+    return { version: "26.1" };
+  }
+  if (pathname.includes("/pf_statistics")) {
+    return { stateCount: 321, srcNodes: 10, fragmentCount: 0 };
+  }
+  if (pathname.includes("/firewall/log")) {
+    return { rows: [{ action: "pass" }, { action: "block" }] };
+  }
+  return {};
+}
+
+async function withMockOpnsense<T>(options: MockOpnsenseOptions, run: (baseUrl: string) => Promise<T>): Promise<T> {
+  const server = http.createServer((request, response) => {
+    const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+    const coreEndpoint = pathname.includes("/system_information") || pathname.includes("/system_resources");
+
+    if (options.authStatus) {
+      response.writeHead(options.authStatus, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ error: "auth failed" }));
+      return;
+    }
+
+    if (options.offline && coreEndpoint) {
+      response.writeHead(503, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ error: "offline" }));
+      return;
+    }
+
+    if (options.invalidJson && coreEndpoint) {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end("{not-json");
+      return;
+    }
+
+    if (options.optionalFailure && !coreEndpoint) {
+      response.writeHead(500, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ error: "optional failure" }));
+      return;
+    }
+
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify(opnsenseBody(pathname)));
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+
+  try {
+    return await run(`http://127.0.0.1:${address.port}`);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+}
+
+function opnsenseEnv(baseUrl: string) {
+  return {
+    enabled: true,
+    configured: true,
+    name: "Lab Firewall",
+    baseUrl,
+    apiKey: "opn-test-key",
+    apiSecret: "opn-test-secret",
+    tlsVerify: true,
+    pollIntervalSeconds: 60
+  };
+}
+
+function configuredAiEnv(overrides: Partial<AiEnvConfig> = {}) {
+  return {
+    ...disabledAiEnv,
+    enabled: true,
+    configured: true,
+    providerName: "Mock AI",
+    baseUrl: "http://mock-ai.local/v1",
+    apiKey: "ai-secret-key",
+    model: "mock-command-model",
+    ...overrides
+  };
+}
+
+async function withMockJsonApi<T>(
+  handler: (request: http.IncomingMessage, response: http.ServerResponse) => void,
+  run: (baseUrl: string) => Promise<T>
+): Promise<T> {
+  const server = http.createServer(handler);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+
+  try {
+    return await run(`http://127.0.0.1:${address.port}`);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+}
+
 describe("api routes", () => {
   beforeAll(async () => {
     await app.ready();
@@ -81,6 +259,14 @@ describe("api routes", () => {
     expect(metrics.statusCode).toBe(401);
     const hostDetail = await app.inject({ method: "GET", url: "/api/metrics/hosts/cm0unauthenticated000000000000" });
     expect(hostDetail.statusCode).toBe(401);
+    const integrations = await app.inject({ method: "GET", url: "/api/integrations" });
+    expect(integrations.statusCode).toBe(401);
+    const apiWidgets = await app.inject({ method: "GET", url: "/api/api-widgets" });
+    expect(apiWidgets.statusCode).toBe(401);
+    const apiWidgetSuggestions = await app.inject({ method: "GET", url: "/api/api-widget-suggestions" });
+    expect(apiWidgetSuggestions.statusCode).toBe(401);
+    const aiBriefing = await app.inject({ method: "GET", url: "/api/ai/briefing" });
+    expect(aiBriefing.statusCode).toBe(401);
     const runtime = await app.inject({ method: "GET", url: "/api/admin/runtime" });
     expect(runtime.statusCode).toBe(401);
   });
@@ -105,6 +291,71 @@ describe("api routes", () => {
     expect(status.json<{ firstRun: boolean; needsAccount: boolean }>()).toEqual({
       firstRun: false,
       needsAccount: false
+    });
+  });
+
+  it("returns no integration sources when OPNsense env is disabled", async () => {
+    const cookie = await loginCookie();
+    const integrations = await app.inject({
+      method: "GET",
+      url: "/api/integrations",
+      headers: { cookie }
+    });
+
+    expect(integrations.statusCode).toBe(200);
+    expect(integrations.json<unknown[]>()).toEqual([]);
+  });
+
+  it("collects and normalizes read-only OPNsense snapshots", async () => {
+    await withMockOpnsense({}, async (baseUrl) => {
+      const result = await collectOpnsenseSnapshot(opnsenseEnv(baseUrl));
+
+      expect(result.status).toBe("online");
+      expect(result.snapshot).toMatchObject({
+        system: {
+          hostname: "opnsense.lab",
+          cpuPercent: 12.5,
+          memoryPercent: 44.2,
+          diskPercent: 58.4
+        },
+        firmware: {
+          version: "26.1"
+        },
+        firewall: {
+          stateCount: 321
+        }
+      });
+      expect(result.snapshot!.gateways[0]).toMatchObject({ name: "WAN_DHCP", status: "online" });
+      expect(result.snapshot!.interfaces).toHaveLength(2);
+      expect(result.snapshot!.importSuggestions.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("keeps OPNsense snapshots online when optional endpoints fail", async () => {
+    await withMockOpnsense({ optionalFailure: true }, async (baseUrl) => {
+      const result = await collectOpnsenseSnapshot(opnsenseEnv(baseUrl));
+
+      expect(result.status).toBe("online");
+      expect(result.snapshot!.warnings.length).toBeGreaterThan(0);
+      expect(result.snapshot!.system.cpuPercent).toBe(12.5);
+    });
+  });
+
+  it("sanitizes OPNsense failures without leaking credentials", async () => {
+    await withMockOpnsense({ authStatus: 403 }, async (baseUrl) => {
+      const result = await collectOpnsenseSnapshot(opnsenseEnv(baseUrl));
+
+      expect(result.status).toBe("offline");
+      expect(result.error).toContain("HTTP 403");
+      expect(result.error).not.toContain("opn-test-key");
+      expect(result.error).not.toContain("opn-test-secret");
+    });
+
+    await withMockOpnsense({ invalidJson: true }, async (baseUrl) => {
+      const result = await collectOpnsenseSnapshot(opnsenseEnv(baseUrl));
+
+      expect(result.status).toBe("offline");
+      expect(result.error).toContain("invalid JSON");
     });
   });
 
@@ -383,6 +634,495 @@ describe("api routes", () => {
     expect(detail.statusCode).toBe(200);
     expect(detail.json<{ id: string; samples: unknown[] }>()).toMatchObject({ id: hostId });
     expect(detail.json<{ samples: unknown[] }>().samples).toHaveLength(1440);
+  });
+
+  it("runs OPNsense integration routes, dashboard payload, runtime redaction, and retention", async () => {
+    await withMockOpnsense({}, async (baseUrl) => {
+      const integrationApp = await createApp({
+        prisma,
+        env: {
+          ...env,
+          cookieSecret: "test-cookie-secret-with-more-than-32-chars-opnsense",
+          opnsense: opnsenseEnv(baseUrl)
+        },
+        monitor: false,
+        logger: false
+      });
+      await integrationApp.ready();
+
+      try {
+        const login = await integrationApp.inject({
+          method: "POST",
+          url: "/api/auth/login",
+          payload: { password: "test-pass" }
+        });
+        expect(login.statusCode).toBe(200);
+        const cookie = login.cookies.map((item) => `${item.name}=${item.value}`).join("; ");
+
+        const list = await integrationApp.inject({ method: "GET", url: "/api/integrations", headers: { cookie } });
+        expect(list.statusCode).toBe(200);
+        const sourceId = list.json<Array<{ id: string; name: string; status: string }>>()[0].id;
+
+        const run = await integrationApp.inject({
+          method: "POST",
+          url: `/api/integrations/${sourceId}/run`,
+          headers: { cookie }
+        });
+        expect(run.statusCode).toBe(200);
+        expect(run.json<{ status: string; snapshot: { system: { hostname: string } } }>()).toMatchObject({
+          status: "online",
+          snapshot: { system: { hostname: "opnsense.lab" } }
+        });
+
+        const dashboard = await integrationApp.inject({ method: "GET", url: "/api/dashboard", headers: { cookie } });
+        expect(dashboard.statusCode).toBe(200);
+        const dashboardBody = dashboard.json<{
+          integrations: Array<{ id: string; latestSnapshot: { gateways: unknown[]; importSuggestions: unknown[] } }>;
+        }>();
+        expect(dashboardBody.integrations[0].id).toBe(sourceId);
+        expect(dashboardBody.integrations[0].latestSnapshot.gateways).toHaveLength(1);
+        expect(dashboardBody.integrations[0].latestSnapshot.importSuggestions.length).toBeGreaterThan(0);
+
+        const runtime = await integrationApp.inject({ method: "GET", url: "/api/admin/runtime", headers: { cookie } });
+        expect(runtime.statusCode).toBe(200);
+        expect(runtime.body).not.toContain("opn-test-key");
+        expect(runtime.body).not.toContain("opn-test-secret");
+        expect(runtime.json<{
+          integrations: { opnsense: { configured: boolean; baseUrl: string } };
+          schedulers: { integrations: { enabled: boolean } };
+          database: { counts: { integrationSources: number } };
+        }>()).toMatchObject({
+          integrations: { opnsense: { configured: true, baseUrl } },
+          schedulers: { integrations: { enabled: false } }
+        });
+
+        await prisma.integrationSample.createMany({
+          data: Array.from({ length: 1441 }, (_, index) => ({
+            sourceId,
+            status: "online",
+            sampledAt: new Date(Date.now() - (1441 - index) * 1000)
+          }))
+        });
+
+        await integrationApp.inject({
+          method: "POST",
+          url: `/api/integrations/${sourceId}/run`,
+          headers: { cookie }
+        });
+        expect(await prisma.integrationSample.count({ where: { sourceId } })).toBe(1440);
+      } finally {
+        await integrationApp.close();
+      }
+    });
+  });
+
+  it("returns disabled and unconfigured AI briefing states", async () => {
+    await prisma.systemConfig.deleteMany({ where: { key: AI_BRIEFING_CACHE_KEY } });
+    const cookie = await loginCookie();
+
+    const disabled = await app.inject({ method: "GET", url: "/api/ai/briefing", headers: { cookie } });
+    expect(disabled.statusCode).toBe(200);
+    expect(disabled.json<{ status: string; headline: string }>()).toMatchObject({
+      status: "disabled",
+      headline: "AI briefing is disabled"
+    });
+
+    const unconfiguredApp = await createApp({
+      prisma,
+      env: {
+        ...env,
+        cookieSecret: "test-cookie-secret-with-more-than-32-chars-ai-unconfigured",
+        ai: {
+          ...disabledAiEnv,
+          enabled: true,
+          configured: false,
+          model: null
+        }
+      },
+      monitor: false,
+      logger: false
+    });
+    await unconfiguredApp.ready();
+
+    try {
+      const login = await unconfiguredApp.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: { password: "test-pass" }
+      });
+      const unconfiguredCookie = login.cookies.map((item) => `${item.name}=${item.value}`).join("; ");
+      const response = await unconfiguredApp.inject({ method: "POST", url: "/api/ai/briefing/run", headers: { cookie: unconfiguredCookie } });
+      expect(response.statusCode).toBe(200);
+      expect(response.json<{ status: string; error: string }>()).toMatchObject({
+        status: "unconfigured",
+        error: "AI briefing is not configured"
+      });
+    } finally {
+      await unconfiguredApp.close();
+    }
+  });
+
+  it("generates AI command briefings with sanitized evidence and redacted runtime config", async () => {
+    await prisma.systemConfig.deleteMany({ where: { key: AI_BRIEFING_CACHE_KEY } });
+    const aiEnv = configuredAiEnv();
+    const resource = await prisma.resource.create({
+      data: {
+        name: "AI Target Service",
+        kind: "app",
+        url: "http://192.168.50.10:8080/admin",
+        monitoringMode: "auto"
+      }
+    });
+    const check = await prisma.healthCheck.create({
+      data: {
+        resourceId: resource.id,
+        type: "http",
+        target: "http://192.168.50.10:8080/health",
+        latestStatus: "offline",
+        latestError: "Timeout contacting http://192.168.50.10:8080 with Bearer super-secret-token",
+        consecutiveFailures: 2,
+        failureThreshold: 3,
+        enabled: true
+      }
+    });
+
+    const redactedEvidence = await buildAiBriefingEvidence(prisma, aiEnv);
+    expect(JSON.stringify(redactedEvidence)).not.toContain("192.168.50.10");
+    expect(JSON.stringify(redactedEvidence)).not.toContain("super-secret-token");
+    const targetEvidence = await buildAiBriefingEvidence(prisma, { ...aiEnv, includeTargets: true });
+    expect(JSON.stringify(targetEvidence)).toContain("192.168.50.10");
+    expect(JSON.stringify(targetEvidence)).not.toContain("super-secret-token");
+
+    let capturedBody = "";
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      expect(String(input)).toBe("http://mock-ai.local/v1/chat/completions");
+      capturedBody = String(init?.body ?? "");
+      return new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                severity: "warning",
+                headline: "One service needs attention",
+                summary: "AI Target Service is offline and close to its failure threshold. Review the existing health check before chasing broader causes.",
+                items: [
+                  {
+                    title: "Offline service",
+                    body: "The current evidence shows a failed HTTP check.",
+                    severity: "warning",
+                    evidenceIds: [`resource:${resource.id}`, `check:${check.id}`]
+                  }
+                ],
+                nextActions: [
+                  { label: "Inspect service", resourceId: resource.id },
+                  { label: "Run check", checkId: check.id }
+                ],
+                confidence: "high"
+              })
+            }
+          }
+        ]
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    });
+
+    const aiApp = await createApp({
+      prisma,
+      env: {
+        ...env,
+        cookieSecret: "test-cookie-secret-with-more-than-32-chars-ai-success",
+        ai: aiEnv
+      },
+      monitor: false,
+      logger: false
+    });
+    await aiApp.ready();
+
+    try {
+      const login = await aiApp.inject({ method: "POST", url: "/api/auth/login", payload: { password: "test-pass" } });
+      const cookie = login.cookies.map((item) => `${item.name}=${item.value}`).join("; ");
+
+      const run = await aiApp.inject({ method: "POST", url: "/api/ai/briefing/run", headers: { cookie } });
+      expect(run.statusCode).toBe(200);
+      expect(run.json<{ status: string; severity: string; headline: string; nextActions: unknown[] }>()).toMatchObject({
+        status: "fresh",
+        severity: "warning",
+        headline: "One service needs attention"
+      });
+      expect(run.json<{ nextActions: unknown[] }>().nextActions).toHaveLength(2);
+      expect(capturedBody).not.toContain("192.168.50.10");
+      expect(capturedBody).not.toContain("super-secret-token");
+      expect(capturedBody).not.toContain("ai-secret-key");
+
+      const dashboard = await aiApp.inject({ method: "GET", url: "/api/dashboard", headers: { cookie } });
+      expect(dashboard.statusCode).toBe(200);
+      expect(dashboard.json<{ aiBriefing: { status: string; headline: string } | null }>().aiBriefing).toMatchObject({
+        status: "cached",
+        headline: "One service needs attention"
+      });
+
+      const runtime = await aiApp.inject({ method: "GET", url: "/api/admin/runtime", headers: { cookie } });
+      expect(runtime.statusCode).toBe(200);
+      expect(runtime.body).not.toContain("ai-secret-key");
+      expect(runtime.body).not.toContain("super-secret-token");
+      expect(runtime.json<{
+        ai: { configured: boolean; apiKeyConfigured: boolean; model: string | null };
+        schedulers: { ai: { enabled: boolean } };
+      }>()).toMatchObject({
+        ai: { configured: true, apiKeyConfigured: true, model: "mock-command-model" },
+        schedulers: { ai: { enabled: false } }
+      });
+    } finally {
+      await aiApp.close();
+    }
+  });
+
+  it("records AI provider failures and malformed responses without breaking the dashboard", async () => {
+    await prisma.systemConfig.deleteMany({ where: { key: AI_BRIEFING_CACHE_KEY } });
+    const aiEnv = configuredAiEnv();
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { content: "{not-json" } }]
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      }))
+      .mockResolvedValueOnce(new Response("rate limited", { status: 429 }));
+
+    const aiApp = await createApp({
+      prisma,
+      env: {
+        ...env,
+        cookieSecret: "test-cookie-secret-with-more-than-32-chars-ai-errors",
+        ai: aiEnv
+      },
+      monitor: false,
+      logger: false
+    });
+    await aiApp.ready();
+
+    try {
+      const login = await aiApp.inject({ method: "POST", url: "/api/auth/login", payload: { password: "test-pass" } });
+      const cookie = login.cookies.map((item) => `${item.name}=${item.value}`).join("; ");
+
+      const malformed = await aiApp.inject({ method: "POST", url: "/api/ai/briefing/run", headers: { cookie } });
+      expect(malformed.statusCode).toBe(200);
+      expect(malformed.json<{ status: string; error: string }>()).toMatchObject({
+        status: "error",
+        error: "AI provider returned malformed JSON"
+      });
+
+      const limited = await aiApp.inject({ method: "POST", url: "/api/ai/briefing/run", headers: { cookie } });
+      expect(limited.statusCode).toBe(200);
+      expect(limited.json<{ status: string; error: string }>()).toMatchObject({
+        status: "error",
+        error: "AI provider returned HTTP 429"
+      });
+
+      const dashboard = await aiApp.inject({ method: "GET", url: "/api/dashboard", headers: { cookie } });
+      expect(dashboard.statusCode).toBe(200);
+      expect(dashboard.json<{ aiBriefing: { status: string; error: string } | null }>().aiBriefing).toMatchObject({
+        status: "error",
+        error: "AI provider returned HTTP 429"
+      });
+    } finally {
+      await aiApp.close();
+    }
+  });
+
+  it("checks AI briefing scheduler due state from cache age", () => {
+    const aiEnv = configuredAiEnv({ briefingIntervalSeconds: 3600 });
+    const recent = {
+      status: "cached" as const,
+      severity: "ok" as const,
+      generatedAt: new Date().toISOString(),
+      headline: "Recent",
+      summary: "Recent summary",
+      items: [],
+      nextActions: [],
+      confidence: "medium" as const,
+      model: "mock-command-model",
+      stale: false,
+      error: null
+    };
+    const old = {
+      ...recent,
+      generatedAt: new Date(Date.now() - 3601 * 1000).toISOString()
+    };
+
+    expect(isAiBriefingDue(null, aiEnv)).toBe(true);
+    expect(isAiBriefingDue(recent, aiEnv)).toBe(false);
+    expect(isAiBriefingDue(old, aiEnv)).toBe(true);
+    expect(isAiBriefingDue(null, disabledAiEnv)).toBe(false);
+  });
+
+  it("creates, runs, and retains custom API widgets without leaking env secrets", async () => {
+    const cookie = await loginCookie();
+
+    await withMockJsonApi(async (request, response) => {
+      const auth = request.headers.authorization;
+      if (request.url?.startsWith("/secure") && auth !== "Bearer widget-secret-token") {
+        response.writeHead(401, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ error: "unauthorized" }));
+        return;
+      }
+
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({
+        status: "ok",
+        count: 42,
+        nested: { percent: 88.8 },
+        items: [{ id: 1 }, { id: 2 }]
+      }));
+    }, async (baseUrl) => {
+      const templates = await app.inject({ method: "GET", url: "/api/api-widget-templates", headers: { cookie } });
+      expect(templates.statusCode).toBe(200);
+      expect(templates.body).toContain("home-assistant");
+
+      const grafanaResource = await app.inject({
+        method: "POST",
+        url: "/api/resources",
+        headers: { cookie },
+        payload: {
+          name: "Grafana API Suggestions",
+          kind: "app",
+          url: baseUrl,
+          description: "Grafana lab metrics",
+          icon: "grafana"
+        }
+      });
+      expect(grafanaResource.statusCode).toBe(201);
+
+      const suggestions = await app.inject({ method: "GET", url: "/api/api-widget-suggestions", headers: { cookie } });
+      expect(suggestions.statusCode).toBe(200);
+      type Suggestion = {
+        id: string;
+        resourceId: string;
+        resourceName: string;
+        templateId: string;
+        baseUrl: string;
+        endpointPath: string;
+        authType: string;
+        authHeaderName: string | null;
+        authEnvVarHint: string | null;
+        authValuePrefix: string | null;
+        fieldMappings: Array<{ label: string; path: string; kind?: string | null }>;
+      };
+      const grafanaSuggestion = suggestions.json<Suggestion[]>().find((item) => item.templateId === "grafana" && item.baseUrl === baseUrl);
+      expect(grafanaSuggestion).toBeTruthy();
+      if (!grafanaSuggestion) throw new Error("Grafana API widget suggestion was not created");
+      expect(grafanaSuggestion).toMatchObject({
+        resourceName: "Grafana API Suggestions",
+        endpointPath: "/api/health",
+        authType: "none"
+      });
+      expect(suggestions.body).not.toContain("widget-secret-token");
+
+      const imported = await app.inject({
+        method: "POST",
+        url: "/api/api-widgets",
+        headers: { cookie },
+        payload: {
+          name: `${grafanaSuggestion.resourceName} widget`,
+          templateId: grafanaSuggestion.templateId,
+          baseUrl: grafanaSuggestion.baseUrl,
+          endpointPath: grafanaSuggestion.endpointPath,
+          authType: grafanaSuggestion.authType,
+          authHeaderName: grafanaSuggestion.authHeaderName,
+          authEnvVar: grafanaSuggestion.authEnvVarHint,
+          authValuePrefix: grafanaSuggestion.authValuePrefix,
+          tlsVerify: true,
+          pollIntervalSeconds: 300,
+          fieldMappings: grafanaSuggestion.fieldMappings,
+          enabled: true
+        }
+      });
+      expect(imported.statusCode).toBe(201);
+
+      const dedupedSuggestions = await app.inject({ method: "GET", url: "/api/api-widget-suggestions", headers: { cookie } });
+      expect(dedupedSuggestions.json<Suggestion[]>().some((item) => item.id === grafanaSuggestion.id)).toBe(false);
+
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/api-widgets",
+        headers: { cookie },
+        payload: {
+          name: "Mock API",
+          templateId: "custom-json",
+          baseUrl,
+          endpointPath: "/stats",
+          authType: "none",
+          tlsVerify: true,
+          pollIntervalSeconds: 60,
+          fieldMappings: [
+            { label: "Status", path: "status", kind: "text" },
+            { label: "Count", path: "count", kind: "number" },
+            { label: "Items", path: "items", kind: "count" },
+            { label: "Load", path: "nested.percent", kind: "percent" }
+          ]
+        }
+      });
+      expect(created.statusCode).toBe(201);
+      const widgetId = created.json<{ id: string }>().id;
+
+      const run = await app.inject({ method: "POST", url: `/api/api-widgets/${widgetId}/run`, headers: { cookie } });
+      expect(run.statusCode).toBe(200);
+      expect(run.json<{ status: string; snapshot: { fields: Array<{ label: string; value: string }> } }>()).toMatchObject({
+        status: "online",
+        snapshot: {
+          fields: [
+            { label: "Status", value: "ok" },
+            { label: "Count", value: "42" },
+            { label: "Items", value: "2" },
+            { label: "Load", value: "88.8%" }
+          ]
+        }
+      });
+
+      const dashboard = await app.inject({ method: "GET", url: "/api/dashboard", headers: { cookie } });
+      expect(dashboard.statusCode).toBe(200);
+      expect(dashboard.json<{ apiWidgets: Array<{ id: string; latestSnapshot: unknown }> }>().apiWidgets.some((widget) => widget.id === widgetId)).toBe(true);
+
+      const runtime = await app.inject({ method: "GET", url: "/api/admin/runtime", headers: { cookie } });
+      expect(runtime.statusCode).toBe(200);
+      expect(runtime.json<{ database: { counts: { apiWidgets: number; apiWidgetSamples: number } } }>().database.counts.apiWidgets).toBeGreaterThanOrEqual(1);
+
+      await prisma.apiWidgetSample.createMany({
+        data: Array.from({ length: 1441 }, (_, index) => ({
+          widgetId,
+          status: "online",
+          sampledAt: new Date(Date.now() - (1441 - index) * 1000)
+        }))
+      });
+      await app.inject({ method: "POST", url: `/api/api-widgets/${widgetId}/run`, headers: { cookie } });
+      expect(await prisma.apiWidgetSample.count({ where: { widgetId } })).toBe(1440);
+
+      process.env.TEST_WIDGET_TOKEN = "widget-secret-token";
+      const secure = await app.inject({
+        method: "POST",
+        url: "/api/api-widgets",
+        headers: { cookie },
+        payload: {
+          name: "Secure API",
+          templateId: "custom-json",
+          baseUrl,
+          endpointPath: "/secure",
+          authType: "bearer",
+          authEnvVar: "TEST_WIDGET_TOKEN",
+          fieldMappings: [{ label: "Status", path: "status", kind: "text" }]
+        }
+      });
+      const secureId = secure.json<{ id: string }>().id;
+      delete process.env.TEST_WIDGET_TOKEN;
+
+      const failed = await app.inject({ method: "POST", url: `/api/api-widgets/${secureId}/run`, headers: { cookie } });
+      expect(failed.statusCode).toBe(200);
+      expect(failed.json<{ status: string; error: string }>().status).toBe("offline");
+      expect(failed.body).not.toContain("widget-secret-token");
+    });
   });
 
   it("exposes runtime diagnostics without secrets", async () => {

@@ -136,6 +136,80 @@ model HostMetricSample {
   @@index([sampledAt])
 }
 
+model IntegrationSource {
+  id              String              @id @default(cuid())
+  provider        String
+  name            String
+  baseUrl         String
+  enabled         Boolean             @default(true)
+  status          String              @default("unknown")
+  latestError     String?
+  latestSnapshot  Json?
+  latestSampledAt DateTime?
+  sortOrder       Int                 @default(0)
+  samples         IntegrationSample[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([provider])
+  @@index([enabled])
+  @@index([sortOrder])
+}
+
+model IntegrationSample {
+  id        String            @id @default(cuid())
+  sourceId  String
+  source    IntegrationSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  status    String
+  error     String?
+  snapshot  Json?
+  sampledAt DateTime          @default(now())
+
+  @@index([sourceId])
+  @@index([sampledAt])
+}
+
+model ApiWidget {
+  id                  String            @id @default(cuid())
+  name                String
+  templateId          String            @default("custom-json")
+  baseUrl             String
+  endpointPath        String
+  authType            String            @default("none")
+  authHeaderName      String?
+  authEnvVar          String?
+  authValuePrefix     String?
+  tlsVerify           Boolean           @default(true)
+  fieldMappings       Json
+  enabled             Boolean           @default(true)
+  pollIntervalSeconds Int               @default(300)
+  sortOrder           Int               @default(0)
+  latestStatus        String            @default("unknown")
+  latestError         String?
+  latestSnapshot      Json?
+  latestSampledAt     DateTime?
+  samples             ApiWidgetSample[]
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([enabled])
+  @@index([sortOrder])
+  @@index([templateId])
+}
+
+model ApiWidgetSample {
+  id        String    @id @default(cuid())
+  widgetId  String
+  widget    ApiWidget @relation(fields: [widgetId], references: [id], onDelete: Cascade)
+  status    String
+  error     String?
+  snapshot  Json?
+  sampledAt DateTime  @default(now())
+
+  @@index([widgetId])
+  @@index([sampledAt])
+}
+
 model AdminAccount {
   id           String   @id @default("admin")
   username     String   @default("admin")

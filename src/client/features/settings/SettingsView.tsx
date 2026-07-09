@@ -1,8 +1,20 @@
-import { Activity, Clipboard, Cpu, ExternalLink, Gauge, Play, RefreshCw, Save, Trash2 } from "lucide-react";
+import { Activity, Clipboard, Cpu, ExternalLink, Gauge, PanelsTopLeft, Play, Plus, RefreshCw, Save, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { PageHeader } from "../../components/Primitives";
 import { FormErrorBanner, runFormAction } from "../../lib/forms";
-import { apiGet, apiSend, type HostMonitorDto, type RuntimeStatusDto, type SchedulerRuntimeDto, type SystemSettingsDto } from "../../lib/api";
+import {
+  apiGet,
+  apiSend,
+  type ApiWidgetDto,
+  type ApiWidgetSuggestionDto,
+  type ApiWidgetTemplateDto,
+  type AiBriefingDto,
+  type HostMonitorDto,
+  type IntegrationSourceDto,
+  type RuntimeStatusDto,
+  type SchedulerRuntimeDto,
+  type SystemSettingsDto
+} from "../../lib/api";
 import { formatByteRate, formatPercent, relativeTime } from "../../lib/format";
 
 type HostMonitorForm = {
@@ -14,12 +26,44 @@ type HostMonitorForm = {
   enabled: boolean;
 };
 
+type ApiWidgetForm = {
+  id: string | null;
+  name: string;
+  templateId: string;
+  baseUrl: string;
+  endpointPath: string;
+  authType: ApiWidgetDto["authType"];
+  authHeaderName: string;
+  authEnvVar: string;
+  authValuePrefix: string;
+  tlsVerify: boolean;
+  pollIntervalSeconds: string;
+  fieldMappings: string;
+  enabled: boolean;
+};
+
 const emptyHostMonitorForm: HostMonitorForm = {
   id: null,
   name: "",
   baseUrl: "",
   primaryMount: "/",
   networkInterface: "",
+  enabled: true
+};
+
+const emptyApiWidgetForm: ApiWidgetForm = {
+  id: null,
+  name: "",
+  templateId: "custom-json",
+  baseUrl: "",
+  endpointPath: "/",
+  authType: "none",
+  authHeaderName: "",
+  authEnvVar: "",
+  authValuePrefix: "",
+  tlsVerify: true,
+  pollIntervalSeconds: "300",
+  fieldMappings: JSON.stringify([{ label: "Status", path: "status", kind: "text" }], null, 2),
   enabled: true
 };
 
@@ -62,10 +106,19 @@ export function SettingsView({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [autoPingIntervalSeconds, setAutoPingIntervalSeconds] = useState(systemSettings.autoPingIntervalSeconds.toString());
   const [hostMonitors, setHostMonitors] = useState<HostMonitorDto[]>([]);
+  const [integrations, setIntegrations] = useState<IntegrationSourceDto[]>([]);
+  const [apiWidgets, setApiWidgets] = useState<ApiWidgetDto[]>([]);
+  const [apiWidgetSuggestions, setApiWidgetSuggestions] = useState<ApiWidgetSuggestionDto[]>([]);
+  const [apiWidgetTemplates, setApiWidgetTemplates] = useState<ApiWidgetTemplateDto[]>([]);
   const [hostForm, setHostForm] = useState<HostMonitorForm>(emptyHostMonitorForm);
+  const [widgetForm, setWidgetForm] = useState<ApiWidgetForm>(emptyApiWidgetForm);
   const [runtime, setRuntime] = useState<RuntimeStatusDto | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
   const [testingHostId, setTestingHostId] = useState<string | null>(null);
+  const [testingIntegrationId, setTestingIntegrationId] = useState<string | null>(null);
+  const [testingWidgetId, setTestingWidgetId] = useState<string | null>(null);
+  const [runningAiBriefing, setRunningAiBriefing] = useState(false);
+  const [addingWidgetSuggestionId, setAddingWidgetSuggestionId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -74,12 +127,28 @@ export function SettingsView({
   }, [systemSettings.autoPingIntervalSeconds]);
 
   useEffect(() => {
-    void Promise.all([loadHostMonitors(), loadRuntime()]);
+    void Promise.all([loadHostMonitors(), loadIntegrations(), loadApiWidgets(), loadRuntime()]);
   }, []);
 
   async function loadHostMonitors() {
     const monitors = await apiGet<HostMonitorDto[]>("/api/metrics/hosts");
     setHostMonitors(monitors);
+  }
+
+  async function loadIntegrations() {
+    const sources = await apiGet<IntegrationSourceDto[]>("/api/integrations");
+    setIntegrations(sources);
+  }
+
+  async function loadApiWidgets() {
+    const [widgets, templates, suggestions] = await Promise.all([
+      apiGet<ApiWidgetDto[]>("/api/api-widgets"),
+      apiGet<ApiWidgetTemplateDto[]>("/api/api-widget-templates"),
+      apiGet<ApiWidgetSuggestionDto[]>("/api/api-widget-suggestions")
+    ]);
+    setApiWidgets(widgets);
+    setApiWidgetTemplates(templates);
+    setApiWidgetSuggestions(suggestions);
   }
 
   async function loadRuntime() {
@@ -89,6 +158,20 @@ export function SettingsView({
     } finally {
       setRuntimeLoading(false);
     }
+  }
+
+  async function runAiBriefing() {
+    setRunningAiBriefing(true);
+    await runFormAction(
+      async () => {
+        await apiSend<AiBriefingDto>("/api/ai/briefing/run", "POST");
+        await Promise.all([loadRuntime(), onRefresh()]);
+      },
+      setActionError,
+      setSubmitting,
+      "AI briefing updated"
+    );
+    setRunningAiBriefing(false);
   }
 
   async function copyText(text: string) {
@@ -188,6 +271,163 @@ export function SettingsView({
       "Host sample collected"
     );
     setTestingHostId(null);
+  }
+
+  async function testIntegration(source: IntegrationSourceDto) {
+    setTestingIntegrationId(source.id);
+    await runFormAction(
+      async () => {
+        await apiSend(`/api/integrations/${source.id}/run`, "POST");
+        await Promise.all([loadIntegrations(), loadRuntime(), onRefresh()]);
+      },
+      setActionError,
+      setSubmitting,
+      "Integration sample collected"
+    );
+    setTestingIntegrationId(null);
+  }
+
+  function applyWidgetTemplate(templateId: string) {
+    const template = apiWidgetTemplates.find((item) => item.id === templateId);
+    setWidgetForm((current) => ({
+      ...current,
+      templateId,
+      name: current.name || template?.name || "",
+      endpointPath: template?.endpointPath ?? current.endpointPath,
+      authType: template?.authType ?? current.authType,
+      authHeaderName: template?.authHeaderName ?? "",
+      authEnvVar: current.authEnvVar || template?.authEnvVarHint || "",
+      authValuePrefix: template?.authValuePrefix ?? "",
+      fieldMappings: JSON.stringify(template?.fieldMappings ?? JSON.parse(emptyApiWidgetForm.fieldMappings), null, 2)
+    }));
+  }
+
+  async function createSuggestedApiWidget(suggestion: ApiWidgetSuggestionDto) {
+    setAddingWidgetSuggestionId(suggestion.id);
+    await runFormAction(
+      async () => {
+        await apiSend("/api/api-widgets", "POST", {
+          name: `${suggestion.resourceName} widget`,
+          templateId: suggestion.templateId,
+          baseUrl: suggestion.baseUrl,
+          endpointPath: suggestion.endpointPath,
+          authType: suggestion.authType,
+          authHeaderName: suggestion.authHeaderName,
+          authEnvVar: suggestion.authEnvVarHint,
+          authValuePrefix: suggestion.authValuePrefix,
+          tlsVerify: true,
+          pollIntervalSeconds: 300,
+          fieldMappings: suggestion.fieldMappings,
+          enabled: true
+        });
+        await Promise.all([loadApiWidgets(), loadRuntime(), onRefresh()]);
+      },
+      setActionError,
+      setSubmitting,
+      "API widget imported"
+    );
+    setAddingWidgetSuggestionId(null);
+  }
+
+  function editApiWidget(widget: ApiWidgetDto) {
+    setWidgetForm({
+      id: widget.id,
+      name: widget.name,
+      templateId: widget.templateId,
+      baseUrl: widget.baseUrl,
+      endpointPath: widget.endpointPath,
+      authType: widget.authType,
+      authHeaderName: widget.authHeaderName ?? "",
+      authEnvVar: widget.authEnvVar ?? "",
+      authValuePrefix: widget.authValuePrefix ?? "",
+      tlsVerify: widget.tlsVerify,
+      pollIntervalSeconds: String(widget.pollIntervalSeconds),
+      fieldMappings: JSON.stringify(widget.fieldMappings, null, 2),
+      enabled: widget.enabled
+    });
+  }
+
+  async function saveApiWidget(event: FormEvent) {
+    event.preventDefault();
+    let fieldMappings: unknown;
+    try {
+      fieldMappings = JSON.parse(widgetForm.fieldMappings);
+    } catch {
+      setActionError("Field mappings must be valid JSON");
+      return;
+    }
+
+    const payload = {
+      name: widgetForm.name,
+      templateId: widgetForm.templateId,
+      baseUrl: widgetForm.baseUrl,
+      endpointPath: widgetForm.endpointPath,
+      authType: widgetForm.authType,
+      authHeaderName: widgetForm.authHeaderName || null,
+      authEnvVar: widgetForm.authEnvVar || null,
+      authValuePrefix: widgetForm.authValuePrefix || null,
+      tlsVerify: widgetForm.tlsVerify,
+      pollIntervalSeconds: Number(widgetForm.pollIntervalSeconds || 300),
+      fieldMappings,
+      enabled: widgetForm.enabled
+    };
+
+    await runFormAction(
+      async () => {
+        if (widgetForm.id) {
+          await apiSend(`/api/api-widgets/${widgetForm.id}`, "PATCH", payload);
+        } else {
+          await apiSend("/api/api-widgets", "POST", payload);
+        }
+        setWidgetForm(emptyApiWidgetForm);
+        await Promise.all([loadApiWidgets(), onRefresh()]);
+      },
+      setActionError,
+      setSubmitting,
+      widgetForm.id ? "API widget updated" : "API widget added"
+    );
+  }
+
+  async function testApiWidget(widget: ApiWidgetDto) {
+    setTestingWidgetId(widget.id);
+    await runFormAction(
+      async () => {
+        await apiSend(`/api/api-widgets/${widget.id}/run`, "POST");
+        await Promise.all([loadApiWidgets(), loadRuntime(), onRefresh()]);
+      },
+      setActionError,
+      setSubmitting,
+      "API widget sample collected"
+    );
+    setTestingWidgetId(null);
+  }
+
+  async function patchApiWidget(widget: ApiWidgetDto, body: Record<string, unknown>) {
+    await runFormAction(
+      async () => {
+        await apiSend(`/api/api-widgets/${widget.id}`, "PATCH", body);
+        await Promise.all([loadApiWidgets(), onRefresh()]);
+      },
+      setActionError,
+      setSubmitting,
+      "API widget updated"
+    );
+  }
+
+  async function deleteApiWidget(widget: ApiWidgetDto) {
+    if (!window.confirm(`Delete "${widget.name}" and its sample history? This cannot be undone.`)) return;
+    await runFormAction(
+      async () => {
+        await apiSend(`/api/api-widgets/${widget.id}`, "DELETE");
+        if (widgetForm.id === widget.id) {
+          setWidgetForm(emptyApiWidgetForm);
+        }
+        await Promise.all([loadApiWidgets(), onRefresh()]);
+      },
+      setActionError,
+      setSubmitting,
+      "API widget deleted"
+    );
   }
 
   async function patchHostMonitor(monitor: HostMonitorDto, body: Record<string, unknown>) {
@@ -318,6 +558,266 @@ export function SettingsView({
           </div>
         </section>
 
+        <section className="table-panel settings-wide-panel">
+          <h3><ShieldCheck size={16} /> OPNsense integration</h3>
+          <p className="muted-copy">
+            Read-only API polling is configured with environment variables. API keys are never stored in SQLite.
+          </p>
+          <div className="key-value-grid runtime-key-grid integration-config-grid">
+            <span><span>Enabled</span><strong>{runtime?.integrations.opnsense.enabled ? "yes" : "no"}</strong></span>
+            <span><span>Configured</span><strong>{runtime?.integrations.opnsense.configured ? "ready" : "missing env"}</strong></span>
+            <span><span>Firewall</span><strong>{runtime?.integrations.opnsense.name ?? "OPNsense"}</strong></span>
+            <span><span>Base URL</span><strong>{runtime?.integrations.opnsense.baseUrl ?? "not set"}</strong></span>
+            <span><span>TLS verify</span><strong>{runtime?.integrations.opnsense.tlsVerify === false ? "disabled" : "enabled"}</strong></span>
+            <span><span>Poll interval</span><strong>{runtime?.integrations.opnsense.pollIntervalSeconds ?? "—"}s</strong></span>
+          </div>
+
+          <div className="host-monitor-list integration-source-list">
+            {integrations.map((source) => {
+              const gatewayTotal = source.latestSnapshot?.gateways.length ?? 0;
+              const gatewayOnline = source.latestSnapshot?.gateways.filter((gateway) => gateway.status === "online").length ?? 0;
+              const traffic = source.latestSnapshot?.interfaces.reduce(
+                (sum, item) => sum + (item.receivedBytesPerSec ?? 0) + (item.sentBytesPerSec ?? 0),
+                0
+              ) ?? 0;
+
+              return (
+                <div className={`host-monitor-row host-${source.status}`} key={source.id}>
+                  <span className={`svc-dot dot-${source.status}`} />
+                  <span>
+                    <strong>{source.name}</strong>
+                    <small>{source.baseUrl} · {source.enabled ? "enabled" : "paused"} · {source.latestSampledAt ? relativeTime(source.latestSampledAt) : "never sampled"}</small>
+                    {source.latestError ? <small className="drawer-check-error">{source.latestError}</small> : null}
+                  </span>
+                  <span className="host-monitor-stats">
+                    <i>CPU {formatPercent(source.latestSnapshot?.system.cpuPercent)}</i>
+                    <i>GW {gatewayOnline}/{gatewayTotal}</i>
+                    <i>NET {formatByteRate(traffic || null)}</i>
+                  </span>
+                  <button className="icon-button" type="button" title="Test connection" disabled={testingIntegrationId === source.id} onClick={() => void testIntegration(source)}>
+                    {testingIntegrationId === source.id ? <RefreshCw size={14} className="spin" /> : <Play size={14} />}
+                  </button>
+                </div>
+              );
+            })}
+            {integrations.length === 0 ? <p className="muted-copy">Set `OPNSENSE_ENABLED=true`, `OPNSENSE_BASE_URL`, `OPNSENSE_API_KEY`, and `OPNSENSE_API_SECRET` to enable polling.</p> : null}
+          </div>
+        </section>
+
+        <section className="table-panel settings-wide-panel">
+          <h3><Sparkles size={16} /> AI briefing</h3>
+          <p className="muted-copy">
+            Read-only command briefings use sanitized dashboard evidence. Provider secrets stay in environment variables.
+          </p>
+          <div className="key-value-grid runtime-key-grid integration-config-grid">
+            <span><span>Enabled</span><strong>{runtime?.ai.enabled ? "yes" : "no"}</strong></span>
+            <span><span>Configured</span><strong>{runtime?.ai.configured ? "ready" : "missing env"}</strong></span>
+            <span><span>Provider</span><strong>{runtime?.ai.providerName ?? "AI"}</strong></span>
+            <span><span>Base URL</span><strong>{runtime?.ai.baseUrl ?? "not set"}</strong></span>
+            <span><span>Model</span><strong>{runtime?.ai.model ?? "not set"}</strong></span>
+            <span><span>API key</span><strong>{runtime?.ai.apiKeyConfigured ? "set" : "not set"}</strong></span>
+            <span><span>TLS verify</span><strong>{runtime?.ai.tlsVerify === false ? "disabled" : "enabled"}</strong></span>
+            <span><span>Briefing interval</span><strong>{runtime?.ai.briefingIntervalSeconds ?? "—"}s</strong></span>
+            <span><span>Include targets</span><strong>{runtime?.ai.includeTargets ? "yes" : "no"}</strong></span>
+            <span><span>Last briefing</span><strong>{runtime?.ai.lastGeneratedAt ? relativeTime(runtime.ai.lastGeneratedAt) : "never"}</strong></span>
+          </div>
+          {runtime?.ai.lastError ? <p className="drawer-check-error">{runtime.ai.lastError}</p> : null}
+          <div className="settings-actions">
+            <button
+              className="icon-text-button"
+              type="button"
+              disabled={!runtime?.ai.configured || runningAiBriefing || submitting}
+              onClick={() => void runAiBriefing()}
+            >
+              <RefreshCw size={16} className={runningAiBriefing ? "spin" : ""} /> Run briefing
+            </button>
+          </div>
+        </section>
+
+        <section className="table-panel settings-wide-panel">
+          <h3><PanelsTopLeft size={16} /> API widgets</h3>
+          {apiWidgetSuggestions.length > 0 ? (
+            <div className="host-monitor-list api-widget-suggestion-list">
+              {apiWidgetSuggestions.slice(0, 8).map((suggestion) => (
+                <div className="host-monitor-row" key={suggestion.id}>
+                  <span className="host-icon api-widget-icon"><PanelsTopLeft size={16} /></span>
+                  <span>
+                    <strong>{suggestion.resourceName}</strong>
+                    <small>{suggestion.app} · {suggestion.baseUrl}{suggestion.endpointPath} · {suggestion.reason}</small>
+                  </span>
+                  <span className="host-monitor-stats">
+                    <i>{suggestion.authType === "none" ? "No auth" : suggestion.authEnvVarHint ?? suggestion.authType}</i>
+                    <i>{suggestion.templateName}</i>
+                  </span>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    title="Add API widget"
+                    disabled={addingWidgetSuggestionId === suggestion.id || submitting}
+                    onClick={() => void createSuggestedApiWidget(suggestion)}
+                  >
+                    {addingWidgetSuggestionId === suggestion.id ? <RefreshCw size={14} className="spin" /> : <Plus size={14} />}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <form className="inline-form settings-form-grid api-widget-form" onSubmit={saveApiWidget}>
+            <label>
+              Template
+              <select
+                value={widgetForm.templateId}
+                onChange={(event) => applyWidgetTemplate(event.target.value)}
+              >
+                {apiWidgetTemplates.map((template) => (
+                  <option key={template.id} value={template.id}>{template.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Name
+              <input
+                value={widgetForm.name}
+                onChange={(event) => setWidgetForm((current) => ({ ...current, name: event.target.value }))}
+                placeholder="Home Assistant, Proxmox, Grafana"
+                required
+              />
+            </label>
+            <label>
+              Base URL
+              <input
+                value={widgetForm.baseUrl}
+                onChange={(event) => setWidgetForm((current) => ({ ...current, baseUrl: event.target.value }))}
+                placeholder="https://service.lab.local"
+                required
+              />
+            </label>
+            <label>
+              Endpoint
+              <input
+                value={widgetForm.endpointPath}
+                onChange={(event) => setWidgetForm((current) => ({ ...current, endpointPath: event.target.value }))}
+                placeholder="/api/health"
+                required
+              />
+            </label>
+            <label>
+              Auth
+              <select
+                value={widgetForm.authType}
+                onChange={(event) => setWidgetForm((current) => ({ ...current, authType: event.target.value as ApiWidgetDto["authType"] }))}
+              >
+                <option value="none">None</option>
+                <option value="bearer">Bearer token</option>
+                <option value="header">Header</option>
+                <option value="basic">Basic</option>
+                <option value="pihole">Pi-hole v6</option>
+              </select>
+            </label>
+            <label>
+              Header
+              <input
+                value={widgetForm.authHeaderName}
+                onChange={(event) => setWidgetForm((current) => ({ ...current, authHeaderName: event.target.value }))}
+                placeholder="Authorization, X-Api-Key"
+              />
+            </label>
+            <label>
+              Env var
+              <input
+                value={widgetForm.authEnvVar}
+                onChange={(event) => setWidgetForm((current) => ({ ...current, authEnvVar: event.target.value.toUpperCase() }))}
+                placeholder="HOME_ASSISTANT_TOKEN"
+              />
+            </label>
+            <label>
+              Prefix
+              <input
+                value={widgetForm.authValuePrefix}
+                onChange={(event) => setWidgetForm((current) => ({ ...current, authValuePrefix: event.target.value }))}
+                placeholder="PVEAPIToken "
+              />
+            </label>
+            <label>
+              Poll seconds
+              <input
+                type="number"
+                min={15}
+                max={86400}
+                value={widgetForm.pollIntervalSeconds}
+                onChange={(event) => setWidgetForm((current) => ({ ...current, pollIntervalSeconds: event.target.value }))}
+                required
+              />
+            </label>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={widgetForm.tlsVerify}
+                onChange={(event) => setWidgetForm((current) => ({ ...current, tlsVerify: event.target.checked }))}
+              />
+              Verify TLS
+            </label>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={widgetForm.enabled}
+                onChange={(event) => setWidgetForm((current) => ({ ...current, enabled: event.target.checked }))}
+              />
+              Enabled
+            </label>
+            <label className="api-widget-mapping-field">
+              Field mappings
+              <textarea
+                value={widgetForm.fieldMappings}
+                onChange={(event) => setWidgetForm((current) => ({ ...current, fieldMappings: event.target.value }))}
+                rows={8}
+                spellCheck={false}
+              />
+            </label>
+            <div className="form-actions">
+              <button className="primary-button" type="submit" disabled={submitting}>
+                <Save size={15} /> {widgetForm.id ? "Update widget" : "Add widget"}
+              </button>
+              {widgetForm.id ? (
+                <button className="icon-text-button" type="button" onClick={() => setWidgetForm(emptyApiWidgetForm)}>
+                  Cancel
+                </button>
+              ) : null}
+            </div>
+          </form>
+
+          <div className="host-monitor-list api-widget-list">
+            {apiWidgets.map((widget) => (
+              <div className={`host-monitor-row host-${widget.latestStatus}`} key={widget.id}>
+                <span className={`svc-dot dot-${widget.latestStatus}`} />
+                <span>
+                  <strong>{widget.name}</strong>
+                  <small>{widget.templateId} · {widget.baseUrl}{widget.endpointPath} · {widget.enabled ? "enabled" : "paused"} · {widget.latestSampledAt ? relativeTime(widget.latestSampledAt) : "never sampled"}</small>
+                  {widget.latestError ? <small className="drawer-check-error">{widget.latestError}</small> : null}
+                </span>
+                <span className="host-monitor-stats">
+                  {(widget.latestSnapshot?.fields ?? []).slice(0, 3).map((field) => (
+                    <i key={field.label}>{field.label} {field.value}{field.suffix ?? ""}</i>
+                  ))}
+                </span>
+                <button className="icon-button" type="button" title="Test widget" disabled={testingWidgetId === widget.id} onClick={() => void testApiWidget(widget)}>
+                  {testingWidgetId === widget.id ? <RefreshCw size={14} className="spin" /> : <Play size={14} />}
+                </button>
+                <button className="icon-button" type="button" title={widget.enabled ? "Pause" : "Resume"} onClick={() => void patchApiWidget(widget, { enabled: !widget.enabled })}>
+                  <Activity size={14} style={{ opacity: widget.enabled ? 1 : 0.45 }} />
+                </button>
+                <button className="icon-button" type="button" title="Edit" onClick={() => editApiWidget(widget)}>
+                  <Gauge size={14} />
+                </button>
+                <button className="icon-button danger" type="button" title="Delete" onClick={() => void deleteApiWidget(widget)}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+            {apiWidgets.length === 0 ? <p className="muted-copy">No API widgets configured.</p> : null}
+          </div>
+        </section>
+
         <section className="table-panel">
           <h3><RefreshCw size={16} /> Account</h3>
           <div className="key-value-grid">
@@ -385,11 +885,18 @@ export function SettingsView({
                 <span><small>Results</small><strong>{runtime.database.counts.healthResults}</strong></span>
                 <span><small>Hosts</small><strong>{runtime.database.counts.hostMonitors}</strong></span>
                 <span><small>Samples</small><strong>{runtime.database.counts.hostMetricSamples}</strong></span>
+                <span><small>Integrations</small><strong>{runtime.database.counts.integrationSources}</strong></span>
+                <span><small>Int samples</small><strong>{runtime.database.counts.integrationSamples}</strong></span>
+                <span><small>API widgets</small><strong>{runtime.database.counts.apiWidgets}</strong></span>
+                <span><small>Widget samples</small><strong>{runtime.database.counts.apiWidgetSamples}</strong></span>
               </div>
 
               <div className="scheduler-runtime-grid">
                 <SchedulerRuntimeCard label="Health checks" state={runtime.schedulers.health} />
                 <SchedulerRuntimeCard label="Host metrics" state={runtime.schedulers.metrics} />
+                <SchedulerRuntimeCard label="Integrations" state={runtime.schedulers.integrations} />
+                <SchedulerRuntimeCard label="API widgets" state={runtime.schedulers.apiWidgets} />
+                <SchedulerRuntimeCard label="AI briefing" state={runtime.schedulers.ai} />
               </div>
 
               <div className="runtime-command-grid">

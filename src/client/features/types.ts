@@ -15,6 +15,9 @@ export const emptyAppData: AppData = {
     groups: [],
     ungroupedResources: [],
     hostMonitors: [],
+    integrations: [],
+    apiWidgets: [],
+    aiBriefing: null,
     dailyBriefing: {
       summary: {
         servicesTotal: 0,

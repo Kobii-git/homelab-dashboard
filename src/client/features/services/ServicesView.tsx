@@ -1,5 +1,5 @@
-import { Activity, ChevronDown, ChevronUp, Copy, Plus, Pencil, Save, Server, Trash2, Wifi } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { Activity, ChevronDown, ChevronUp, Copy, Plus, Pencil, Save, Server, ShieldCheck, Trash2, Wifi } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { HEALTH_CHECK_TYPES, HEALTH_STATUSES, MONITORING_MODES, RESOURCE_KINDS } from "../../../shared/types";
 import { MetricCard, PageHeader, StatusBadge } from "../../components/Primitives";
 import { ServiceIcon } from "../../components/ServiceIcon";
@@ -7,7 +7,7 @@ import { FormErrorBanner, runFormAction, runFormSubmit } from "../../lib/forms";
 import { apiSend, emptyToNull } from "../../lib/api";
 import { formatDateTime, statusFor } from "../../lib/format";
 import type { AppData } from "../types";
-import type { DashboardResource } from "../../../shared/types";
+import type { DashboardResource, OpnsenseImportSuggestionDto } from "../../../shared/types";
 import type { HealthCheckDto } from "../../lib/api";
 
 export type ServiceTab = "resource" | "check";
@@ -276,6 +276,47 @@ export function ServicesView({
     }, setActionError, setSubmitting, "Service duplicated");
   }
 
+  function resourceMatchesSuggestion(resource: DashboardResource, suggestion: OpnsenseImportSuggestionDto): boolean {
+    const sameName = resource.name.trim().toLowerCase() === suggestion.name.trim().toLowerCase();
+    const sameHost = Boolean(suggestion.host && resource.host === suggestion.host);
+    const sameUrl = Boolean(suggestion.url && resource.url === suggestion.url);
+    return sameName || sameHost || sameUrl;
+  }
+
+  async function importSuggestion(suggestion: OpnsenseImportSuggestionDto, confirm = true) {
+    if (confirm && !window.confirm(`Import "${suggestion.name}" into the service catalog?`)) return;
+    await apiSend("/api/resources", "POST", {
+      name: suggestion.name,
+      kind: suggestion.kind,
+      url: suggestion.url,
+      host: suggestion.host,
+      icon: suggestion.icon,
+      color: suggestion.color,
+      description: suggestion.description,
+      groupId: groupIdForHint("Network"),
+      monitoringMode: "auto",
+      manualStatus: null,
+      favorite: false
+    });
+  }
+
+  async function importAllSuggestions(suggestions: OpnsenseImportSuggestionDto[]) {
+    if (!window.confirm(`Import ${suggestions.length} OPNsense resource${suggestions.length === 1 ? "" : "s"}?`)) return;
+    await runFormAction(async () => {
+      for (const suggestion of suggestions) {
+        await importSuggestion(suggestion, false);
+      }
+      await onRefresh();
+    }, setActionError, setSubmitting, "OPNsense resources imported");
+  }
+
+  async function importOneSuggestion(suggestion: OpnsenseImportSuggestionDto) {
+    await runFormAction(async () => {
+      await importSuggestion(suggestion);
+      await onRefresh();
+    }, setActionError, setSubmitting, "OPNsense resource imported");
+  }
+
   function beginCreate(mode: FormMode, tab: ServiceTab) {
     cancelEdit();
     setResourceFormKey((key) => key + 1);
@@ -297,6 +338,16 @@ export function ServicesView({
     await apiSend(`/api/resources/${swap.id}`, "PATCH", { sortOrder: resource.sortOrder });
     await onRefresh();
   }
+
+  const opnsenseSuggestions = useMemo(() => {
+    const suggestions = data.dashboard.integrations.flatMap((source) =>
+      source.latestSnapshot?.importSuggestions ?? []
+    );
+    return suggestions.filter((suggestion, index, list) =>
+      list.findIndex((item) => item.id === suggestion.id) === index &&
+      !data.resources.some((resource) => resourceMatchesSuggestion(resource, suggestion))
+    );
+  }, [data.dashboard.integrations, data.resources]);
 
   const resourceDefaults = editResource ?? resourceDraft;
 
@@ -359,6 +410,36 @@ export function ServicesView({
               </button>
             ))}
           </div>
+
+          {data.dashboard.integrations.length > 0 ? (
+            <div className="integration-import-panel">
+              <div className="section-heading compact-section-heading">
+                <h3><ShieldCheck size={15} /> OPNsense imports</h3>
+                {opnsenseSuggestions.length > 0 ? (
+                  <button className="icon-text-button" type="button" disabled={submitting} onClick={() => void importAllSuggestions(opnsenseSuggestions)}>
+                    <Plus size={14} /> Import all
+                  </button>
+                ) : null}
+              </div>
+              {opnsenseSuggestions.length > 0 ? (
+                <div className="row-list integration-import-list">
+                  {opnsenseSuggestions.slice(0, 12).map((suggestion) => (
+                    <div className="data-row data-row-wide service-data-row" key={suggestion.id}>
+                      <span>
+                        <strong>{suggestion.name}</strong>
+                        <small>{suggestion.source} · {suggestion.host ?? suggestion.url ?? "no address"} · {suggestion.description}</small>
+                      </span>
+                      <button className="icon-button" type="button" title="Import service" disabled={submitting} onClick={() => void importOneSuggestion(suggestion)}>
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="muted-copy">No new OPNsense resources to import from the latest sample.</p>
+              )}
+            </div>
+          ) : null}
 
           {formMode === "group" ? (
             <form className="tool-panel service-form-panel" onSubmit={submitGroup}>

@@ -12,6 +12,23 @@ services:
       # Optional — leave unset and the app handles everything on first boot:
       # ADMIN_PASSWORD: your-password
       # COOKIE_SECRET: random-32-chars
+      # OPNSENSE_ENABLED: "true"
+      # OPNSENSE_NAME: OPNsense
+      # OPNSENSE_BASE_URL: https://opnsense.local
+      # OPNSENSE_API_KEY: your-api-key
+      # OPNSENSE_API_SECRET: your-api-secret
+      # OPNSENSE_TLS_VERIFY: "true"
+      # OPNSENSE_POLL_INTERVAL_SECONDS: "60"
+      # AI_ENABLED: "true"
+      # AI_PROVIDER_NAME: AI
+      # AI_BASE_URL: https://api.openai.com/v1
+      # AI_API_KEY: your-ai-api-key
+      # AI_MODEL: your-model
+      # AI_TLS_VERIFY: "true"
+      # AI_BRIEFING_INTERVAL_SECONDS: "21600"
+      # AI_INCLUDE_TARGETS: "false"
+      # HOME_ASSISTANT_TOKEN: your-long-lived-token
+      # SONARR_API_KEY: your-api-key
     ports:
       - "4173:4173"
     volumes:

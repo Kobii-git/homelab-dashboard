@@ -13,8 +13,35 @@ import { getEnv, type AppEnv } from "./env.js";
 import { getBuildInfo } from "../shared/version.js";
 import { runHealthCheck, startHealthScheduler, type SchedulerUpdate } from "./healthChecks.js";
 import { runHostMetricSample, startMetricsScheduler, toHostMonitorDto } from "./metrics.js";
-import type { DailyBriefingDto, HostMonitorDto } from "../shared/types.js";
 import {
+  apiWidgetTemplateById,
+  apiWidgetTemplates,
+  runApiWidgetSample,
+  startApiWidgetScheduler,
+  suggestApiWidgets,
+  toApiWidgetDto
+} from "./apiWidgets.js";
+import {
+  isOpnsenseConfigured,
+  opnsenseRuntimeConfig,
+  runIntegrationSample,
+  startIntegrationScheduler,
+  syncConfiguredIntegrationSources,
+  toIntegrationSourceDto
+} from "./opnsense.js";
+import {
+  AI_SCHEDULER_INTERVAL_MS,
+  aiRuntimeConfig,
+  getAiBriefing,
+  getCachedAiBriefing,
+  getDashboardAiBriefing,
+  runAiBriefing,
+  startAiBriefingScheduler
+} from "./aiBriefing.js";
+import { buildDailyBriefing } from "./dailyBriefing.js";
+import {
+  apiWidgetPatchSchema,
+  apiWidgetSchema,
   dashboardGroupPatchSchema,
   dashboardGroupSchema,
   healthCheckPatchSchema,
@@ -81,6 +108,12 @@ const resetHostMonitorState = {
   latestTemperatureC: null,
   latestContainersRunning: null,
   latestContainersTotal: null
+} as const;
+const resetApiWidgetState = {
+  latestStatus: "unknown",
+  latestError: null,
+  latestSnapshot: null,
+  latestSampledAt: null
 } as const;
 
 function createSchedulerRuntime(intervalMs: number): SchedulerRuntime {
@@ -359,217 +392,6 @@ async function setAutoPingIntervalSeconds(prisma: PrismaClient, value: number): 
   });
 }
 
-type BriefingCheck = {
-  id: string;
-  target: string;
-  enabled: boolean;
-  intervalSeconds: number;
-  latestStatus: string;
-  latestError: string | null;
-  latestCheckedAt: Date | null;
-  consecutiveFailures: number;
-  consecutiveSuccesses: number;
-  failureThreshold: number;
-  successThreshold: number;
-  lastTransitionAt: Date | null;
-};
-
-type BriefingResource = {
-  id: string;
-  name: string;
-  monitoringMode: string;
-  manualStatus: string | null;
-  healthChecks: BriefingCheck[];
-};
-
-function resourceStatus(resource: BriefingResource): "online" | "offline" | "unknown" {
-  if (resource.monitoringMode === "manual" || resource.monitoringMode === "disabled") {
-    return resource.manualStatus === "online" || resource.manualStatus === "offline" ? resource.manualStatus : "unknown";
-  }
-
-  const enabledChecks = resource.healthChecks.filter((check) => check.enabled);
-  if (enabledChecks.length === 0) return "unknown";
-  if (enabledChecks.some((check) => check.latestStatus === "offline")) return "offline";
-  if (enabledChecks.some((check) => check.latestStatus === "online")) return "online";
-  return "unknown";
-}
-
-function buildDailyBriefing(resources: BriefingResource[], hostMonitors: HostMonitorDto[]): DailyBriefingDto {
-  const now = Date.now();
-  const dayAgo = now - 24 * 60 * 60 * 1000;
-  const statuses = resources.map((resource) => ({
-    resource,
-    status: resourceStatus(resource)
-  }));
-
-  const offlineServices = statuses
-    .filter((item) => item.status === "offline")
-    .map(({ resource }) => {
-      const failed = resource.healthChecks.find((check) => check.enabled && check.latestStatus === "offline");
-      return {
-        id: resource.id,
-        name: resource.name,
-        status: "offline" as const,
-        error: failed?.latestError ?? null,
-        lastCheckedAt: failed?.latestCheckedAt?.toISOString() ?? null
-      };
-    })
-    .slice(0, 8);
-
-  const recentChanges = resources
-    .flatMap((resource) =>
-      resource.healthChecks
-        .filter((check) =>
-          check.enabled &&
-          (check.latestStatus === "online" || check.latestStatus === "offline") &&
-          check.lastTransitionAt &&
-          check.lastTransitionAt.getTime() >= dayAgo
-        )
-        .map((check) => ({
-          resourceId: resource.id,
-          name: resource.name,
-          status: check.latestStatus as "online" | "offline",
-          changedAt: (check.lastTransitionAt as Date).toISOString(),
-          error: check.latestError
-        }))
-    )
-    .sort((left, right) => right.changedAt.localeCompare(left.changedAt))
-    .slice(0, 8);
-
-  const hostsUnderPressureAll = hostMonitors
-    .flatMap((host) => {
-      const metrics: DailyBriefingDto["hostsUnderPressure"] = [];
-      for (const [metric, value] of [
-        ["cpu", host.latestCpuPercent],
-        ["memory", host.latestMemoryPercent],
-        ["disk", host.latestDiskPercent]
-      ] as const) {
-        if (typeof value === "number" && value >= 80) {
-          metrics.push({
-            id: host.id,
-            name: host.name,
-            metric,
-            value,
-            level: value >= 90 ? "critical" : "warning"
-          });
-        }
-      }
-      return metrics;
-    })
-    .sort((left, right) => right.value - left.value);
-  const hostsUnderPressure = hostsUnderPressureAll.slice(0, 8);
-
-  const staleChecksAll = resources
-    .flatMap((resource) =>
-      resource.monitoringMode === "auto"
-        ? resource.healthChecks
-          .filter((check) => {
-            if (!check.enabled) return false;
-            if (!check.latestCheckedAt) return true;
-            const staleAfter = Math.max(check.intervalSeconds * 2 * 1000, 5 * 60 * 1000);
-            return now - check.latestCheckedAt.getTime() > staleAfter;
-          })
-          .map((check) => ({
-            resourceId: resource.id,
-            resourceName: resource.name,
-            checkId: check.id,
-            target: check.target,
-            lastCheckedAt: check.latestCheckedAt?.toISOString() ?? null
-          }))
-        : []
-    );
-  const staleChecks = staleChecksAll.slice(0, 8);
-
-  const unmonitoredServicesAll = resources
-    .filter((resource) =>
-      resource.monitoringMode === "auto" &&
-      resource.healthChecks.filter((check) => check.enabled).length === 0
-    )
-    .map((resource) => ({ id: resource.id, name: resource.name }));
-  const unmonitoredServices = unmonitoredServicesAll.slice(0, 8);
-
-  const watchlistAll: DailyBriefingDto["watchlist"] = resources
-    .flatMap((resource) =>
-      resource.monitoringMode === "auto"
-        ? resource.healthChecks
-          .filter((check) => check.enabled)
-          .flatMap((check) => {
-            const entries: DailyBriefingDto["watchlist"] = [];
-
-            if (
-              check.consecutiveFailures > 0 &&
-              check.consecutiveFailures < check.failureThreshold &&
-              check.latestStatus !== "offline"
-            ) {
-              entries.push({
-                resourceId: resource.id,
-                resourceName: resource.name,
-                checkId: check.id,
-                target: check.target,
-                direction: "failing" as const,
-                currentStatus: check.latestStatus as "online" | "offline" | "unknown",
-                latestRawStatus: "offline" as const,
-                consecutive: check.consecutiveFailures,
-                threshold: check.failureThreshold,
-                lastCheckedAt: check.latestCheckedAt?.toISOString() ?? null,
-                error: check.latestError
-              });
-            }
-
-            if (
-              check.consecutiveSuccesses > 0 &&
-              check.consecutiveSuccesses < check.successThreshold &&
-              check.latestStatus === "offline"
-            ) {
-              entries.push({
-                resourceId: resource.id,
-                resourceName: resource.name,
-                checkId: check.id,
-                target: check.target,
-                direction: "recovering" as const,
-                currentStatus: check.latestStatus as "online" | "offline" | "unknown",
-                latestRawStatus: "online" as const,
-                consecutive: check.consecutiveSuccesses,
-                threshold: check.successThreshold,
-                lastCheckedAt: check.latestCheckedAt?.toISOString() ?? null,
-                error: check.latestError
-              });
-            }
-
-            return entries;
-          })
-        : []
-    )
-    .sort((left, right) => {
-      const directionPriority = left.direction === right.direction ? 0 : left.direction === "failing" ? -1 : 1;
-      if (directionPriority !== 0) return directionPriority;
-      return (right.lastCheckedAt ?? "").localeCompare(left.lastCheckedAt ?? "");
-    });
-  const watchlist = watchlistAll.slice(0, 8);
-
-  return {
-    summary: {
-      servicesTotal: resources.length,
-      servicesOnline: statuses.filter((item) => item.status === "online").length,
-      servicesOffline: statuses.filter((item) => item.status === "offline").length,
-      servicesUnknown: statuses.filter((item) => item.status === "unknown").length,
-      hostsTotal: hostMonitors.length,
-      hostsOffline: hostMonitors.filter((host) => host.latestStatus === "offline").length,
-      hostsUnderPressure: hostsUnderPressureAll.length,
-      staleChecks: staleChecksAll.length,
-      unmonitoredServices: unmonitoredServicesAll.length,
-      pendingFailures: watchlistAll.filter((item) => item.direction === "failing").length,
-      pendingRecoveries: watchlistAll.filter((item) => item.direction === "recovering").length
-    },
-    offlineServices,
-    recentChanges,
-    hostsUnderPressure,
-    staleChecks,
-    unmonitoredServices,
-    watchlist
-  };
-}
-
 function createHostMonitorData(input: z.infer<typeof hostMonitorSchema>) {
   return {
     name: input.name,
@@ -606,6 +428,71 @@ function shouldResetHostMonitorAfterPatch(
   );
 }
 
+function createApiWidgetData(input: z.infer<typeof apiWidgetSchema>) {
+  const template = apiWidgetTemplateById(input.templateId);
+  return {
+    name: input.name,
+    templateId: input.templateId ?? template.id,
+    baseUrl: input.baseUrl.trim().replace(/\/+$/, ""),
+    endpointPath: input.endpointPath,
+    authType: input.authType ?? template.authType,
+    authHeaderName: input.authHeaderName ?? template.authHeaderName,
+    authEnvVar: input.authEnvVar || null,
+    authValuePrefix: input.authValuePrefix ?? template.authValuePrefix,
+    tlsVerify: input.tlsVerify ?? true,
+    fieldMappings: input.fieldMappings,
+    enabled: input.enabled,
+    pollIntervalSeconds: input.pollIntervalSeconds,
+    sortOrder: input.sortOrder
+  };
+}
+
+function patchApiWidgetData(input: z.infer<typeof apiWidgetPatchSchema>) {
+  const data = { ...input };
+  if (data.baseUrl) {
+    data.baseUrl = data.baseUrl.trim().replace(/\/+$/, "");
+  }
+  if ("authEnvVar" in data && !data.authEnvVar) {
+    data.authEnvVar = null;
+  }
+  if ("authHeaderName" in data && !data.authHeaderName) {
+    data.authHeaderName = null;
+  }
+  if ("authValuePrefix" in data && !data.authValuePrefix) {
+    data.authValuePrefix = null;
+  }
+  return data;
+}
+
+function shouldResetApiWidgetAfterPatch(
+  previous: Pick<ApiWidgetResetCandidate, "templateId" | "baseUrl" | "endpointPath" | "authType" | "authHeaderName" | "authEnvVar" | "authValuePrefix" | "tlsVerify" | "fieldMappings">,
+  patch: ReturnType<typeof patchApiWidgetData>
+): boolean {
+  return (
+    (patch.templateId !== undefined && patch.templateId !== previous.templateId) ||
+    (patch.baseUrl !== undefined && patch.baseUrl !== previous.baseUrl) ||
+    (patch.endpointPath !== undefined && patch.endpointPath !== previous.endpointPath) ||
+    (patch.authType !== undefined && patch.authType !== previous.authType) ||
+    (patch.authHeaderName !== undefined && patch.authHeaderName !== previous.authHeaderName) ||
+    (patch.authEnvVar !== undefined && patch.authEnvVar !== previous.authEnvVar) ||
+    (patch.authValuePrefix !== undefined && patch.authValuePrefix !== previous.authValuePrefix) ||
+    (patch.tlsVerify !== undefined && patch.tlsVerify !== previous.tlsVerify) ||
+    patch.fieldMappings !== undefined
+  );
+}
+
+type ApiWidgetResetCandidate = {
+  templateId: string;
+  baseUrl: string;
+  endpointPath: string;
+  authType: string;
+  authHeaderName: string | null;
+  authEnvVar: string | null;
+  authValuePrefix: string | null;
+  tlsVerify: boolean;
+  fieldMappings: unknown;
+};
+
 export async function createApp(options: CreateAppOptions = {}): Promise<FastifyInstance> {
   const raw = options.env ?? getEnv();
   const env: AppEnv = {
@@ -618,6 +505,9 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const startedAt = new Date();
   const healthScheduler = createSchedulerRuntime(15_000);
   const metricsScheduler = createSchedulerRuntime(15_000);
+  const integrationScheduler = createSchedulerRuntime(15_000);
+  const apiWidgetScheduler = createSchedulerRuntime(15_000);
+  const aiScheduler = createSchedulerRuntime(AI_SCHEDULER_INTERVAL_MS);
 
   await app.register(cookie, {
     secret: env.cookieSecret
@@ -833,8 +723,23 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     }
   } as const;
 
+  const integrationInclude = {
+    samples: {
+      orderBy: { sampledAt: "desc" },
+      take: 60
+    }
+  } as const;
+
+  const apiWidgetInclude = {
+    samples: {
+      orderBy: { sampledAt: "desc" },
+      take: 60
+    }
+  } as const;
+
   app.get("/api/dashboard", async () => {
-    const [groups, ungroupedResources, hostMonitorsRaw] = await Promise.all([
+    await syncConfiguredIntegrationSources(prisma, env.opnsense);
+    const [groups, ungroupedResources, hostMonitorsRaw, integrationsRaw, apiWidgetsRaw, aiBriefing] = await Promise.all([
       prisma.dashboardGroup.findMany({
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
         include: {
@@ -852,15 +757,31 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       prisma.hostMonitor.findMany({
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
         include: hostMonitorInclude
-      })
+      }),
+      prisma.integrationSource.findMany({
+        where: { enabled: true },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        include: integrationInclude
+      }),
+      prisma.apiWidget.findMany({
+        where: { enabled: true },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        include: apiWidgetInclude
+      }),
+      getDashboardAiBriefing(prisma, env.ai)
     ]);
     const hostMonitors = hostMonitorsRaw.map(toHostMonitorDto);
+    const integrations = integrationsRaw.map(toIntegrationSourceDto);
+    const apiWidgets = apiWidgetsRaw.map(toApiWidgetDto);
     const resources = [...groups.flatMap((group) => group.resources), ...ungroupedResources];
 
     return {
       groups,
       ungroupedResources,
       hostMonitors,
+      integrations,
+      apiWidgets,
+      aiBriefing,
       dailyBriefing: buildDailyBriefing(resources, hostMonitors),
       layout: {}
     };
@@ -884,6 +805,10 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       healthResultCount,
       hostMonitorCount,
       hostMetricSampleCount,
+      integrationSourceCount,
+      integrationSampleCount,
+      apiWidgetCount,
+      apiWidgetSampleCount,
       groupCount
     ] = await Promise.all([
       prisma.resource.count(),
@@ -891,8 +816,13 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       prisma.healthResult.count(),
       prisma.hostMonitor.count(),
       prisma.hostMetricSample.count(),
+      prisma.integrationSource.count(),
+      prisma.integrationSample.count(),
+      prisma.apiWidget.count(),
+      prisma.apiWidgetSample.count(),
       prisma.dashboardGroup.count()
     ]);
+    const cachedAiBriefing = await getCachedAiBriefing(prisma, env.ai);
 
     return {
       build: getBuildInfo(),
@@ -919,15 +849,30 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
           healthChecks: healthCheckCount,
           healthResults: healthResultCount,
           hostMonitors: hostMonitorCount,
-          hostMetricSamples: hostMetricSampleCount
+          hostMetricSamples: hostMetricSampleCount,
+          integrationSources: integrationSourceCount,
+          integrationSamples: integrationSampleCount,
+          apiWidgets: apiWidgetCount,
+          apiWidgetSamples: apiWidgetSampleCount
         }
       },
+      integrations: {
+        opnsense: opnsenseRuntimeConfig(env.opnsense)
+      },
+      ai: aiRuntimeConfig(env.ai, cachedAiBriefing),
       schedulers: {
         health: serializeSchedulerRuntime(healthScheduler),
-        metrics: serializeSchedulerRuntime(metricsScheduler)
+        metrics: serializeSchedulerRuntime(metricsScheduler),
+        integrations: serializeSchedulerRuntime(integrationScheduler),
+        apiWidgets: serializeSchedulerRuntime(apiWidgetScheduler),
+        ai: serializeSchedulerRuntime(aiScheduler)
       }
     };
   });
+
+  app.get("/api/ai/briefing", async () => getAiBriefing(prisma, env.ai));
+
+  app.post("/api/ai/briefing/run", async () => runAiBriefing(prisma, env.ai));
 
   app.get("/api/metrics/hosts", async () => {
     const monitors = await prisma.hostMonitor.findMany({
@@ -1002,6 +947,159 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     const monitor = await prisma.hostMonitor.findUniqueOrThrow({ where: { id } });
     const outcome = await runHostMetricSample(prisma, monitor);
     return { id, ...outcome };
+  });
+
+  app.get("/api/integrations", async () => {
+    await syncConfiguredIntegrationSources(prisma, env.opnsense);
+    const sources = await prisma.integrationSource.findMany({
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      include: integrationInclude
+    });
+    return sources.map(toIntegrationSourceDto);
+  });
+
+  app.get("/api/integrations/:id", async (request) => {
+    const id = routeId(request);
+    await syncConfiguredIntegrationSources(prisma, env.opnsense);
+    const source = await prisma.integrationSource.findUniqueOrThrow({
+      where: { id },
+      include: {
+        samples: {
+          orderBy: { sampledAt: "desc" },
+          take: 1440
+        }
+      }
+    });
+    return toIntegrationSourceDto(source);
+  });
+
+  app.post("/api/integrations/:id/run", async (request, reply) => {
+    const id = routeId(request);
+    await syncConfiguredIntegrationSources(prisma, env.opnsense);
+    const source = await prisma.integrationSource.findUniqueOrThrow({ where: { id } });
+
+    if (source.provider !== "opnsense" || !isOpnsenseConfigured(env.opnsense)) {
+      reply.code(400);
+      return { error: "OPNsense integration is not configured" };
+    }
+
+    const outcome = await runIntegrationSample(prisma, source, env.opnsense);
+    const refreshed = await prisma.integrationSource.findUniqueOrThrow({
+      where: { id },
+      include: integrationInclude
+    });
+    return { id, ...outcome, source: toIntegrationSourceDto(refreshed) };
+  });
+
+  app.get("/api/api-widget-templates", async () => apiWidgetTemplates);
+
+  app.get("/api/api-widget-suggestions", async () => {
+    const [resources, widgets] = await Promise.all([
+      prisma.resource.findMany({
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        select: {
+          id: true,
+          name: true,
+          url: true,
+          description: true,
+          icon: true,
+          host: true
+        }
+      }),
+      prisma.apiWidget.findMany({
+        select: {
+          templateId: true,
+          baseUrl: true
+        }
+      })
+    ]);
+
+    return suggestApiWidgets(resources, widgets);
+  });
+
+  app.get("/api/api-widgets", async () => {
+    const widgets = await prisma.apiWidget.findMany({
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      include: apiWidgetInclude
+    });
+    return widgets.map(toApiWidgetDto);
+  });
+
+  app.get("/api/api-widgets/:id", async (request) => {
+    const id = routeId(request);
+    const widget = await prisma.apiWidget.findUniqueOrThrow({
+      where: { id },
+      include: {
+        samples: {
+          orderBy: { sampledAt: "desc" },
+          take: 1440
+        }
+      }
+    });
+    return toApiWidgetDto(widget);
+  });
+
+  app.post("/api/api-widgets", async (request, reply) => {
+    const body = apiWidgetSchema.parse(request.body);
+    const widget = await prisma.apiWidget.create({
+      data: createApiWidgetData(body),
+      include: apiWidgetInclude
+    });
+    reply.code(201);
+    return toApiWidgetDto(widget);
+  });
+
+  app.patch("/api/api-widgets/:id", async (request) => {
+    const id = routeId(request);
+    const body = apiWidgetPatchSchema.parse(request.body);
+    const data = patchApiWidgetData(body);
+    const previous = await prisma.apiWidget.findUniqueOrThrow({
+      where: { id },
+      select: {
+        templateId: true,
+        baseUrl: true,
+        endpointPath: true,
+        authType: true,
+        authHeaderName: true,
+        authEnvVar: true,
+        authValuePrefix: true,
+        tlsVerify: true,
+        fieldMappings: true
+      }
+    });
+    const resetState = shouldResetApiWidgetAfterPatch(previous, data);
+    const widget = await prisma.$transaction(async (tx) => {
+      const updated = await tx.apiWidget.update({
+        where: { id },
+        data: resetState ? { ...data, ...resetApiWidgetState } : data,
+        include: apiWidgetInclude
+      });
+
+      if (resetState) {
+        await tx.apiWidgetSample.deleteMany({ where: { widgetId: id } });
+        updated.samples = [];
+      }
+
+      return updated;
+    });
+    return toApiWidgetDto(widget);
+  });
+
+  app.delete("/api/api-widgets/:id", async (request) => {
+    const id = routeId(request);
+    await prisma.apiWidget.delete({ where: { id } });
+    return { ok: true };
+  });
+
+  app.post("/api/api-widgets/:id/run", async (request) => {
+    const id = routeId(request);
+    const widget = await prisma.apiWidget.findUniqueOrThrow({ where: { id } });
+    const outcome = await runApiWidgetSample(prisma, widget);
+    const refreshed = await prisma.apiWidget.findUniqueOrThrow({
+      where: { id },
+      include: apiWidgetInclude
+    });
+    return { id, ...outcome, widget: toApiWidgetDto(refreshed) };
   });
 
   app.get("/api/groups", async () =>
@@ -1179,12 +1277,19 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   let stopScheduler: (() => void) | undefined;
   let stopMetricsScheduler: (() => void) | undefined;
+  let stopIntegrationScheduler: (() => void) | undefined;
+  let stopApiWidgetScheduler: (() => void) | undefined;
+  let stopAiBriefingScheduler: (() => void) | undefined;
   const shouldMonitor = options.monitor ?? env.nodeEnv !== "test";
 
   if (shouldMonitor) {
     healthScheduler.enabled = true;
     metricsScheduler.enabled = true;
+    integrationScheduler.enabled = isOpnsenseConfigured(env.opnsense);
+    apiWidgetScheduler.enabled = true;
+    aiScheduler.enabled = env.ai.configured;
     await syncAutoHealthCheckTargets(prisma);
+    await syncConfiguredIntegrationSources(prisma, env.opnsense);
     stopScheduler = startHealthScheduler(prisma, healthScheduler.intervalMs, (update) => applySchedulerUpdate(healthScheduler, update));
     stopMetricsScheduler = startMetricsScheduler(
       prisma,
@@ -1192,11 +1297,35 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       undefined,
       (update) => applySchedulerUpdate(metricsScheduler, update)
     );
+    if (integrationScheduler.enabled) {
+      stopIntegrationScheduler = startIntegrationScheduler(
+        prisma,
+        env.opnsense,
+        integrationScheduler.intervalMs,
+        (update) => applySchedulerUpdate(integrationScheduler, update)
+      );
+    }
+    stopApiWidgetScheduler = startApiWidgetScheduler(
+      prisma,
+      apiWidgetScheduler.intervalMs,
+      (update) => applySchedulerUpdate(apiWidgetScheduler, update)
+    );
+    if (aiScheduler.enabled) {
+      stopAiBriefingScheduler = startAiBriefingScheduler(
+        prisma,
+        env.ai,
+        aiScheduler.intervalMs,
+        (update) => applySchedulerUpdate(aiScheduler, update)
+      );
+    }
   }
 
   app.addHook("onClose", async () => {
     stopScheduler?.();
     stopMetricsScheduler?.();
+    stopIntegrationScheduler?.();
+    stopApiWidgetScheduler?.();
+    stopAiBriefingScheduler?.();
     if (!options.prisma) {
       await prisma.$disconnect();
     }

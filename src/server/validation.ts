@@ -71,6 +71,61 @@ export const hostMonitorSchema = z.object({
 
 export const hostMonitorPatchSchema = hostMonitorSchema.partial();
 
+const httpBaseUrl = z
+  .string()
+  .trim()
+  .min(1)
+  .max(500)
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === "http:" || url.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }, "Must be an HTTP or HTTPS URL");
+
+const endpointPath = z
+  .string()
+  .trim()
+  .min(1)
+  .max(500)
+  .refine((value) => value.startsWith("/") && !value.startsWith("//"), "Must start with a single slash");
+
+const envVarName = z
+  .string()
+  .trim()
+  .min(1)
+  .max(120)
+  .regex(/^[A-Z_][A-Z0-9_]*$/, "Use an uppercase environment variable name")
+  .optional()
+  .nullable();
+
+export const apiWidgetFieldMappingSchema = z.object({
+  label: z.string().trim().min(1).max(80),
+  path: z.string().trim().max(240),
+  suffix: z.string().trim().max(32).optional().nullable(),
+  kind: z.enum(["text", "number", "percent", "bytes", "duration", "count"]).optional().nullable()
+});
+
+export const apiWidgetSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  templateId: z.string().trim().min(1).max(120).optional(),
+  baseUrl: httpBaseUrl,
+  endpointPath,
+  authType: z.enum(["none", "bearer", "header", "basic", "pihole"]).optional(),
+  authHeaderName: z.string().trim().min(1).max(120).optional().nullable(),
+  authEnvVar: envVarName,
+  authValuePrefix: z.string().trim().max(120).optional().nullable(),
+  tlsVerify: z.boolean().optional(),
+  fieldMappings: z.array(apiWidgetFieldMappingSchema).min(1).max(12),
+  enabled: z.boolean().optional(),
+  pollIntervalSeconds: z.number().int().min(15).max(86400).optional(),
+  sortOrder: z.number().int().min(0).optional()
+});
+
+export const apiWidgetPatchSchema = apiWidgetSchema.partial();
+
 export const settingsSchema = z.object({
   autoPingIntervalSeconds: z.number().int().min(15).max(86400)
 });

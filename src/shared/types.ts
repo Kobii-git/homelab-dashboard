@@ -105,6 +105,239 @@ export type HostMonitorDto = {
   samples?: HostMetricSampleDto[];
 };
 
+export type IntegrationProvider = "opnsense";
+
+export type OpnsenseGatewayDto = {
+  id: string;
+  name: string;
+  status: HealthStatus;
+  address: string | null;
+  interfaceName: string | null;
+  delayMs: number | null;
+  lossPercent: number | null;
+  description: string | null;
+};
+
+export type OpnsenseInterfaceDto = {
+  id: string;
+  name: string;
+  identifier: string | null;
+  device: string | null;
+  status: HealthStatus;
+  ipv4: string | null;
+  ipv6: string | null;
+  mac: string | null;
+  receivedBytesPerSec: number | null;
+  sentBytesPerSec: number | null;
+  bytesReceived: number | null;
+  bytesSent: number | null;
+};
+
+export type OpnsenseImportSuggestionDto = {
+  id: string;
+  name: string;
+  kind: ResourceKind;
+  url: string | null;
+  host: string | null;
+  description: string;
+  icon: string;
+  color: string;
+  source: "gateway" | "interface" | "firewall";
+};
+
+export type OpnsenseSnapshotDto = {
+  provider: "opnsense";
+  status: HealthStatus;
+  sampledAt: string;
+  warnings: string[];
+  system: {
+    hostname: string | null;
+    version: string | null;
+    uptime: string | null;
+    cpuPercent: number | null;
+    memoryPercent: number | null;
+    diskPercent: number | null;
+    swapPercent: number | null;
+    temperatureC: number | null;
+  };
+  firmware: {
+    product: string | null;
+    version: string | null;
+    runningVersion: string | null;
+    latestVersion: string | null;
+    updateAvailable: boolean | null;
+    needsReboot: boolean | null;
+  };
+  firewall: {
+    stateCount: number | null;
+    srcNodes: number | null;
+    fragmentCount: number | null;
+    logEntries: number | null;
+  };
+  gateways: OpnsenseGatewayDto[];
+  interfaces: OpnsenseInterfaceDto[];
+  importSuggestions: OpnsenseImportSuggestionDto[];
+};
+
+export type IntegrationSampleDto = {
+  id: string;
+  sourceId: string;
+  status: HealthStatus;
+  error: string | null;
+  snapshot: OpnsenseSnapshotDto | null;
+  sampledAt: string;
+};
+
+export type IntegrationSourceDto = {
+  id: string;
+  provider: IntegrationProvider;
+  name: string;
+  baseUrl: string;
+  enabled: boolean;
+  status: HealthStatus;
+  latestError: string | null;
+  latestSnapshot: OpnsenseSnapshotDto | null;
+  latestSampledAt: string | null;
+  sortOrder: number;
+  samples?: IntegrationSampleDto[];
+};
+
+export type ApiWidgetAuthType = "none" | "bearer" | "header" | "basic" | "pihole";
+
+export type ApiWidgetFieldMappingDto = {
+  label: string;
+  path: string;
+  suffix?: string | null;
+  kind?: "text" | "number" | "percent" | "bytes" | "duration" | "count" | null;
+};
+
+export type ApiWidgetFieldDto = {
+  label: string;
+  value: string;
+  rawValue: string | number | boolean | null;
+  suffix: string | null;
+  kind: NonNullable<ApiWidgetFieldMappingDto["kind"]>;
+};
+
+export type ApiWidgetSnapshotDto = {
+  provider: "api-widget";
+  templateId: string;
+  status: HealthStatus;
+  sampledAt: string;
+  title: string;
+  summary: string | null;
+  fields: ApiWidgetFieldDto[];
+};
+
+export type ApiWidgetSampleDto = {
+  id: string;
+  widgetId: string;
+  status: HealthStatus;
+  error: string | null;
+  snapshot: ApiWidgetSnapshotDto | null;
+  sampledAt: string;
+};
+
+export type ApiWidgetDto = {
+  id: string;
+  name: string;
+  templateId: string;
+  baseUrl: string;
+  endpointPath: string;
+  authType: ApiWidgetAuthType;
+  authHeaderName: string | null;
+  authEnvVar: string | null;
+  authValuePrefix: string | null;
+  tlsVerify: boolean;
+  fieldMappings: ApiWidgetFieldMappingDto[];
+  enabled: boolean;
+  pollIntervalSeconds: number;
+  sortOrder: number;
+  latestStatus: HealthStatus;
+  latestError: string | null;
+  latestSnapshot: ApiWidgetSnapshotDto | null;
+  latestSampledAt: string | null;
+  samples?: ApiWidgetSampleDto[];
+};
+
+export type ApiWidgetTemplateDto = {
+  id: string;
+  name: string;
+  app: string;
+  description: string;
+  docsUrl: string;
+  authType: ApiWidgetAuthType;
+  authHeaderName: string | null;
+  authEnvVarHint: string | null;
+  authValuePrefix: string | null;
+  endpointPath: string;
+  fieldMappings: ApiWidgetFieldMappingDto[];
+};
+
+export type ApiWidgetSuggestionDto = {
+  id: string;
+  resourceId: string;
+  resourceName: string;
+  templateId: string;
+  templateName: string;
+  app: string;
+  baseUrl: string;
+  endpointPath: string;
+  authType: ApiWidgetAuthType;
+  authHeaderName: string | null;
+  authEnvVarHint: string | null;
+  authValuePrefix: string | null;
+  fieldMappings: ApiWidgetFieldMappingDto[];
+  reason: string;
+};
+
+export type AiBriefingSeverity = "ok" | "notice" | "warning" | "critical";
+export type AiBriefingStatus = "disabled" | "unconfigured" | "ready" | "fresh" | "cached" | "error";
+export type AiBriefingConfidence = "low" | "medium" | "high";
+
+export type AiBriefingItemDto = {
+  title: string;
+  body: string;
+  severity: AiBriefingSeverity;
+  evidenceIds: string[];
+};
+
+export type AiBriefingActionDto = {
+  label: string;
+  resourceId?: string | null;
+  checkId?: string | null;
+  integrationId?: string | null;
+  widgetId?: string | null;
+};
+
+export type AiBriefingDto = {
+  status: AiBriefingStatus;
+  severity: AiBriefingSeverity;
+  generatedAt: string | null;
+  headline: string;
+  summary: string;
+  items: AiBriefingItemDto[];
+  nextActions: AiBriefingActionDto[];
+  confidence: AiBriefingConfidence;
+  model: string | null;
+  stale: boolean;
+  error: string | null;
+};
+
+export type AiRuntimeDto = {
+  enabled: boolean;
+  configured: boolean;
+  providerName: string;
+  baseUrl: string | null;
+  model: string | null;
+  apiKeyConfigured: boolean;
+  tlsVerify: boolean;
+  briefingIntervalSeconds: number;
+  includeTargets: boolean;
+  lastGeneratedAt: string | null;
+  lastError: string | null;
+};
+
 export type DailyBriefingDto = {
   summary: {
     servicesTotal: number;
