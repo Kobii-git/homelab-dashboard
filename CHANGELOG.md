@@ -9,6 +9,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## Unreleased
 
 ### Added
+- Forgejo-native CI and container publishing with permanent `main` and `beta`
+  branches, stable `latest`/`main` image tags, and a `beta` image tag.
 - One-time bootstrap-code protection for database-backed first-run setup.
 - Managed default health checks and resource-level execution of every enabled check.
 - Chromium/axe UI regression coverage plus production/full-tree audit gates.

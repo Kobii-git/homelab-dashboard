@@ -22,7 +22,7 @@ DATABASE_URL=file:../data/homelab.db npm run seed:demo
 | Frontend | React 19, Vite, TypeScript, Lucide icons |
 | Backend | Fastify 5, Zod, TypeScript |
 | Database | SQLite via Prisma |
-| Deployment | Docker and GHCR |
+| Deployment | Docker and Forgejo Container Registry |
 
 The active product is a single-admin service dashboard. Remote desktop protocols, credential vaults, multi-user roles, mutating integration calls, incidents, alerts, and executable widgets are out of scope.
 
@@ -47,3 +47,10 @@ tests/        Vitest routes and Playwright UI/accessibility tests
 ## Versioning
 
 This project uses [Semantic Versioning](https://semver.org). Tag releases as `vMAJOR.MINOR.PATCH` on `main`.
+
+The canonical repository is [Forgejo](http://10.0.21.40:3000/kobuslabs/homelabdashboard). Keep both long-lived branches available:
+
+- `main` is stable and publishes the `latest` and `main` images.
+- `beta` is pre-release and publishes the `beta` image.
+
+Forgejo Actions is defined in `.forgejo/workflows/`; `.github/workflows/` is retained as a compatible mirror for GitHub. Do not commit credentials, local databases, build output, or dependency directories. For manual image publishing, authenticate with `docker login 10.0.21.40:3000` and use the `10.0.21.40:3000/kobuslabs/homelabdashboard` image name.

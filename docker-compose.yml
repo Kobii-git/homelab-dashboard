@@ -1,6 +1,6 @@
 services:
   dashboard:
-    image: ghcr.io/kobus/homelabdashboard:latest
+    image: 10.0.21.40:3000/kobuslabs/homelabdashboard:${IMAGE_TAG:-latest}
     container_name: homelab-dashboard
     restart: unless-stopped
     environment:

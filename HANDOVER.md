@@ -2,11 +2,11 @@
 
 This document captures the current state of the project so the next session can continue without rediscovering the shape of the app.
 
-- **Repo:** https://github.com/kobus/homelabdashboard
-- **Image:** `ghcr.io/kobus/homelabdashboard`
+- **Repo:** http://10.0.21.40:3000/kobuslabs/homelabdashboard
+- **Images:** `10.0.21.40:3000/kobuslabs/homelabdashboard:latest` and `:beta`
 - **Current version:** `0.8.0`
 - **Port:** `4173`
-- **Current branch:** `main`
+- **Branch channels:** `main` (stable) and `beta` (pre-release)
 
 ---
 
@@ -23,7 +23,7 @@ The current product is deliberately not a remote-management platform. SSH, RDP, 
 | Frontend | React 19 + Vite + TypeScript (`src/client/`) |
 | Backend | Fastify 5 + Zod + TypeScript (`src/server/`) |
 | Database | SQLite via Prisma (`prisma/schema.prisma`) |
-| Deploy | Docker Compose / GHCR |
+| Deploy | Docker Compose / Forgejo Container Registry |
 
 ---
 
@@ -244,8 +244,9 @@ The test script creates a timestamped SQLite database under `data/` and runs Vit
 
 - Version lives in `package.json`.
 - `src/shared/version.ts` reads the package version and exposes it through the UI and `/api/version`.
-- `.github/workflows/docker.yml` typechecks, tests, builds, runs a production startup smoke test, then publishes Docker images to GHCR on pushes to `main` and on `v*` tags.
-- Tag pushes publish semver image tags. The workflow does not currently create a GitHub Release page.
+- `.forgejo/workflows/docker.yml` typechecks, tests, builds, runs a production startup smoke test, then publishes images to the Forgejo Container Registry on pushes to `main`, `beta`, and `v*` tags. `.github/workflows/docker.yml` mirrors the same branch/tag policy for GitHub compatibility.
+- `main` publishes `latest` and `main`; `beta` publishes `beta`; all builds publish an immutable `sha-*` tag and release tags publish semver tags.
+- Forgejo Actions must have a Docker-capable runner. The workflow uses the repository token for package publishing.
 
 Release checklist:
 
@@ -254,7 +255,12 @@ npm run typecheck && npm test && npm run build
 git add -A
 git commit -m "Release vX.Y.Z"
 git push origin main
+git push origin beta
 ```
+
+### Forgejo Branch And Image Policy
+
+`main` is the stable channel and must always exist. `beta` is the pre-release channel and must always exist. Keep both branches synchronized with intentional changes: merge or cherry-pick the tested change into `beta` for early validation, then promote the validated change into `main`. Do not delete either branch. The Compose deployment defaults to `latest`; set `IMAGE_TAG=beta` to deploy the beta image.
 
 ---
 

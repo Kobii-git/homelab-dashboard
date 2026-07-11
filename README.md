@@ -39,14 +39,17 @@ The active database model is intentionally small: `Resource`, `DashboardGroup`, 
 ### Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kobus/homelabdashboard/main/docker-compose.yml \
+curl -fsSL http://10.0.21.40:3000/kobuslabs/homelabdashboard/raw/branch/main/docker-compose.yml \
   -o /tmp/homelab.yml && docker compose -f /tmp/homelab.yml up -d
 ```
 
 Or pull the image directly:
 
 ```sh
-docker pull ghcr.io/kobus/homelabdashboard:latest
+docker pull 10.0.21.40:3000/kobuslabs/homelabdashboard:latest
+
+# Beta channel:
+docker pull 10.0.21.40:3000/kobuslabs/homelabdashboard:beta
 ```
 
 Open **http://localhost:4173**. When `ADMIN_PASSWORD` is not set, the server logs a 12-character one-time setup code. Enter that code on the first-run screen to create the admin account with a 12–256 character password and optionally load demo data.
@@ -126,6 +129,8 @@ docker compose pull
 docker compose up -d --force-recreate
 ```
 
+Use `IMAGE_TAG=beta docker compose pull` and `IMAGE_TAG=beta docker compose up -d --force-recreate` to run the beta channel. The default channel is `latest`, published from `main`.
+
 The SQLite database is stored in the named Docker volume `homelab-dashboard-data` and survives updates.
 
 Container startup applies the current Prisma schema without `--accept-data-loss`. Back up `/data/homelab.db` before upgrades that include documented destructive migrations.
@@ -142,7 +147,7 @@ docker compose ps && docker compose logs --tail=200 dashboard
 ## Local Development
 
 ```sh
-git clone https://github.com/kobus/homelabdashboard.git
+git clone http://10.0.21.40:3000/kobuslabs/homelabdashboard.git
 cd homelab-dashboard
 npm ci
 npm run db:push
@@ -177,7 +182,7 @@ DATABASE_URL=file:../data/homelab.db npm run seed:demo
 docker compose -f docker-compose.build.yml up -d --build
 ```
 
-To publish multi-architecture images to GHCR from a workstation:
+To publish multi-architecture images to the Forgejo container registry from a workstation:
 
 ```sh
 VERSION=$(node -p "require('./package.json').version")
@@ -185,10 +190,12 @@ docker buildx create --name homelab-builder --driver docker-container --use --bo
 docker buildx build --builder homelab-builder --platform linux/amd64,linux/arm64 \
   --build-arg APP_GIT_SHA="$(git rev-parse --short=12 HEAD)" \
   --build-arg APP_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -t "ghcr.io/kobus/homelabdashboard:${VERSION}" \
-  -t ghcr.io/kobus/homelabdashboard:latest \
+  -t "10.0.21.40:3000/kobuslabs/homelabdashboard:${VERSION}" \
+  -t 10.0.21.40:3000/kobuslabs/homelabdashboard:latest \
   --push .
 ```
+
+Log in first with a Forgejo personal access token: `docker login 10.0.21.40:3000`. The `beta` branch publishes the `beta` image; `main` publishes `latest` and `main`. Every branch build also publishes a short immutable `sha-*` tag.
 
 ---
 
@@ -199,7 +206,7 @@ docker buildx build --builder homelab-builder --platform linux/amd64,linux/arm64
 | Frontend | React 19, Vite, TypeScript |
 | Backend | Fastify 5, Zod, TypeScript |
 | Database | SQLite via Prisma ORM |
-| Container | Docker / GitHub Container Registry |
+| Container | Docker / Forgejo Container Registry |
 
 ---
 
