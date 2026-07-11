@@ -36,42 +36,27 @@ The active database model is intentionally small: `Resource`, `DashboardGroup`, 
 
 ## Quick Start With Docker
 
-### Authenticate To The Private Image Registry
-
-This Forgejo registry is currently served over LAN HTTP. Before `docker login`, add `10.0.21.40:3000` to Docker's insecure registries on each Docker host, then restart Docker:
-
-```json
-{
-  "insecure-registries": ["10.0.21.40:3000"]
-}
-```
-
-```sh
-echo YOUR_FORGEJO_TOKEN | docker login 10.0.21.40:3000 -u kobus --password-stdin
-```
-
-Create a Forgejo access token with package read access. Docker stores the login in `~/.docker/config.json`, so you only need to do this once per machine.
-
 ### Install
 
 ```sh
-curl -fsSL http://10.0.21.40:3000/kobus/homelabdashboard/raw/branch/main/docker-compose.yml \
+curl -fsSL https://raw.githubusercontent.com/kobus/homelabdashboard/main/docker-compose.yml \
   -o /tmp/homelab.yml && docker compose -f /tmp/homelab.yml up -d
 ```
 
 Or pull the image directly:
 
 ```sh
-docker pull 10.0.21.40:3000/kobus/homelabdashboard:latest
+docker pull ghcr.io/kobus/homelabdashboard:latest
 ```
 
-Open **http://localhost:4173**. On first visit you will be prompted to create the admin account and optionally load demo data.
+Open **http://localhost:4173**. When `ADMIN_PASSWORD` is not set, the server logs a 12-character one-time setup code. Enter that code on the first-run screen to create the admin account with a 12–256 character password and optionally load demo data.
 
 ### Optional Environment Variables
 
 ```yaml
 ADMIN_PASSWORD: your-password        # optional; skips web account creation
-COOKIE_SECRET: random-32-char-string # optional; persistent sessions across DB resets
+COOKIE_SECRET: random-32-char-string # optional; persistent sessions across restarts
+API_WIDGET_SECRET_ALLOWLIST: MY_CUSTOM_WIDGET_TOKEN # optional custom widget secret names
 OPNSENSE_ENABLED: "true"             # optional; enables read-only firewall polling
 OPNSENSE_BASE_URL: https://opnsense.local
 OPNSENSE_API_KEY: your-api-key
@@ -104,6 +89,7 @@ AI_API_KEY: your-ai-api-key
 | `AI_BRIEFING_INTERVAL_SECONDS` | No | AI briefing cache refresh interval, 300-86400 seconds; default `21600` |
 | `AI_INCLUDE_TARGETS` | No | Set to `true` to include service URLs, hosts, and check targets in AI evidence; default redacts them |
 | API widget secret vars | No | Optional env vars referenced by widget config, such as `HOME_ASSISTANT_TOKEN` or `SONARR_API_KEY` |
+| `API_WIDGET_SECRET_ALLOWLIST` | No | Comma-separated custom widget secret names. Built-in template secret names are allowed automatically |
 
 Keep this behind a LAN, VPN, or private mesh network. If exposing it beyond that, put a reverse proxy such as Caddy, nginx, or Traefik in front and enable HTTPS.
 
@@ -129,7 +115,7 @@ By default, service URLs, hosts, IP addresses, and check targets are redacted be
 
 ### Optional API Widgets
 
-API widgets are configured in **Admin > API widgets**. Widgets only perform GET JSON reads, never POST/PUT/DELETE actions, and secrets are read from environment variables by name instead of being stored in SQLite. The Admin panel suggests importable widgets when existing service catalog entries look like known apps. Built-in templates currently cover Home Assistant, Proxmox VE, Portainer, AdGuard Home, Pi-hole v6, Jellyfin, Grafana, Prometheus, Sonarr, and Radarr. Apps with non-trivial auth/session protocols, such as TrueNAS SCALE WebSocket APIs or qBittorrent cookie sessions, should become dedicated connectors rather than generic JSON widgets.
+API widgets are configured in **Admin > API widgets**. Widgets only perform read-only JSON requests, and secrets are read from environment variables by name instead of being stored in SQLite. Only names used by built-in templates or explicitly listed in `API_WIDGET_SECRET_ALLOWLIST` can be attached to requests. The Admin panel suggests importable widgets when existing service catalog entries look like known apps. Built-in templates currently cover Home Assistant, Proxmox VE, Portainer, AdGuard Home, Pi-hole v6, Jellyfin, Grafana, Prometheus, Sonarr, and Radarr. Apps with non-trivial auth/session protocols, such as TrueNAS SCALE WebSocket APIs or qBittorrent cookie sessions, should become dedicated connectors rather than generic JSON widgets.
 
 ---
 
@@ -142,7 +128,7 @@ docker compose up -d --force-recreate
 
 The SQLite database is stored in the named Docker volume `homelab-dashboard-data` and survives updates.
 
-When upgrading from older pro-console or remote-manager builds, startup creates a one-time SQLite backup at `/data/homelab.before-v0.5-schema.db` before applying the simplified schema cleanup.
+Container startup applies the current Prisma schema without `--accept-data-loss`. Back up `/data/homelab.db` before upgrades that include documented destructive migrations.
 
 If a container is stuck restarting, check **Admin > Runtime Health** after it starts, or gather logs from the host:
 
@@ -156,9 +142,9 @@ docker compose ps && docker compose logs --tail=200 dashboard
 ## Local Development
 
 ```sh
-git clone ssh://git@10.0.21.40:222/kobus/homelabdashboard.git
+git clone https://github.com/kobus/homelabdashboard.git
 cd homelab-dashboard
-npm install
+npm ci
 npm run db:push
 npm run dev:all
 ```
@@ -179,6 +165,7 @@ DATABASE_URL=file:../data/homelab.db npm run seed:demo
 | `npm run clean` | Remove production build output |
 | `npm run build` | Production build |
 | `npm test` | Run test suite |
+| `npm run test:e2e` | Build and run Chromium UI/accessibility tests |
 | `npm run typecheck` | TypeScript type check |
 | `npm run db:push` | Apply schema to SQLite |
 | `npm run db:studio` | Open Prisma Studio |
@@ -190,16 +177,16 @@ DATABASE_URL=file:../data/homelab.db npm run seed:demo
 docker compose -f docker-compose.build.yml up -d --build
 ```
 
-To publish multi-architecture images to the LAN HTTP Forgejo registry from a workstation:
+To publish multi-architecture images to GHCR from a workstation:
 
 ```sh
 VERSION=$(node -p "require('./package.json').version")
-docker buildx create --name forgejo-http --driver docker-container --buildkitd-config .buildkitd-forgejo.toml --use --bootstrap
-docker buildx build --builder forgejo-http --platform linux/amd64,linux/arm64 \
+docker buildx create --name homelab-builder --driver docker-container --use --bootstrap
+docker buildx build --builder homelab-builder --platform linux/amd64,linux/arm64 \
   --build-arg APP_GIT_SHA="$(git rev-parse --short=12 HEAD)" \
   --build-arg APP_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -t "10.0.21.40:3000/kobus/homelabdashboard:${VERSION}" \
-  -t 10.0.21.40:3000/kobus/homelabdashboard:latest \
+  -t "ghcr.io/kobus/homelabdashboard:${VERSION}" \
+  -t ghcr.io/kobus/homelabdashboard:latest \
   --push .
 ```
 
@@ -212,7 +199,7 @@ docker buildx build --builder forgejo-http --platform linux/amd64,linux/arm64 \
 | Frontend | React 19, Vite, TypeScript |
 | Backend | Fastify 5, Zod, TypeScript |
 | Database | SQLite via Prisma ORM |
-| Container | Docker / Forgejo package registry |
+| Container | Docker / GitHub Container Registry |
 
 ---
 

@@ -57,21 +57,12 @@ async function checkHttp(target: string, timeoutMs: number): Promise<CheckOutcom
 }
 
 function parseTcpTarget(target: string): { host: string; port: number } {
-  if (target.includes("://")) {
-    const url = new URL(target);
-    return {
-      host: url.hostname,
-      port: Number(url.port || (url.protocol === "https:" ? 443 : 80))
-    };
-  }
-
-  const [host, port] = target.split(":");
-
-  if (!host || !port) {
+  const url = new URL(target.includes("://") ? target : `tcp://${target}`);
+  const port = Number(url.port || (url.protocol === "https:" ? 443 : url.protocol === "http:" ? 80 : 0));
+  if (!url.hostname || !Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error("TCP target must be host:port or a URL");
   }
-
-  return { host, port: Number(port) };
+  return { host: url.hostname, port };
 }
 
 async function checkTcp(target: string, timeoutMs: number): Promise<CheckOutcome> {
@@ -274,7 +265,9 @@ export function startHealthScheduler(
       });
 
       observer?.({ lastDueCount: due.length });
-      await Promise.allSettled(due.map((check) => runHealthCheck(prisma, check)));
+      for (let index = 0; index < due.length; index += 8) {
+        await Promise.allSettled(due.slice(index, index + 8).map((check) => runHealthCheck(prisma, check)));
+      }
       observer?.({
         running: false,
         lastCompletedAt: new Date(),

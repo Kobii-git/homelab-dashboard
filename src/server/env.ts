@@ -6,6 +6,7 @@ export type AppEnv = {
   adminPassword: string | null;
   cookieSecret: string;
   cookieSecure: boolean;
+  apiWidgetSecretAllowlist: string[];
   opnsense: OpnsenseEnvConfig;
   ai: AiEnvConfig;
 };
@@ -127,6 +128,10 @@ export function getEnv(): Omit<AppEnv, "cookieSecret"> & {
     // Homelab installs are typically plain HTTP on a LAN, where a secure
     // cookie would be silently dropped by the browser and block login.
     cookieSecure: process.env.COOKIE_SECURE === "true",
+    apiWidgetSecretAllowlist: (process.env.API_WIDGET_SECRET_ALLOWLIST ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter((value) => /^[A-Z_][A-Z0-9_]*$/.test(value)),
     opnsense: getOpnsenseEnv(),
     ai: getAiEnv()
   };

@@ -21,6 +21,7 @@ export type HealthCheckDto = {
   intervalSeconds: number;
   timeoutMs: number;
   enabled: boolean;
+  managed: boolean;
   latestStatus: "unknown" | "online" | "offline";
   latestLatencyMs: number | null;
   latestCheckedAt: string | null;
@@ -141,7 +142,7 @@ export function getApiError(error: unknown): string {
   return error instanceof Error ? error.message : "Request failed";
 }
 
-async function parseResponse<T>(response: Response): Promise<T> {
+async function parseResponse<T>(response: Response, path: string): Promise<T> {
   const text = await response.text();
   let data: ApiErrorBody = {};
 
@@ -157,18 +158,30 @@ async function parseResponse<T>(response: Response): Promise<T> {
     const details = data.details?.length
       ? `: ${data.details.map((item) => (item.path ? `${item.path} — ${item.message}` : item.message)).join("; ")}`
       : "";
-    throw new Error(`${data.error ?? "Request failed"}${details}`);
+    const message = `${data.error ?? "Request failed"}${details}`;
+    if (response.status === 401 && path !== "/api/auth/login") {
+      window.dispatchEvent(new CustomEvent("homelab:session-expired"));
+    } else {
+      window.dispatchEvent(new CustomEvent("homelab:api-error", { detail: message }));
+    }
+    throw new Error(message);
   }
 
   return data as T;
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  return parseResponse<T>(
-    await fetch(path, {
+  let response: Response;
+  try {
+    response = await fetch(path, {
       credentials: "include"
-    })
-  );
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Network request failed";
+    window.dispatchEvent(new CustomEvent("homelab:api-error", { detail: message }));
+    throw error;
+  }
+  return parseResponse<T>(response, path);
 }
 
 export async function apiSend<T>(
@@ -176,14 +189,20 @@ export async function apiSend<T>(
   method: "POST" | "PUT" | "PATCH" | "DELETE",
   body?: unknown
 ): Promise<T> {
-  return parseResponse<T>(
-    await fetch(path, {
+  let response: Response;
+  try {
+    response = await fetch(path, {
       method,
       credentials: "include",
       headers: body ? { "Content-Type": "application/json" } : undefined,
       body: body ? JSON.stringify(body) : undefined
-    })
-  );
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Network request failed";
+    window.dispatchEvent(new CustomEvent("homelab:api-error", { detail: message }));
+    throw error;
+  }
+  return parseResponse<T>(response, path);
 }
 
 export function emptyToNull(value: FormDataEntryValue | null): string | null {

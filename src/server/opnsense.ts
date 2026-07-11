@@ -1,5 +1,3 @@
-import http from "node:http";
-import https from "node:https";
 import { Prisma, type IntegrationSample, type IntegrationSource, type PrismaClient } from "@prisma/client";
 import type {
   HealthStatus,
@@ -11,6 +9,7 @@ import type {
 } from "../shared/types.js";
 import type { OpnsenseEnvConfig } from "./env.js";
 import type { SchedulerUpdate } from "./healthChecks.js";
+import { boundedJsonRequest } from "./httpJson.js";
 
 export const OPNSENSE_PROVIDER = "opnsense";
 export const INTEGRATION_SAMPLE_RETENTION = 1440;
@@ -287,56 +286,15 @@ async function requestJson(config: ConfiguredOpnsenseEnv, endpoint: OpnsenseEndp
   }
 
   const url = new URL(endpoint.path, config.baseUrl);
-  const transport = url.protocol === "https:" ? https : http;
-
-  return new Promise((resolve, reject) => {
-    const request = transport.request(
-      url,
-      {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          Authorization: authHeader(config),
-          "User-Agent": "homelab-dashboard"
-        },
-        rejectUnauthorized: config.tlsVerify
-      },
-      (response) => {
-        let body = "";
-        let size = 0;
-
-        response.setEncoding("utf8");
-        response.on("data", (chunk: string) => {
-          size += Buffer.byteLength(chunk);
-          if (size > MAX_RESPONSE_BYTES) {
-            request.destroy(new Error(`OPNsense ${endpoint.key} response was too large`));
-            return;
-          }
-          body += chunk;
-        });
-
-        response.on("end", () => {
-          const statusCode = response.statusCode ?? 0;
-          if (statusCode < 200 || statusCode >= 300) {
-            reject(new Error(`OPNsense ${endpoint.key} returned HTTP ${statusCode}`));
-            return;
-          }
-
-          try {
-            resolve(JSON.parse(body));
-          } catch {
-            reject(new Error(`OPNsense ${endpoint.key} returned invalid JSON`));
-          }
-        });
-      }
-    );
-
-    request.setTimeout(REQUEST_TIMEOUT_MS, () => {
-      request.destroy(new Error(`OPNsense ${endpoint.key} timed out after ${REQUEST_TIMEOUT_MS} ms`));
-    });
-
-    request.on("error", (error) => reject(error));
-    request.end();
+  return boundedJsonRequest(url, {
+    headers: {
+      Authorization: authHeader(config),
+      "User-Agent": "homelab-dashboard"
+    },
+    tlsVerify: config.tlsVerify,
+    timeoutMs: REQUEST_TIMEOUT_MS,
+    maxBytes: MAX_RESPONSE_BYTES,
+    label: `OPNsense ${endpoint.key}`
   });
 }
 
@@ -740,7 +698,9 @@ export function startIntegrationScheduler(
         : [];
 
       observer?.({ lastDueCount: due.length });
-      await Promise.allSettled(due.map((item) => runIntegrationSample(prisma, item, config)));
+      for (let index = 0; index < due.length; index += 8) {
+        await Promise.allSettled(due.slice(index, index + 8).map((item) => runIntegrationSample(prisma, item, config)));
+      }
       observer?.({
         running: false,
         lastCompletedAt: new Date(),

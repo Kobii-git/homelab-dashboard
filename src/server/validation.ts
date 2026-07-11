@@ -3,9 +3,59 @@ import { HEALTH_CHECK_TYPES, HEALTH_STATUSES, MONITORING_MODES, RESOURCE_KINDS }
 
 const nullableText = z.string().trim().min(1).max(2000).optional().nullable();
 
+function normalizeHttpUrl(value: string): string {
+  const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(value) ? value : `http://${value}`;
+  const parsed = new URL(candidate);
+  if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || !parsed.hostname) {
+    throw new Error("Must be an HTTP or HTTPS URL with a hostname");
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error("URLs must not contain embedded credentials");
+  }
+  return parsed.toString();
+}
+
+const httpUrl = z.string().trim().min(1).max(500).transform((value, context) => {
+  try {
+    return normalizeHttpUrl(value);
+  } catch (error) {
+    context.addIssue({
+      code: "custom",
+      message: error instanceof Error ? error.message : "Invalid URL"
+    });
+    return z.NEVER;
+  }
+});
+
+const nullableHttpUrl = httpUrl.optional().nullable();
+const hostValue = z
+  .string()
+  .trim()
+  .min(1)
+  .max(253)
+  .refine((value) => !/[\s/\\]/.test(value) && !value.startsWith("-"), "Must be a hostname or IP address")
+  .optional()
+  .nullable();
+const iconValue = z
+  .string()
+  .trim()
+  .min(1)
+  .max(500)
+  .refine((value) => {
+    if (/^[a-z\d][a-z\d._-]{0,119}$/i.test(value)) return true;
+    try {
+      normalizeHttpUrl(value);
+      return /^https?:\/\//i.test(value);
+    } catch {
+      return false;
+    }
+  }, "Must be an icon slug or an HTTP/HTTPS URL without credentials")
+  .optional()
+  .nullable();
+
 export const loginSchema = z.object({
-  username: z.string().trim().min(1).optional(),
-  password: z.string().min(1)
+  username: z.string().trim().min(1).max(64).optional(),
+  password: z.string().min(1).max(256)
 });
 
 export const dashboardGroupSchema = z.object({
@@ -19,11 +69,11 @@ export const dashboardGroupPatchSchema = dashboardGroupSchema.partial();
 export const resourceSchema = z.object({
   name: z.string().trim().min(1).max(160),
   kind: z.enum(RESOURCE_KINDS),
-  url: nullableText,
+  url: nullableHttpUrl,
   description: nullableText,
-  icon: nullableText,
-  color: nullableText,
-  host: nullableText,
+  icon: iconValue,
+  color: z.string().trim().regex(/^#[0-9a-f]{6}$/i, "Use a six-digit hex color").optional().nullable(),
+  host: hostValue,
   favorite: z.boolean().optional(),
   monitoringMode: z.enum(MONITORING_MODES).optional(),
   manualStatus: z.enum(HEALTH_STATUSES).optional().nullable(),
@@ -33,7 +83,7 @@ export const resourceSchema = z.object({
 
 export const resourcePatchSchema = resourceSchema.partial();
 
-export const healthCheckSchema = z.object({
+const healthCheckBaseSchema = z.object({
   resourceId: z.string().cuid(),
   type: z.enum(HEALTH_CHECK_TYPES),
   target: z.string().trim().min(1).max(500),
@@ -44,21 +94,47 @@ export const healthCheckSchema = z.object({
   enabled: z.boolean().optional()
 });
 
-export const healthCheckPatchSchema = healthCheckSchema.partial();
-
-const glancesBaseUrl = z
-  .string()
-  .trim()
-  .min(1)
-  .max(500)
-  .refine((value) => {
-    try {
-      const url = new URL(value);
-      return url.protocol === "http:" || url.protocol === "https:";
-    } catch {
-      return false;
+export function validateHealthCheckTarget(type: string, target: string): string | null {
+  const value = target.trim();
+  try {
+    if (type === "http") {
+      const normalized = normalizeHttpUrl(value);
+      if (!/^https?:\/\//i.test(value)) return "HTTP targets must include http:// or https://";
+      void normalized;
+      return null;
     }
-  }, "Must be an HTTP or HTTPS URL");
+    if (type === "ping") {
+      return !value || /[\s/\\]/.test(value) || value.includes("://") || value.startsWith("-")
+        ? "Ping targets must be a hostname or IP address"
+        : null;
+    }
+    if (type === "tcp") {
+      const parsed = value.includes("://") ? new URL(value) : new URL(`tcp://${value}`);
+      const port = Number(parsed.port || (parsed.protocol === "https:" ? 443 : parsed.protocol === "http:" ? 80 : 0));
+      return parsed.hostname && Number.isInteger(port) && port >= 1 && port <= 65_535
+        ? null
+        : "TCP targets must include a valid hostname and port";
+    }
+    if (type === "ssl") {
+      const parsed = value.includes("://") ? new URL(value) : new URL(`https://${value}`);
+      if (parsed.username || parsed.password || !parsed.hostname) return "SSL targets must be a hostname or URL";
+      if (parsed.port && (Number(parsed.port) < 1 || Number(parsed.port) > 65_535)) return "SSL port is invalid";
+      return null;
+    }
+  } catch {
+    return `Invalid ${type.toUpperCase()} target`;
+  }
+  return "Unsupported health-check type";
+}
+
+export const healthCheckSchema = healthCheckBaseSchema.superRefine((value, context) => {
+  const error = validateHealthCheckTarget(value.type, value.target);
+  if (error) context.addIssue({ code: "custom", path: ["target"], message: error });
+});
+
+export const healthCheckPatchSchema = healthCheckBaseSchema.partial();
+
+const glancesBaseUrl = httpUrl;
 
 export const hostMonitorSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -71,19 +147,7 @@ export const hostMonitorSchema = z.object({
 
 export const hostMonitorPatchSchema = hostMonitorSchema.partial();
 
-const httpBaseUrl = z
-  .string()
-  .trim()
-  .min(1)
-  .max(500)
-  .refine((value) => {
-    try {
-      const url = new URL(value);
-      return url.protocol === "http:" || url.protocol === "https:";
-    } catch {
-      return false;
-    }
-  }, "Must be an HTTP or HTTPS URL");
+const httpBaseUrl = httpUrl;
 
 const endpointPath = z
   .string()
@@ -108,13 +172,39 @@ export const apiWidgetFieldMappingSchema = z.object({
   kind: z.enum(["text", "number", "percent", "bytes", "duration", "count"]).optional().nullable()
 });
 
+const HTTP_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+const FORBIDDEN_WIDGET_HEADERS = new Set([
+  "connection",
+  "content-length",
+  "cookie",
+  "host",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade"
+]);
+const authHeaderName = z
+  .string()
+  .trim()
+  .min(1)
+  .max(120)
+  .refine((value) => HTTP_TOKEN.test(value), "Must be a valid HTTP header name")
+  .refine((value) => !FORBIDDEN_WIDGET_HEADERS.has(value.toLowerCase()) && !value.toLowerCase().startsWith("proxy-"), {
+    message: "This header cannot be set by an API widget"
+  })
+  .optional()
+  .nullable();
+
 export const apiWidgetSchema = z.object({
   name: z.string().trim().min(1).max(120),
   templateId: z.string().trim().min(1).max(120).optional(),
   baseUrl: httpBaseUrl,
   endpointPath,
   authType: z.enum(["none", "bearer", "header", "basic", "pihole"]).optional(),
-  authHeaderName: z.string().trim().min(1).max(120).optional().nullable(),
+  authHeaderName,
   authEnvVar: envVarName,
   authValuePrefix: z.string().trim().max(120).optional().nullable(),
   tlsVerify: z.boolean().optional(),
@@ -132,6 +222,9 @@ export const settingsSchema = z.object({
 
 export const reorderSchema = z.object({
   ids: z.array(z.string().cuid()).min(1).max(500)
+}).refine((value) => new Set(value.ids).size === value.ids.length, {
+  path: ["ids"],
+  message: "IDs must be unique"
 });
 
 export const idParamSchema = z.object({

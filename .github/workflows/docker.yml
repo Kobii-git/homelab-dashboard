@@ -20,10 +20,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
@@ -39,6 +39,18 @@ jobs:
 
       - name: Build app
         run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser and accessibility tests
+        run: npx playwright test
+
+      - name: Audit production dependencies
+        run: npm run audit:production
+
+      - name: Audit full dependency tree
+        run: npm run audit:all
 
       - name: Production startup smoke
         run: |
@@ -62,8 +74,29 @@ jobs:
           cat /tmp/homelab-dashboard.log
           exit 1
 
+      - name: Non-root read-only container smoke
+        run: |
+          set -euo pipefail
+          docker build -t homelab-dashboard-ci .
+          volume="homelab-dashboard-ci-${GITHUB_RUN_ID}"
+          container="homelab-dashboard-ci-${GITHUB_RUN_ID}"
+          docker volume create "${volume}"
+          trap 'docker rm -f "${container}" 2>/dev/null || true; docker volume rm "${volume}" 2>/dev/null || true' EXIT
+          docker run -d --name "${container}" --read-only --tmpfs /tmp:size=64m,mode=1777 --cap-drop ALL --security-opt no-new-privileges \
+            -e ADMIN_PASSWORD=ci-admin-password -e COOKIE_SECRET=ci-cookie-secret-with-more-than-32-characters \
+            -p 4174:4173 -v "${volume}:/data" homelab-dashboard-ci
+          test "$(docker inspect --format '{{.Config.User}}' "${container}")" = "node"
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4174/api/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs "${container}"
+          exit 1
+
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -71,7 +104,7 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -81,10 +114,10 @@ jobs:
             type=sha,prefix=sha-,format=short
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           push: true

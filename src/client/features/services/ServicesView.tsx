@@ -245,8 +245,10 @@ export function ServicesView({
   }
 
   async function toggleCheckEnabled(check: HealthCheckDto) {
-    await apiSend(`/api/health-checks/${check.id}`, "PATCH", { enabled: !check.enabled });
-    await onRefresh();
+    await runFormAction(async () => {
+      await apiSend(`/api/health-checks/${check.id}`, "PATCH", { enabled: !check.enabled });
+      await onRefresh();
+    }, setActionError, setSubmitting, check.enabled ? "Health check paused" : "Health check resumed");
   }
 
   async function patchResource(resource: DashboardResource, body: Record<string, unknown>) {
@@ -334,9 +336,11 @@ export function ServicesView({
     const index = ordered.findIndex((item) => item.id === resource.id);
     const swap = ordered[index + direction];
     if (!swap) return;
-    await apiSend(`/api/resources/${resource.id}`, "PATCH", { sortOrder: swap.sortOrder });
-    await apiSend(`/api/resources/${swap.id}`, "PATCH", { sortOrder: resource.sortOrder });
-    await onRefresh();
+    await runFormAction(async () => {
+      await apiSend(`/api/resources/${resource.id}`, "PATCH", { sortOrder: swap.sortOrder });
+      await apiSend(`/api/resources/${swap.id}`, "PATCH", { sortOrder: resource.sortOrder });
+      await onRefresh();
+    }, setActionError, setSubmitting);
   }
 
   const opnsenseSuggestions = useMemo(() => {
@@ -500,8 +504,10 @@ export function ServicesView({
                   ))}
                 </select>
               </label>
-              <label>Description</label>
-              <textarea name="description" rows={2} defaultValue={resourceDefaults?.description ?? ""} />
+              <label>
+                Description
+                <textarea name="description" rows={2} defaultValue={resourceDefaults?.description ?? ""} />
+              </label>
               <label className="checkbox-row">
                 <input name="favorite" type="checkbox" defaultChecked={resourceDefaults?.favorite} />
                 Favorite
@@ -528,7 +534,7 @@ export function ServicesView({
                 <select
                   className="inline-row-select"
                   value={resource.monitoringMode}
-                  title="Monitoring mode"
+                  aria-label={`Monitoring mode for ${resource.name}`}
                   onChange={(event) => void patchResource(resource, {
                     monitoringMode: event.target.value,
                     manualStatus: event.target.value === "auto" ? null : resource.manualStatus ?? "unknown"
@@ -541,7 +547,7 @@ export function ServicesView({
                 <select
                   className="inline-row-select"
                   value={resource.manualStatus ?? "unknown"}
-                  title="Manual status"
+                  aria-label={`Manual status for ${resource.name}`}
                   disabled={resource.monitoringMode === "auto"}
                   onChange={(event) => void patchResource(resource, {
                     monitoringMode: resource.monitoringMode === "auto" ? "manual" : resource.monitoringMode,
@@ -550,21 +556,23 @@ export function ServicesView({
                 >
                   {HEALTH_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
                 </select>
-                <button className="icon-button" type="button" title="Move up" disabled={index === 0} onClick={() => void moveResource(resource, -1)}>
-                  <ChevronUp size={14} />
-                </button>
-                <button className="icon-button" type="button" title="Move down" disabled={index === list.length - 1} onClick={() => void moveResource(resource, 1)}>
-                  <ChevronDown size={14} />
-                </button>
-                <button className="icon-button" type="button" title="Edit" onClick={() => startEditResource(resource)}>
-                  <Pencil size={14} />
-                </button>
-                <button className="icon-button" type="button" title="Duplicate" onClick={() => void duplicateResource(resource)}>
-                  <Copy size={14} />
-                </button>
-                <button className="icon-button danger" type="button" title="Delete" onClick={() => void remove(`/api/resources/${resource.id}`, resource.name)}>
-                  <Trash2 size={14} />
-                </button>
+                <span className="service-row-actions">
+                  <button className="icon-button" type="button" aria-label={`Move ${resource.name} up`} disabled={index === 0} onClick={() => void moveResource(resource, -1)}>
+                    <ChevronUp size={14} />
+                  </button>
+                  <button className="icon-button" type="button" aria-label={`Move ${resource.name} down`} disabled={index === list.length - 1} onClick={() => void moveResource(resource, 1)}>
+                    <ChevronDown size={14} />
+                  </button>
+                  <button className="icon-button" type="button" aria-label={`Edit ${resource.name}`} onClick={() => startEditResource(resource)}>
+                    <Pencil size={14} />
+                  </button>
+                  <button className="icon-button" type="button" aria-label={`Duplicate ${resource.name}`} onClick={() => void duplicateResource(resource)}>
+                    <Copy size={14} />
+                  </button>
+                  <button className="icon-button danger" type="button" aria-label={`Delete ${resource.name}`} onClick={() => void remove(`/api/resources/${resource.id}`, resource.name)}>
+                    <Trash2 size={14} />
+                  </button>
+                </span>
               </div>
             ))}
             {data.resources.length === 0 ? <p className="muted-copy">No services yet.</p> : null}
@@ -631,13 +639,13 @@ export function ServicesView({
                   <small>{check.type} · {check.target} · every {check.intervalSeconds}s · {check.enabled ? "enabled" : "disabled"} · {check.latestCheckedAt ? `last ${formatDateTime(check.latestCheckedAt)}` : "never"}</small>
                 </span>
                 <StatusBadge status={check.latestStatus} />
-                <button className="icon-button" type="button" title={check.enabled ? "Pause" : "Resume"} onClick={() => void toggleCheckEnabled(check)}>
+                <button className="icon-button" type="button" aria-label={`${check.enabled ? "Pause" : "Resume"} ${check.type} check for ${check.resource?.name ?? check.target}`} onClick={() => void toggleCheckEnabled(check)}>
                   {check.enabled ? <Activity size={14} /> : <Activity size={14} style={{ opacity: 0.4 }} />}
                 </button>
-                <button className="icon-button" type="button" title="Edit" onClick={() => startEditCheck(check)}>
+                <button className="icon-button" type="button" aria-label={`Edit ${check.type} check for ${check.resource?.name ?? check.target}`} onClick={() => startEditCheck(check)}>
                   <Pencil size={14} />
                 </button>
-                <button className="icon-button danger" type="button" title="Delete" onClick={() => void remove(`/api/health-checks/${check.id}`, check.target)}>
+                <button className="icon-button danger" type="button" aria-label={`Delete ${check.type} check for ${check.resource?.name ?? check.target}`} onClick={() => void remove(`/api/health-checks/${check.id}`, check.target)}>
                   <Trash2 size={14} />
                 </button>
               </div>

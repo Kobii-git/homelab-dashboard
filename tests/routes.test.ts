@@ -1,4 +1,5 @@
 import http from "node:http";
+import crypto from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -7,6 +8,7 @@ import { AI_BRIEFING_CACHE_KEY, buildAiBriefingEvidence, isAiBriefingDue } from 
 import type { AiEnvConfig } from "../src/server/env";
 import { runHealthCheck } from "../src/server/healthChecks";
 import { collectOpnsenseSnapshot } from "../src/server/opnsense";
+import { createAuthToken } from "../src/server/auth";
 
 const prisma = new PrismaClient();
 const disabledAiEnv: AiEnvConfig = {
@@ -24,10 +26,11 @@ const env = {
   nodeEnv: "test",
   host: "127.0.0.1",
   port: 0,
-  databaseUrl: "file:./data/test.db",
+  databaseUrl: process.env.DATABASE_URL ?? "file:../data/test.db",
   adminPassword: "test-pass",
   cookieSecret: "test-cookie-secret-with-more-than-32-chars",
   cookieSecure: false,
+  apiWidgetSecretAllowlist: ["CUSTOM_WIDGET_TOKEN", "TEST_WIDGET_TOKEN"],
   opnsense: {
     enabled: false,
     configured: false,
@@ -60,33 +63,46 @@ async function loginCookie(): Promise<string> {
   return cachedCookie;
 }
 
-function mockGlancesFetch(options: { optionalFailure?: boolean; offline?: boolean } = {}) {
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-    const url = String(input);
-    if (options.offline && url.includes("/quicklook")) {
-      return new Response("offline", { status: 503 });
-    }
-    if (options.optionalFailure && (url.includes("/fs") || url.includes("/network") || url.includes("/containers"))) {
-      return new Response("optional failure", { status: 500 });
-    }
+type MockGlancesOptions = { optionalFailure?: boolean; offline?: boolean };
 
-    const body = url.includes("/quicklook")
+async function withMockGlances<T>(
+  initial: MockGlancesOptions,
+  run: (baseUrl: string, update: (next: MockGlancesOptions) => void) => Promise<T>
+): Promise<T> {
+  const state = { ...initial };
+  const server = http.createServer((request, response) => {
+    const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+    if (state.offline && pathname.includes("/quicklook")) {
+      response.writeHead(503, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ error: "offline" }));
+      return;
+    }
+    if (state.optionalFailure && ["/fs", "/network", "/containers"].some((part) => pathname.includes(part))) {
+      response.writeHead(500, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ error: "optional failure" }));
+      return;
+    }
+    const body = pathname.includes("/quicklook")
       ? { cpu: 42.4, mem: 55.2, temperature: 47.8 }
-      : url.includes("/mem")
+      : pathname.includes("/mem")
         ? { percent: 55.2, used: 5_520_000_000, total: 10_000_000_000 }
-        : url.includes("/fs")
+        : pathname.includes("/fs")
           ? [{ mnt_point: "/", percent: 70.1, used: 700_000_000_000, size: 1_000_000_000_000 }]
-          : url.includes("/network")
+          : pathname.includes("/network")
             ? [{ interface_name: "eth0", bytes_recv_rate_per_sec: 1024, bytes_sent_rate_per_sec: 2048 }]
-            : url.includes("/containers")
+            : pathname.includes("/containers")
               ? { containers: [{ status: "running" }, { status: "exited" }] }
               : {};
-
-    return new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { "Content-Type": "application/json" }
-    });
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify(body));
   });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  try {
+    return await run(`http://127.0.0.1:${address.port}`, (next) => Object.assign(state, next));
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
 }
 
 type MockOpnsenseOptions = {
@@ -271,6 +287,141 @@ describe("api routes", () => {
     expect(runtime.statusCode).toBe(401);
   });
 
+  it("protects first-run setup with a bounded one-time code and strong passwords", async () => {
+    await prisma.adminAccount.deleteMany();
+    const databaseEnv = { ...env, adminPassword: null };
+    const rateApp = await createApp({ prisma, env: databaseEnv, monitor: false, logger: false, setupCode: "ABCDEFGH2345" });
+    try {
+      const status = await rateApp.inject({ method: "GET", url: "/api/setup/status" });
+      expect(status.json()).toMatchObject({ needsAccount: true, needsSetupCode: true });
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        expect((await rateApp.inject({
+          method: "POST",
+          url: "/api/setup",
+          payload: { username: "admin", password: "long-enough-password", setupCode: "WRONGCODE234", seedDemo: false }
+        })).statusCode).toBe(403);
+      }
+      expect((await rateApp.inject({
+        method: "POST",
+        url: "/api/setup",
+        payload: { username: "admin", password: "long-enough-password", setupCode: "WRONGCODE234", seedDemo: false }
+      })).statusCode).toBe(429);
+    } finally {
+      await rateApp.close();
+    }
+
+    const setupApp = await createApp({ prisma, env: databaseEnv, monitor: false, logger: false, setupCode: "BCDEFGHJ3456" });
+    try {
+      const weak = await setupApp.inject({
+        method: "POST",
+        url: "/api/setup",
+        payload: { username: "admin", password: "short", setupCode: "BCDEFGHJ3456", seedDemo: false }
+      });
+      expect(weak.statusCode).toBe(400);
+
+      const setup = await setupApp.inject({
+        method: "POST",
+        url: "/api/setup",
+        payload: { username: "admin", password: "long-enough-password", setupCode: "BCDEFGHJ3456", seedDemo: false }
+      });
+      expect(setup.statusCode).toBe(200);
+      const account = await prisma.adminAccount.findUniqueOrThrow({ where: { id: "admin" } });
+      expect(account.passwordHash).toMatch(/^scrypt\$32768\$8\$3\$/);
+      expect(await prisma.systemConfig.findUnique({ where: { key: "setup_bootstrap_hash" } })).toBeNull();
+    } finally {
+      await setupApp.close();
+      await prisma.adminAccount.deleteMany();
+    }
+  });
+
+  it("uses unique expiring sessions and actively invalidates copied cookies", async () => {
+    await prisma.adminAccount.deleteMany();
+    const databaseEnv = { ...env, adminPassword: null };
+    const salt = "legacy-test-salt";
+    const legacyHash = crypto.pbkdf2Sync("legacy-password-123", salt, 100_000, 64, "sha256").toString("hex");
+    await prisma.adminAccount.create({
+      data: { id: "admin", username: "admin", passwordHash: `${salt}:${legacyHash}` }
+    });
+    const authApp = await createApp({ prisma, env: databaseEnv, monitor: false, logger: false });
+    try {
+      const missingUsername = await authApp.inject({ method: "POST", url: "/api/auth/login", payload: { password: "legacy-password-123" } });
+      expect(missingUsername.statusCode).toBe(401);
+      const first = await authApp.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: { username: "admin", password: "legacy-password-123" }
+      });
+      const second = await authApp.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: { username: "admin", password: "legacy-password-123" }
+      });
+      const firstCookie = first.cookies.map((item) => `${item.name}=${item.value}`).join("; ");
+      const secondCookie = second.cookies.map((item) => `${item.name}=${item.value}`).join("; ");
+      expect(firstCookie).not.toBe(secondCookie);
+      expect((await prisma.adminAccount.findUniqueOrThrow({ where: { id: "admin" } })).passwordHash).toMatch(/^scrypt\$/);
+
+      const tampered = `${firstCookie}x`;
+      expect((await authApp.inject({ method: "GET", url: "/api/resources", headers: { cookie: tampered } })).statusCode).toBe(401);
+      const expiredToken = await createAuthToken(databaseEnv, prisma, new Date(Date.now() - 31 * 24 * 60 * 60 * 1000));
+      expect((await authApp.inject({
+        method: "GET",
+        url: "/api/resources",
+        headers: { cookie: `homelab_session=${expiredToken}` }
+      })).statusCode).toBe(401);
+
+      expect((await authApp.inject({ method: "POST", url: "/api/auth/logout", headers: { cookie: firstCookie } })).statusCode).toBe(200);
+      expect((await authApp.inject({ method: "GET", url: "/api/resources", headers: { cookie: firstCookie } })).statusCode).toBe(401);
+      expect((await authApp.inject({ method: "GET", url: "/api/resources", headers: { cookie: secondCookie } })).statusCode).toBe(401);
+
+      const relogin = await authApp.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: { username: "admin", password: "legacy-password-123" }
+      });
+      const reloginCookie = relogin.cookies.map((item) => `${item.name}=${item.value}`).join("; ");
+      const changed = await authApp.inject({
+        method: "POST",
+        url: "/api/auth/password",
+        headers: { cookie: reloginCookie },
+        payload: { currentPassword: "legacy-password-123", newPassword: "new-database-password" }
+      });
+      expect(changed.statusCode).toBe(200);
+      expect((await authApp.inject({ method: "GET", url: "/api/resources", headers: { cookie: reloginCookie } })).statusCode).toBe(401);
+    } finally {
+      await authApp.close();
+      await prisma.adminAccount.deleteMany();
+      cachedCookie = null;
+    }
+  });
+
+  it("rejects browser cross-origin mutations and applies security headers", async () => {
+    const cookie = await loginCookie();
+    const crossOrigin = await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      headers: { cookie, origin: "https://evil.example", "sec-fetch-site": "cross-site" },
+      payload: { name: "Blocked" }
+    });
+    expect(crossOrigin.statusCode).toBe(403);
+
+    const response = await app.inject({ method: "GET", url: "/api/dashboard", headers: { cookie } });
+    expect(response.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
+    expect(response.headers["x-frame-options"]).toBe("DENY");
+    expect(response.headers["x-content-type-options"]).toBe("nosniff");
+    expect(response.headers["referrer-policy"]).toBe("no-referrer");
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.headers["strict-transport-security"]).toBeUndefined();
+
+    const secureApp = await createApp({ prisma, env: { ...env, cookieSecure: true }, monitor: false, logger: false });
+    try {
+      const health = await secureApp.inject({ method: "GET", url: "/api/health" });
+      expect(health.headers["strict-transport-security"]).toContain("max-age=31536000");
+    } finally {
+      await secureApp.close();
+    }
+  });
+
   it("allows env-managed admins to dismiss first-run setup after login", async () => {
     const cookie = await loginCookie();
 
@@ -288,9 +439,10 @@ describe("api routes", () => {
       headers: { cookie }
     });
     expect(status.statusCode).toBe(200);
-    expect(status.json<{ firstRun: boolean; needsAccount: boolean }>()).toEqual({
+    expect(status.json<{ firstRun: boolean; needsAccount: boolean; needsSetupCode: boolean }>()).toEqual({
       firstRun: false,
-      needsAccount: false
+      needsAccount: false,
+      needsSetupCode: false
     });
   });
 
@@ -398,7 +550,7 @@ describe("api routes", () => {
 
   it("creates Glances host monitors and includes metrics in the dashboard", async () => {
     const cookie = await loginCookie();
-    mockGlancesFetch();
+    await withMockGlances({}, async (baseUrl) => {
 
     const created = await app.inject({
       method: "POST",
@@ -406,14 +558,14 @@ describe("api routes", () => {
       headers: { cookie },
       payload: {
         name: "Docker Host",
-        baseUrl: "http://glances.local:61208/",
+        baseUrl: `${baseUrl}/`,
         primaryMount: "/",
         networkInterface: "eth0"
       }
     });
     expect(created.statusCode).toBe(201);
     const hostId = created.json<{ id: string; baseUrl: string }>().id;
-    expect(created.json<{ baseUrl: string }>().baseUrl).toBe("http://glances.local:61208");
+    expect(created.json<{ baseUrl: string }>().baseUrl).toBe(baseUrl);
 
     const run = await app.inject({
       method: "POST",
@@ -442,11 +594,12 @@ describe("api routes", () => {
     expect(monitor!.samples.length).toBeGreaterThan(0);
     expect(body.dailyBriefing.offlineServices).toBeDefined();
     expect(body.dailyBriefing.hostsUnderPressure).toBeDefined();
+    });
   });
 
   it("keeps Glances host samples online when optional endpoints fail", async () => {
     const cookie = await loginCookie();
-    mockGlancesFetch({ optionalFailure: true });
+    await withMockGlances({ optionalFailure: true }, async (baseUrl) => {
 
     const created = await app.inject({
       method: "POST",
@@ -454,7 +607,7 @@ describe("api routes", () => {
       headers: { cookie },
       payload: {
         name: "Partial Host",
-        baseUrl: "http://partial-glances.local:61208"
+        baseUrl
       }
     });
     const hostId = created.json<{ id: string }>().id;
@@ -465,11 +618,12 @@ describe("api routes", () => {
     const monitor = await prisma.hostMonitor.findUniqueOrThrow({ where: { id: hostId } });
     expect(monitor.latestStatus).toBe("online");
     expect(monitor.latestDiskPercent).toBeNull();
+    });
   });
 
   it("marks Glances host samples offline when core metrics fail", async () => {
     const cookie = await loginCookie();
-    mockGlancesFetch({ offline: true });
+    await withMockGlances({ offline: true }, async (baseUrl) => {
 
     const created = await app.inject({
       method: "POST",
@@ -477,7 +631,7 @@ describe("api routes", () => {
       headers: { cookie },
       payload: {
         name: "Offline Host",
-        baseUrl: "http://offline-glances.local:61208"
+        baseUrl
       }
     });
     const hostId = created.json<{ id: string }>().id;
@@ -491,11 +645,12 @@ describe("api routes", () => {
     });
     expect(sample.status).toBe("offline");
     expect(sample.error).toContain("HTTP 503");
+    });
   });
 
   it("clears stale Glances host metrics when a host goes offline", async () => {
     const cookie = await loginCookie();
-    mockGlancesFetch();
+    await withMockGlances({}, async (baseUrl, update) => {
 
     const created = await app.inject({
       method: "POST",
@@ -503,7 +658,7 @@ describe("api routes", () => {
       headers: { cookie },
       payload: {
         name: "Flapping Host",
-        baseUrl: "http://flapping-glances.local:61208"
+        baseUrl
       }
     });
     const hostId = created.json<{ id: string }>().id;
@@ -513,8 +668,7 @@ describe("api routes", () => {
     expect(monitor.latestCpuPercent).toBe(42.4);
     expect(monitor.latestNetworkRxBytesPerSec).toBe(1024);
 
-    vi.restoreAllMocks();
-    mockGlancesFetch({ offline: true });
+    update({ offline: true });
     await app.inject({ method: "POST", url: `/api/metrics/hosts/${hostId}/run`, headers: { cookie } });
 
     monitor = await prisma.hostMonitor.findUniqueOrThrow({ where: { id: hostId } });
@@ -524,11 +678,12 @@ describe("api routes", () => {
     expect(monitor.latestDiskPercent).toBeNull();
     expect(monitor.latestNetworkRxBytesPerSec).toBeNull();
     expect(monitor.latestNetworkTxBytesPerSec).toBeNull();
+    });
   });
 
   it("resets Glances host latest state and history when monitor identity changes", async () => {
     const cookie = await loginCookie();
-    mockGlancesFetch();
+    await withMockGlances({}, async (baseUrl) => {
 
     const created = await app.inject({
       method: "POST",
@@ -536,7 +691,7 @@ describe("api routes", () => {
       headers: { cookie },
       payload: {
         name: "Moved Metrics Host",
-        baseUrl: "http://old-glances.local:61208",
+        baseUrl,
         networkInterface: "eth0"
       }
     });
@@ -549,7 +704,7 @@ describe("api routes", () => {
       url: `/api/metrics/hosts/${hostId}`,
       headers: { cookie },
       payload: {
-        baseUrl: "http://new-glances.local:61208/",
+        baseUrl: `${baseUrl}/new/`,
         networkInterface: "en0"
       }
     });
@@ -562,18 +717,19 @@ describe("api routes", () => {
       latestCpuPercent: number | null;
       samples: unknown[];
     }>()).toMatchObject({
-      baseUrl: "http://new-glances.local:61208",
+      baseUrl: `${baseUrl}/new`,
       latestStatus: "unknown",
       latestSampledAt: null,
       latestCpuPercent: null,
       samples: []
     });
     expect(await prisma.hostMetricSample.count({ where: { monitorId: hostId } })).toBe(0);
+    });
   });
 
   it("prunes Glances host metric history to the retention limit", async () => {
     const cookie = await loginCookie();
-    mockGlancesFetch();
+    await withMockGlances({}, async (baseUrl) => {
 
     const created = await app.inject({
       method: "POST",
@@ -581,7 +737,7 @@ describe("api routes", () => {
       headers: { cookie },
       payload: {
         name: "Retention Host",
-        baseUrl: "http://retention-glances.local:61208"
+        baseUrl
       }
     });
     const hostId = created.json<{ id: string }>().id;
@@ -599,6 +755,7 @@ describe("api routes", () => {
 
     const count = await prisma.hostMetricSample.count({ where: { monitorId: hostId } });
     expect(count).toBe(1440);
+    });
   });
 
   it("returns authenticated Glances host detail with 24h samples", async () => {
@@ -794,46 +951,39 @@ describe("api routes", () => {
     expect(JSON.stringify(targetEvidence)).not.toContain("super-secret-token");
 
     let capturedBody = "";
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      expect(String(input)).toBe("http://mock-ai.local/v1/chat/completions");
-      capturedBody = String(init?.body ?? "");
-      return new Response(JSON.stringify({
-        choices: [
-          {
-            message: {
-              content: JSON.stringify({
-                severity: "warning",
-                headline: "One service needs attention",
-                summary: "AI Target Service is offline and close to its failure threshold. Review the existing health check before chasing broader causes.",
-                items: [
-                  {
-                    title: "Offline service",
-                    body: "The current evidence shows a failed HTTP check.",
-                    severity: "warning",
-                    evidenceIds: [`resource:${resource.id}`, `check:${check.id}`]
-                  }
-                ],
-                nextActions: [
-                  { label: "Inspect service", resourceId: resource.id },
-                  { label: "Run check", checkId: check.id }
-                ],
-                confidence: "high"
-              })
-            }
-          }
-        ]
-      }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" }
+    await withMockJsonApi((request, response) => {
+      expect(request.url).toBe("/v1/chat/completions");
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+      request.on("end", () => {
+        capturedBody = Buffer.concat(chunks).toString("utf8");
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({
+            severity: "warning",
+            headline: "One service needs attention",
+            summary: "AI Target Service is offline and close to its failure threshold. Review the existing health check before chasing broader causes.",
+            items: [{
+              title: "Offline service",
+              body: "The current evidence shows a failed HTTP check.",
+              severity: "warning",
+              evidenceIds: [`resource:${resource.id}`, `check:${check.id}`]
+            }],
+            nextActions: [
+              { label: "Inspect service", resourceId: resource.id },
+              { label: "Run check", checkId: check.id }
+            ],
+            confidence: "high"
+          }) } }]
+        }));
       });
-    });
-
+    }, async (baseUrl) => {
     const aiApp = await createApp({
       prisma,
       env: {
         ...env,
         cookieSecret: "test-cookie-secret-with-more-than-32-chars-ai-success",
-        ai: aiEnv
+        ai: { ...aiEnv, baseUrl: `${baseUrl}/v1` }
       },
       monitor: false,
       logger: false
@@ -877,27 +1027,29 @@ describe("api routes", () => {
     } finally {
       await aiApp.close();
     }
+    });
   });
 
   it("records AI provider failures and malformed responses without breaking the dashboard", async () => {
     await prisma.systemConfig.deleteMany({ where: { key: AI_BRIEFING_CACHE_KEY } });
     const aiEnv = configuredAiEnv();
-    const fetchMock = vi.spyOn(globalThis, "fetch");
-    fetchMock
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        choices: [{ message: { content: "{not-json" } }]
-      }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" }
-      }))
-      .mockResolvedValueOnce(new Response("rate limited", { status: 429 }));
-
+    let requestCount = 0;
+    await withMockJsonApi((_request, response) => {
+      requestCount += 1;
+      if (requestCount === 1) {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ choices: [{ message: { content: "{not-json" } }] }));
+      } else {
+        response.writeHead(429, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ error: "rate limited" }));
+      }
+    }, async (baseUrl) => {
     const aiApp = await createApp({
       prisma,
       env: {
         ...env,
         cookieSecret: "test-cookie-secret-with-more-than-32-chars-ai-errors",
-        ai: aiEnv
+        ai: { ...aiEnv, baseUrl: `${baseUrl}/v1` }
       },
       monitor: false,
       logger: false
@@ -931,6 +1083,7 @@ describe("api routes", () => {
     } finally {
       await aiApp.close();
     }
+    });
   });
 
   it("checks AI briefing scheduler due state from cache age", () => {
@@ -1101,6 +1254,22 @@ describe("api routes", () => {
       expect(await prisma.apiWidgetSample.count({ where: { widgetId } })).toBe(1440);
 
       process.env.TEST_WIDGET_TOKEN = "widget-secret-token";
+      const protectedSecret = await app.inject({
+        method: "POST",
+        url: "/api/api-widgets",
+        headers: { cookie },
+        payload: {
+          name: "Forbidden secret",
+          templateId: "custom-json",
+          baseUrl,
+          endpointPath: "/secure",
+          authType: "bearer",
+          authEnvVar: "COOKIE_SECRET",
+          fieldMappings: [{ label: "Status", path: "status", kind: "text" }]
+        }
+      });
+      expect(protectedSecret.statusCode).toBe(400);
+
       const secure = await app.inject({
         method: "POST",
         url: "/api/api-widgets",
@@ -1115,7 +1284,20 @@ describe("api routes", () => {
           fieldMappings: [{ label: "Status", path: "status", kind: "text" }]
         }
       });
+      expect(secure.statusCode).toBe(201);
       const secureId = secure.json<{ id: string }>().id;
+
+      const secureRun = await app.inject({ method: "POST", url: `/api/api-widgets/${secureId}/run`, headers: { cookie } });
+      expect(secureRun.json<{ status: string }>().status).toBe("online");
+
+      const forbiddenPatch = await app.inject({
+        method: "PATCH",
+        url: `/api/api-widgets/${secureId}`,
+        headers: { cookie },
+        payload: { authEnvVar: "COOKIE_SECRET" }
+      });
+      expect(forbiddenPatch.statusCode).toBe(400);
+
       delete process.env.TEST_WIDGET_TOKEN;
 
       const failed = await app.inject({ method: "POST", url: `/api/api-widgets/${secureId}/run`, headers: { cookie } });
@@ -1280,6 +1462,7 @@ describe("api routes", () => {
     await prisma.healthCheck.update({
       where: { id: defaultCheck.id },
       data: {
+        enabled: false,
         latestStatus: "offline",
         latestLatencyMs: 3000,
         latestCheckedAt: new Date(),
@@ -1314,7 +1497,7 @@ describe("api routes", () => {
     expect(body.healthChecks.find((check) => check.id === defaultCheck.id)).toMatchObject({
       type: "ping",
       target: "192.0.2.11",
-      enabled: true,
+      enabled: false,
       latestStatus: "unknown",
       latestLatencyMs: null,
       latestCheckedAt: null,
@@ -1327,7 +1510,7 @@ describe("api routes", () => {
     });
   });
 
-  it("repairs an already stale auto-created health check target", async () => {
+  it("does not repair a managed check during an unrelated resource edit", async () => {
     const cookie = await loginCookie();
 
     const resource = await app.inject({
@@ -1383,12 +1566,80 @@ describe("api routes", () => {
     }>();
 
     expect(body.healthChecks.find((check) => check.id === defaultCheck.id)).toMatchObject({
-      target: "192.0.2.21",
-      latestStatus: "unknown",
-      latestCheckedAt: null,
-      latestError: null,
-      consecutiveFailures: 0
+      target: "192.0.2.20",
+      latestStatus: "offline",
+      latestError: "Timeout",
+      consecutiveFailures: 4
     });
+  });
+
+  it("preserves deleted defaults across edits and app restart, but creates one on an explicit auto transition", async () => {
+    const cookie = await loginCookie();
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/resources",
+      headers: { cookie },
+      payload: { name: "Deleted Default", kind: "server", host: "192.0.2.31" }
+    });
+    const resourceId = created.json<{ id: string }>().id;
+    const managed = await prisma.healthCheck.findFirstOrThrow({ where: { resourceId, managed: true } });
+    await app.inject({ method: "DELETE", url: `/api/health-checks/${managed.id}`, headers: { cookie } });
+    await app.inject({ method: "PATCH", url: `/api/resources/${resourceId}`, headers: { cookie }, payload: { favorite: true } });
+    expect(await prisma.healthCheck.count({ where: { resourceId } })).toBe(0);
+
+    const restarted = await createApp({ prisma, env, monitor: false, logger: false });
+    await restarted.ready();
+    await restarted.close();
+    expect(await prisma.healthCheck.count({ where: { resourceId } })).toBe(0);
+
+    await app.inject({ method: "PATCH", url: `/api/resources/${resourceId}`, headers: { cookie }, payload: { monitoringMode: "manual" } });
+    await app.inject({ method: "PATCH", url: `/api/resources/${resourceId}`, headers: { cookie }, payload: { monitoringMode: "auto" } });
+    expect(await prisma.healthCheck.findFirst({ where: { resourceId, managed: true } })).toBeTruthy();
+  });
+
+  it("runs every enabled check for a resource and rejects disabled checks", async () => {
+    const cookie = await loginCookie();
+    const resource = await app.inject({
+      method: "POST",
+      url: "/api/resources",
+      headers: { cookie },
+      payload: { name: "Multi Check", kind: "app" }
+    });
+    const resourceId = resource.json<{ id: string }>().id;
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/health-checks",
+      headers: { cookie },
+      payload: { resourceId, type: "http", target: "http://first-check.test", enabled: true }
+    });
+    const second = await app.inject({
+      method: "POST",
+      url: "/api/health-checks",
+      headers: { cookie },
+      payload: { resourceId, type: "http", target: "http://second-check.test", enabled: true }
+    });
+    const disabled = await app.inject({
+      method: "POST",
+      url: "/api/health-checks",
+      headers: { cookie },
+      payload: { resourceId, type: "http", target: "http://disabled-check.test", enabled: false }
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok", { status: 200 }));
+
+    const run = await app.inject({ method: "POST", url: `/api/resources/${resourceId}/run`, headers: { cookie } });
+    expect(run.statusCode).toBe(200);
+    expect(run.json<{ outcomes: unknown[] }>().outcomes).toHaveLength(2);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect(await prisma.healthResult.count({
+      where: { checkId: { in: [first.json<{ id: string }>().id, second.json<{ id: string }>().id] } }
+    })).toBe(2);
+
+    const disabledRun = await app.inject({
+      method: "POST",
+      url: `/api/health-checks/${disabled.json<{ id: string }>().id}/run`,
+      headers: { cookie }
+    });
+    expect(disabledRun.statusCode).toBe(409);
   });
 
   it("clears stale offline state when a health check target is edited", async () => {
@@ -1408,7 +1659,7 @@ describe("api routes", () => {
     const resourceId = resource.json<{ id: string }>().id;
 
     const check = await prisma.healthCheck.findFirstOrThrow({
-      where: { resourceId, type: "http", target: "http://old-web.test" }
+      where: { resourceId, type: "http", target: "http://old-web.test/" }
     });
 
     await prisma.healthCheck.update({
@@ -1642,12 +1893,15 @@ describe("api routes", () => {
 
     const status = await app.inject({ method: "GET", url: "/api/status" });
     const statusBody = status.json<{
-      resources: Array<{ id: string; uptimePercent: number | null; ticks: Array<{ status: string }> }>;
+      resources: Array<{ name: string; uptimePercent: number | null; ticks: string[] }>;
     }>();
-    const statusEntry = statusBody.resources.find((item) => item.id === resourceId);
+    const statusEntry = statusBody.resources.find((item) => item.name === "History Box");
     expect(statusEntry).toBeDefined();
     expect(statusEntry!.uptimePercent).toBe(0);
     expect(statusEntry!.ticks.length).toBeGreaterThanOrEqual(2);
+    expect(status.body).not.toContain(resourceId);
+    expect(status.body).not.toContain("127.0.0.1");
+    expect(Object.keys(statusEntry!)).toEqual(["name", "status", "uptimePercent", "ticks"]);
   });
 
   it("supports device-level monitoring disable and manual status override", async () => {
@@ -1683,10 +1937,13 @@ describe("api routes", () => {
 
     const status = await app.inject({ method: "GET", url: "/api/status" });
     expect(status.statusCode).toBe(200);
-    const body = status.json<{ resources: Array<{ id: string; status: string; monitoringMode: string }> }>();
-    expect(body.resources.find((item) => item.id === resourceId)).toMatchObject({
+    const body = status.json<{ overallStatus: string; resources: Array<{ name: string; status: string }> }>();
+    expect(body.resources.find((item) => item.name === "Manual NAS")).toEqual({
+      name: "Manual NAS",
       status: "offline",
-      monitoringMode: "manual"
+      uptimePercent: null,
+      ticks: []
     });
+    expect(body.overallStatus).toBe("degraded");
   });
 });

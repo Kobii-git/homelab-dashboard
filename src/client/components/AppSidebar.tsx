@@ -80,7 +80,7 @@ export function AppSidebar({
               onClick={() => onNavigate(item.id)}
             >
               {item.icon}
-              {!compact ? item.label : null}
+              <span className="nav-label">{item.label}</span>
             </button>
           ))}
         </nav>

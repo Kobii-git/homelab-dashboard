@@ -127,7 +127,8 @@ export function SettingsView({
   }, [systemSettings.autoPingIntervalSeconds]);
 
   useEffect(() => {
-    void Promise.all([loadHostMonitors(), loadIntegrations(), loadApiWidgets(), loadRuntime()]);
+    void Promise.all([loadHostMonitors(), loadIntegrations(), loadApiWidgets(), loadRuntime()])
+      .catch((loadError) => setActionError(loadError instanceof Error ? loadError.message : "Admin data failed to load"));
   }, []);
 
   async function loadHostMonitors() {
@@ -194,6 +195,7 @@ export function SettingsView({
         setCurrentPassword("");
         setNewPassword("");
         setConfirmPassword("");
+        window.dispatchEvent(new CustomEvent("homelab:session-expired"));
       },
       setActionError,
       setSubmitting,
@@ -826,9 +828,9 @@ export function SettingsView({
           </div>
           {authSource === "database" ? (
             <form className="inline-form settings-form-grid" onSubmit={changePassword}>
-              <label>Current password<input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label>
-              <label>New password<input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required minLength={8} /></label>
-              <label>Confirm new password<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required minLength={8} /></label>
+              <label>Current password<input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label>
+              <label>New password<input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required minLength={12} /></label>
+              <label>Confirm new password<input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required minLength={12} /></label>
               <button className="primary-button" type="submit" disabled={submitting}><Save size={15} /> Update password</button>
             </form>
           ) : (
@@ -914,7 +916,9 @@ export function SettingsView({
             <p className="muted-copy">{runtimeLoading ? "Loading runtime health..." : "Runtime health is not loaded."}</p>
           )}
           <div className="settings-actions">
-            <button className="icon-text-button" type="button" onClick={() => void loadRuntime()} disabled={runtimeLoading}>
+            <button className="icon-text-button" type="button" onClick={() => {
+              void loadRuntime().catch((loadError) => setActionError(loadError instanceof Error ? loadError.message : "Runtime refresh failed"));
+            }} disabled={runtimeLoading}>
               <RefreshCw size={16} className={runtimeLoading ? "spin" : ""} /> Refresh runtime
             </button>
           </div>

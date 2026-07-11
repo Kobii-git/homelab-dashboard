@@ -16,11 +16,13 @@ import { toHostMonitorDto } from "./metrics.js";
 import { toIntegrationSourceDto } from "./opnsense.js";
 import { toApiWidgetDto } from "./apiWidgets.js";
 import { buildDailyBriefing, resourceStatus } from "./dailyBriefing.js";
+import { boundedJsonRequest } from "./httpJson.js";
 
 export const AI_BRIEFING_CACHE_KEY = "ai_briefing_cache";
 export const AI_SCHEDULER_INTERVAL_MS = 60_000;
 
 const AI_REQUEST_TIMEOUT_MS = 20_000;
+const AI_MAX_RESPONSE_BYTES = 3_000_000;
 const MAX_AI_ITEMS = 6;
 const MAX_AI_ACTIONS = 5;
 
@@ -611,18 +613,12 @@ async function requestAiBriefing(config: AiEnvConfig, evidence: AiBriefingEviden
     throw new Error("AI briefing is not configured");
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(completionUrl(config.baseUrl), {
+  const raw = await boundedJsonRequest(completionUrl(config.baseUrl), {
       method: "POST",
-      signal: controller.signal,
       headers: {
-        "Content-Type": "application/json",
         ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {})
       },
-      body: JSON.stringify({
+      body: {
         model: config.model,
         temperature: 0.2,
         max_tokens: 900,
@@ -653,26 +649,14 @@ async function requestAiBriefing(config: AiEnvConfig, evidence: AiBriefingEviden
             })
           }
         ]
-      })
+      },
+      tlsVerify: config.tlsVerify,
+      timeoutMs: AI_REQUEST_TIMEOUT_MS,
+      maxBytes: AI_MAX_RESPONSE_BYTES,
+      label: "AI provider"
     });
-
-    const text = await response.text();
-    if (!response.ok) {
-      throw new Error(`AI provider returned HTTP ${response.status}`);
-    }
-
-    let raw: unknown;
-    try {
-      raw = text ? JSON.parse(text) : {};
-    } catch {
-      throw new Error("AI provider returned invalid response JSON");
-    }
-
-    const parsedContent = parseJsonContent(responseContent(raw));
-    return aiModelOutputSchema.parse(parsedContent);
-  } finally {
-    clearTimeout(timeout);
-  }
+  const parsedContent = parseJsonContent(responseContent(raw));
+  return aiModelOutputSchema.parse(parsedContent);
 }
 
 export async function runAiBriefing(prisma: PrismaClient, config: AiEnvConfig): Promise<AiBriefingDto> {

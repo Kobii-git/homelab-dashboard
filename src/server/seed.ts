@@ -72,12 +72,12 @@ async function seedCheckHistory(
   baseLatencyMs: number
 ): Promise<void> {
   const existing = await prisma.healthResult.count({ where: { checkId } });
-  if (existing > 0 || status === "unknown") {
-    return;
-  }
+  if (status === "unknown") return;
+  if (existing >= 96) return;
+  if (existing > 0) await prisma.healthResult.deleteMany({ where: { checkId } });
 
-  const samples = 44;
-  const stepMs = 1000 * 60;
+  const samples = 96;
+  const stepMs = 1000 * 60 * 15;
   const now = Date.now();
   const blipAt = 14; // one brief historical wobble so the heartbeat looks lived-in
 
@@ -103,7 +103,7 @@ async function findOrCreateCheck(
 ): Promise<void> {
   const existing = await prisma.healthCheck.findFirst({ where: { resourceId: input.resourceId, type: input.type, target: input.target } });
   const status = input.status;
-  const checkedAt = status === "unknown" ? null : new Date(Date.now() - 1000 * 60 * 7);
+  const checkedAt = status === "unknown" ? null : new Date();
   const data = {
     latestStatus: status,
     latestLatencyMs: input.latencyMs ?? null,
@@ -114,9 +114,10 @@ async function findOrCreateCheck(
     failureThreshold: 2,
     successThreshold: 2,
     lastTransitionAt: checkedAt,
-    intervalSeconds: 60,
+    intervalSeconds: 86400,
     timeoutMs: 3000,
-    enabled: input.enabled ?? false
+    enabled: input.enabled ?? true,
+    managed: true
   };
 
   if (existing) {
@@ -151,9 +152,13 @@ export async function seedDemo(prisma: PrismaClient): Promise<void> {
 
   const checks: DemoCheck[] = [
     { resourceId: resourceByName.get("OPNsense Gateway")!.id, type: "http", target: "https://gateway.lab.local", status: "online", latencyMs: 18 },
+    { resourceId: resourceByName.get("Proxmox Cluster")!.id, type: "http", target: "https://pve.lab.local:8006", status: "online", latencyMs: 28 },
+    { resourceId: resourceByName.get("TrueNAS Scale")!.id, type: "http", target: "https://nas.lab.local", status: "online", latencyMs: 23 },
     { resourceId: resourceByName.get("Home Assistant")!.id, type: "http", target: "https://ha.lab.local", status: "online", latencyMs: 42 },
     { resourceId: resourceByName.get("Portainer")!.id, type: "http", target: "https://portainer.lab.local", status: "online", latencyMs: 35 },
+    { resourceId: resourceByName.get("Grafana")!.id, type: "http", target: "https://grafana.lab.local", status: "online", latencyMs: 31 },
     { resourceId: resourceByName.get("Docker Host 01")!.id, type: "ping", target: "192.168.30.11", status: "online", latencyMs: 11 },
+    { resourceId: resourceByName.get("Windows Admin VM")!.id, type: "ping", target: "192.168.30.20", status: "online", latencyMs: 14 },
     { resourceId: resourceByName.get("Backup API")!.id, type: "http", target: "https://backup-api.lab.local/health", status: "offline", latencyMs: 3000, error: "HTTP 503 Service Unavailable", enabled: true }
   ];
 

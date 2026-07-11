@@ -8,7 +8,19 @@ import staticFiles from "@fastify/static";
 import { PrismaClient, type HealthCheck, type HostMonitor } from "@prisma/client";
 import Fastify, { type FastifyInstance } from "fastify";
 import { z, ZodError } from "zod";
-import { isAuthenticated, createAuthToken, SESSION_COOKIE, verifyAdminPassword, verifyAdminLogin, hashPassword } from "./auth.js";
+import {
+  clearSetupCode,
+  createAuthToken,
+  hashPassword,
+  incrementSessionVersion,
+  initializeSetupCode,
+  isAuthenticated,
+  SESSION_COOKIE,
+  SESSION_MAX_AGE_SECONDS,
+  verifyAdminLogin,
+  verifyAdminPassword,
+  verifySetupCode
+} from "./auth.js";
 import { getEnv, type AppEnv } from "./env.js";
 import { getBuildInfo } from "../shared/version.js";
 import { runHealthCheck, startHealthScheduler, type SchedulerUpdate } from "./healthChecks.js";
@@ -16,6 +28,7 @@ import { runHostMetricSample, startMetricsScheduler, toHostMonitorDto } from "./
 import {
   apiWidgetTemplateById,
   apiWidgetTemplates,
+  isApiWidgetSecretAllowed,
   runApiWidgetSample,
   startApiWidgetScheduler,
   suggestApiWidgets,
@@ -53,7 +66,8 @@ import {
   reorderSchema,
   resourcePatchSchema,
   resourceSchema,
-  settingsSchema
+  settingsSchema,
+  validateHealthCheckTarget
 } from "./validation.js";
 import { seedDemo } from "./seed.js";
 import { registerStatusRoutes } from "./routes/status.js";
@@ -64,6 +78,7 @@ type CreateAppOptions = {
   prisma?: PrismaClient;
   monitor?: boolean;
   logger?: boolean;
+  setupCode?: string;
 };
 
 type SchedulerRuntime = {
@@ -173,6 +188,18 @@ function safeDatabaseHint(databaseUrl: string): string {
   }
 }
 
+function enforceDatabasePermissions(databaseUrl: string): void {
+  if (!databaseUrl.startsWith("file:")) return;
+  const rawPath = decodeURIComponent(databaseUrl.slice("file:".length).split("?")[0]);
+  const databasePath = path.isAbsolute(rawPath)
+    ? rawPath
+    : path.resolve(process.cwd(), "prisma", rawPath);
+  const directory = path.dirname(databasePath);
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  fs.chmodSync(directory, 0o700);
+  if (fs.existsSync(databasePath)) fs.chmodSync(databasePath, 0o600);
+}
+
 function resolveClientDist(): string | null {
   const candidates = [
     path.resolve(__dirname, "../client"),
@@ -223,6 +250,7 @@ type ResourceWithHealthChecks = ResourceAddress & {
   healthChecks: Pick<
     HealthCheck,
     | "id"
+    | "managed"
     | "type"
     | "target"
     | "timeoutMs"
@@ -295,70 +323,50 @@ function isAutoManagedCheckCandidate(
   );
 }
 
-async function syncDefaultHealthCheckTarget(
-  prisma: PrismaClient,
-  previousResource: ResourceAddress,
-  resource: ResourceWithHealthChecks
-): Promise<void> {
-  const nextTarget = normalizedAutoPingTarget(resource);
-
-  if (!nextTarget) {
-    return;
-  }
-
-  const previousTarget = normalizedResourceTarget(previousResource);
-  const matchingDefaultCheck = previousTarget
-    ? resource.healthChecks.find((check) => healthCheckMatchesTarget(check, previousTarget))
-    : undefined;
-  const autoManagedCandidates = resource.healthChecks.filter(isAutoManagedCheckCandidate);
-  const defaultCheck = matchingDefaultCheck ?? (
-    autoManagedCandidates.length === 1 ? autoManagedCandidates[0] : undefined
-  );
-
-  if (!defaultCheck) {
-    if (resource.healthChecks.length === 0) {
-      const intervalSeconds = await getAutoPingIntervalSeconds(prisma);
-      await prisma.healthCheck.create({
-        data: {
-          resourceId: resource.id,
-          type: nextTarget.type,
-          target: nextTarget.target,
-          intervalSeconds,
-          timeoutMs: 3000,
-          failureThreshold: 1,
-          successThreshold: 1,
-          enabled: true
-        }
-      });
-    }
-    return;
-  }
-
-  const targetChanged = !healthCheckMatchesTarget(defaultCheck, nextTarget);
-  const wasPaused = !defaultCheck.enabled;
-
-  if (!targetChanged && !wasPaused) {
-    return;
-  }
-
-  await prisma.healthCheck.update({
-    where: { id: defaultCheck.id },
-    data: {
-      type: nextTarget.type,
-      target: nextTarget.target,
-      enabled: true,
-      ...resetHealthCheckState
-    }
-  });
-}
-
-async function syncAutoHealthCheckTargets(prisma: PrismaClient): Promise<void> {
+async function backfillManagedHealthChecks(prisma: PrismaClient): Promise<void> {
+  const migrationKey = "managed_health_checks_v1";
+  if (await prisma.systemConfig.findUnique({ where: { key: migrationKey } })) return;
   const resources = await prisma.resource.findMany({
     where: { monitoringMode: "auto" },
     include: { healthChecks: true }
   });
 
-  await Promise.all(resources.map((resource) => syncDefaultHealthCheckTarget(prisma, resource, resource)));
+  for (const resource of resources) {
+    if (resource.healthChecks.some((check) => check.managed)) continue;
+    const target = normalizedResourceTarget(resource);
+    if (!target) continue;
+    const candidates = resource.healthChecks.filter(
+      (check) => healthCheckMatchesTarget(check, target) && isAutoManagedCheckCandidate(check)
+    );
+    if (candidates.length === 1) {
+      await prisma.healthCheck.update({ where: { id: candidates[0].id }, data: { managed: true } });
+    }
+  }
+
+  await prisma.systemConfig.upsert({
+    where: { key: migrationKey },
+    create: { key: migrationKey, value: new Date().toISOString() },
+    update: { value: new Date().toISOString() }
+  });
+}
+
+async function createManagedHealthCheck(prisma: PrismaClient, resource: ResourceAddress & { id: string }): Promise<void> {
+  const target = normalizedResourceTarget(resource);
+  if (!target) return;
+  const intervalSeconds = await getAutoPingIntervalSeconds(prisma);
+  await prisma.healthCheck.create({
+    data: {
+      resourceId: resource.id,
+      type: target.type,
+      target: target.target,
+      intervalSeconds,
+      timeoutMs: 3000,
+      failureThreshold: 1,
+      successThreshold: 1,
+      enabled: true,
+      managed: true
+    }
+  });
 }
 
 function clampAutoPingInterval(value: number | null): number {
@@ -501,6 +509,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   };
   const prisma = options.prisma ?? new PrismaClient();
   const loginLimiter = new RateLimiter(10, 60_000);
+  const setupLimiter = new RateLimiter(5, 15 * 60_000);
   const app = Fastify({ logger: options.logger ?? env.nodeEnv === "production" });
   const startedAt = new Date();
   const healthScheduler = createSchedulerRuntime(15_000);
@@ -517,6 +526,16 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     origin: env.nodeEnv === "production" ? false : ["http://localhost:5173", "http://127.0.0.1:5173"],
     credentials: true
   });
+
+  await backfillManagedHealthChecks(prisma);
+  await prisma.systemConfig.deleteMany({ where: { key: "vault_key" } });
+  enforceDatabasePermissions(env.databaseUrl);
+  const setupCode = await initializeSetupCode(prisma, env, options.setupCode);
+  if (setupCode) {
+    const message = `Homelab Dashboard one-time setup code: ${setupCode}`;
+    if (options.logger ?? env.nodeEnv === "production") app.log.warn(message);
+    else if (env.nodeEnv !== "test") console.warn(message);
+  }
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ZodError) {
@@ -545,11 +564,55 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     reply.code(500).send({ error: "Internal server error" });
   });
 
+  app.addHook("onSend", async (request, reply, payload) => {
+    reply.header(
+      "Content-Security-Policy",
+      "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; connect-src 'self'; font-src 'self'"
+    );
+    reply.header("X-Frame-Options", "DENY");
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("Referrer-Policy", "no-referrer");
+    reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+    reply.header("Cross-Origin-Opener-Policy", "same-origin");
+    if (env.cookieSecure) reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    if (request.url.startsWith("/api") || request.url.startsWith("/status")) {
+      reply.header("Cache-Control", "no-store");
+    }
+    return payload;
+  });
+
   app.addHook("onRequest", async (request, reply) => {
     const url = new URL(request.raw.url ?? "/", "http://localhost");
 
     if (!url.pathname.startsWith("/api")) {
       return;
+    }
+
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
+      const fetchSite = request.headers["sec-fetch-site"];
+      if (fetchSite === "cross-site") {
+        return reply.code(403).send({ error: "Cross-site request rejected" });
+      }
+
+      const origin = request.headers.origin;
+      if (origin) {
+        let parsedOrigin: URL;
+        try {
+          parsedOrigin = new URL(origin);
+        } catch {
+          return reply.code(403).send({ error: "Invalid request origin" });
+        }
+        const originHost = parsedOrigin.host;
+        const requestHost = request.headers.host;
+        const developmentOrigin =
+          env.nodeEnv !== "production" && ["localhost:5173", "127.0.0.1:5173"].includes(originHost);
+        const expectedProtocol = env.cookieSecure ? "https:" : "http:";
+        if (!requestHost || (!developmentOrigin && (originHost !== requestHost || parsedOrigin.protocol !== expectedProtocol))) {
+          return reply.code(403).send({ error: "Request origin does not match this server" });
+        }
+      } else if (fetchSite === "same-site") {
+        return reply.code(403).send({ error: "Browser mutations must be same-origin" });
+      }
     }
 
     const publicRoutes = new Set([
@@ -565,7 +628,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       return;
     }
 
-    if (!isAuthenticated(request, env)) {
+    if (!(await isAuthenticated(request, env, prisma))) {
       return reply.code(401).send({ error: "Authentication required" });
     }
   });
@@ -587,22 +650,33 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     ]);
     const hasAccount = Boolean(env.adminPassword) || Boolean(adminAccount);
     const firstRun = Boolean(resourceCount === 0 && !layout);
-    return { firstRun, needsAccount: !hasAccount };
+    return { firstRun, needsAccount: !hasAccount, needsSetupCode: !hasAccount };
   });
 
   app.post("/api/setup", async (request, reply) => {
     const body = z
       .object({
         username: z.string().trim().min(1).optional(),
-        password: z.string().min(1).optional(),
+        password: z.string().min(12).max(256).optional(),
+        setupCode: z.string().trim().min(1).max(64).optional(),
         seedDemo: z.boolean()
       })
       .parse(request.body);
 
     const hasAccount = await adminAccountExists(env, prisma);
 
-    if (hasAccount && !isAuthenticated(request, env)) {
+    if (hasAccount && !(await isAuthenticated(request, env, prisma))) {
       return reply.code(401).send({ error: "Authentication required" });
+    }
+
+    if (!hasAccount) {
+      const clientIp = request.ip || "unknown";
+      if (!setupLimiter.allow(clientIp)) {
+        return reply.code(429).send({ error: "Too many setup attempts. Try again later." });
+      }
+      if (!body.setupCode || !(await verifySetupCode(body.setupCode, env, prisma))) {
+        return reply.code(403).send({ error: "Invalid setup code" });
+      }
     }
 
     if (!hasAccount && !body.password && !env.adminPassword) {
@@ -610,7 +684,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     }
 
     if (!hasAccount && body.password && !env.adminPassword) {
-      const hash = hashPassword(body.password);
+      const hash = await hashPassword(body.password);
       await prisma.adminAccount.upsert({
         where: { id: "admin" },
         create: { id: "admin", username: body.username ?? "admin", passwordHash: hash },
@@ -619,6 +693,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     }
 
     await setSetupDismissed(prisma);
+    await clearSetupCode(prisma);
 
     if (body.seedDemo) {
       await seedDemo(prisma);
@@ -640,24 +715,27 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       return;
     }
 
-    reply.setCookie(SESSION_COOKIE, createAuthToken(env), {
+    loginLimiter.reset(clientIp);
+
+    reply.setCookie(SESSION_COOKIE, await createAuthToken(env, prisma), {
       httpOnly: true,
       sameSite: "lax",
       secure: env.cookieSecure,
       path: "/",
-      maxAge: 60 * 60 * 24 * 30
+      maxAge: SESSION_MAX_AGE_SECONDS
     });
 
     return { authenticated: true };
   });
 
   app.post("/api/auth/logout", async (_request, reply) => {
-    reply.clearCookie(SESSION_COOKIE, { path: "/" });
+    await incrementSessionVersion(prisma);
+    reply.clearCookie(SESSION_COOKIE, { path: "/", sameSite: "lax", secure: env.cookieSecure });
     return { authenticated: false };
   });
 
   app.get("/api/auth/me", async (request) => {
-    const authenticated = isAuthenticated(request, env);
+    const authenticated = await isAuthenticated(request, env, prisma);
     if (!authenticated) {
       return { authenticated: false };
     }
@@ -673,11 +751,11 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     const body = z
       .object({
         currentPassword: z.string().min(1),
-        newPassword: z.string().min(8)
+        newPassword: z.string().min(12).max(256)
       })
       .parse(request.body);
 
-    if (!isAuthenticated(request, env)) {
+    if (!(await isAuthenticated(request, env, prisma))) {
       reply.code(401).send({ error: "Authentication required" });
       return;
     }
@@ -696,10 +774,13 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
     await prisma.adminAccount.update({
       where: { id: "admin" },
-      data: { passwordHash: hashPassword(body.newPassword) }
+      data: { passwordHash: await hashPassword(body.newPassword) }
     });
 
-    return { ok: true };
+    await incrementSessionVersion(prisma);
+    reply.clearCookie(SESSION_COOKIE, { path: "/", sameSite: "lax", secure: env.cookieSecure });
+
+    return { ok: true, authenticated: false };
   });
 
   await registerStatusRoutes({ app, prisma, env });
@@ -1041,6 +1122,9 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   app.post("/api/api-widgets", async (request, reply) => {
     const body = apiWidgetSchema.parse(request.body);
+    if (!isApiWidgetSecretAllowed(body.authEnvVar, env.apiWidgetSecretAllowlist)) {
+      return reply.code(400).send({ error: "API widget secret environment variable is not allowlisted" });
+    }
     const widget = await prisma.apiWidget.create({
       data: createApiWidgetData(body),
       include: apiWidgetInclude
@@ -1049,7 +1133,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return toApiWidgetDto(widget);
   });
 
-  app.patch("/api/api-widgets/:id", async (request) => {
+  app.patch("/api/api-widgets/:id", async (request, reply) => {
     const id = routeId(request);
     const body = apiWidgetPatchSchema.parse(request.body);
     const data = patchApiWidgetData(body);
@@ -1067,6 +1151,10 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
         fieldMappings: true
       }
     });
+    const nextSecretName = "authEnvVar" in data ? data.authEnvVar : previous.authEnvVar;
+    if (!isApiWidgetSecretAllowed(nextSecretName, env.apiWidgetSecretAllowlist)) {
+      return reply.code(400).send({ error: "API widget secret environment variable is not allowlisted" });
+    }
     const resetState = shouldResetApiWidgetAfterPatch(previous, data);
     const widget = await prisma.$transaction(async (tx) => {
       const updated = await tx.apiWidget.update({
@@ -1094,7 +1182,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.post("/api/api-widgets/:id/run", async (request) => {
     const id = routeId(request);
     const widget = await prisma.apiWidget.findUniqueOrThrow({ where: { id } });
-    const outcome = await runApiWidgetSample(prisma, widget);
+    const outcome = await runApiWidgetSample(prisma, widget, env.apiWidgetSecretAllowlist);
     const refreshed = await prisma.apiWidget.findUniqueOrThrow({
       where: { id },
       include: apiWidgetInclude
@@ -1141,19 +1229,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
     const defaultCheck = normalizedAutoPingTarget(resource);
     if (defaultCheck) {
-      const intervalSeconds = await getAutoPingIntervalSeconds(prisma);
-      await prisma.healthCheck.create({
-        data: {
-          resourceId: resource.id,
-          type: defaultCheck.type,
-          target: defaultCheck.target,
-          intervalSeconds,
-          timeoutMs: 3000,
-          failureThreshold: 1,
-          successThreshold: 1,
-          enabled: true
-        }
-      });
+      await createManagedHealthCheck(prisma, resource);
     }
 
     reply.code(201);
@@ -1172,16 +1248,23 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     const previousResource = await prisma.resource.findUniqueOrThrow({ where: { id }, include: { healthChecks: true } });
     const resource = await prisma.resource.update({ where: { id }, data, include: { healthChecks: true, group: true } });
 
-    if (resource.monitoringMode === "disabled") {
-      await prisma.healthCheck.updateMany({ where: { resourceId: id }, data: { enabled: false } });
-      return prisma.resource.findUniqueOrThrow({ where: { id }, include: { healthChecks: true, group: true } });
-    }
+    const transitionedToAuto = body.monitoringMode === "auto" && previousResource.monitoringMode !== "auto";
+    const addressChanged =
+      (body.url !== undefined && body.url !== previousResource.url) ||
+      (body.host !== undefined && body.host !== previousResource.host);
+    const managedCheck = resource.healthChecks.find((check) => check.managed);
 
-    if (body.monitoringMode === "auto") {
-      await prisma.healthCheck.updateMany({ where: { resourceId: id }, data: { enabled: true } });
+    if (transitionedToAuto && !managedCheck) {
+      await createManagedHealthCheck(prisma, resource);
+    } else if (addressChanged && managedCheck) {
+      const nextTarget = normalizedResourceTarget(resource);
+      if (nextTarget && !healthCheckMatchesTarget(managedCheck, nextTarget)) {
+        await prisma.healthCheck.update({
+          where: { id: managedCheck.id },
+          data: { type: nextTarget.type, target: nextTarget.target, ...resetHealthCheckState }
+        });
+      }
     }
-
-    await syncDefaultHealthCheckTarget(prisma, previousResource, resource);
 
     return prisma.resource.findUniqueOrThrow({ where: { id }, include: { healthChecks: true, group: true } });
   });
@@ -1229,7 +1312,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return check;
   });
 
-  app.patch("/api/health-checks/:id", async (request) => {
+  app.patch("/api/health-checks/:id", async (request, reply) => {
     const id = routeId(request);
     const body = healthCheckPatchSchema.parse(request.body);
     const previousCheck = await prisma.healthCheck.findUniqueOrThrow({
@@ -1244,6 +1327,10 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
         enabled: true
       }
     });
+    const nextType = body.type ?? previousCheck.type;
+    const nextTarget = body.target ?? previousCheck.target;
+    const targetError = validateHealthCheckTarget(nextType, nextTarget);
+    if (targetError) return reply.code(400).send({ error: targetError });
     const resetState = shouldResetHealthCheckAfterPatch(previousCheck, body);
 
     return prisma.healthCheck.update({
@@ -1259,20 +1346,35 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return { ok: true };
   });
 
-  app.post("/api/health-checks/:id/run", async (request) => {
+  app.post("/api/health-checks/:id/run", async (request, reply) => {
     const id = routeId(request);
     const check = await prisma.healthCheck.findUniqueOrThrow({ where: { id }, include: { resource: true } });
 
     if (check.resource.monitoringMode === "manual" || check.resource.monitoringMode === "disabled") {
-      return {
-        id,
-        status: check.resource.manualStatus ?? "unknown",
-        error: "Monitoring is not set to automatic for this service."
-      };
+      return reply.code(409).send({ error: "Monitoring is not set to automatic for this service." });
     }
+
+    if (!check.enabled) return reply.code(409).send({ error: "Health check is disabled" });
 
     const outcome = await runHealthCheck(prisma, check);
     return { id, ...outcome };
+  });
+
+  app.post("/api/resources/:id/run", async (request, reply) => {
+    const id = routeId(request);
+    const resource = await prisma.resource.findUniqueOrThrow({ where: { id }, include: { healthChecks: true } });
+    if (resource.monitoringMode !== "auto") {
+      return reply.code(409).send({ error: "Monitoring is not set to automatic for this service." });
+    }
+    const checks = resource.healthChecks.filter((check) => check.enabled);
+    if (checks.length === 0) return reply.code(409).send({ error: "No enabled health checks are available" });
+    const outcomes: Array<{ id: string; status: string; latencyMs?: number; error?: string }> = [];
+    for (let index = 0; index < checks.length; index += 8) {
+      outcomes.push(...await Promise.all(
+        checks.slice(index, index + 8).map(async (check) => ({ id: check.id, ...(await runHealthCheck(prisma, check)) }))
+      ));
+    }
+    return { id, outcomes };
   });
 
   let stopScheduler: (() => void) | undefined;
@@ -1288,7 +1390,6 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     integrationScheduler.enabled = isOpnsenseConfigured(env.opnsense);
     apiWidgetScheduler.enabled = true;
     aiScheduler.enabled = env.ai.configured;
-    await syncAutoHealthCheckTargets(prisma);
     await syncConfiguredIntegrationSources(prisma, env.opnsense);
     stopScheduler = startHealthScheduler(prisma, healthScheduler.intervalMs, (update) => applySchedulerUpdate(healthScheduler, update));
     stopMetricsScheduler = startMetricsScheduler(
@@ -1308,7 +1409,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     stopApiWidgetScheduler = startApiWidgetScheduler(
       prisma,
       apiWidgetScheduler.intervalMs,
-      (update) => applySchedulerUpdate(apiWidgetScheduler, update)
+      (update) => applySchedulerUpdate(apiWidgetScheduler, update),
+      env.apiWidgetSecretAllowlist
     );
     if (aiScheduler.enabled) {
       stopAiBriefingScheduler = startAiBriefingScheduler(

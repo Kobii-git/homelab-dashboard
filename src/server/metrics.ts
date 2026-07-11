@@ -1,10 +1,12 @@
 import type { HostMetricSample, HostMonitor, PrismaClient } from "@prisma/client";
 import type { HostMonitorDto } from "../shared/types.js";
 import type { SchedulerUpdate } from "./healthChecks.js";
+import { boundedJsonRequest } from "./httpJson.js";
 
 const SAMPLE_RETENTION = 1440;
 const DEFAULT_SAMPLE_INTERVAL_MS = 60_000;
 const DEFAULT_TIMEOUT_MS = 5000;
+const MAX_RESPONSE_BYTES = 2_000_000;
 
 type GlancesOutcome = {
   status: "online" | "offline";
@@ -80,18 +82,12 @@ function glancesUrl(baseUrl: string, endpoint: string): string {
 }
 
 async function fetchJson(baseUrl: string, endpoint: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<unknown> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(glancesUrl(baseUrl, endpoint), { signal: controller.signal });
-    if (!response.ok) {
-      throw new Error(`Glances ${endpoint} returned HTTP ${response.status}`);
-    }
-    return response.json() as Promise<unknown>;
-  } finally {
-    clearTimeout(timeout);
-  }
+  return boundedJsonRequest(glancesUrl(baseUrl, endpoint), {
+    timeoutMs,
+    maxBytes: MAX_RESPONSE_BYTES,
+    tlsVerify: true,
+    label: `Glances ${endpoint}`
+  });
 }
 
 async function optionalFetch(baseUrl: string, endpoint: string): Promise<unknown | null> {
@@ -332,7 +328,9 @@ export function startMetricsScheduler(
       });
 
       observer?.({ lastDueCount: due.length });
-      await Promise.allSettled(due.map((monitor) => runHostMetricSample(prisma, monitor)));
+      for (let index = 0; index < due.length; index += 8) {
+        await Promise.allSettled(due.slice(index, index + 8).map((monitor) => runHostMetricSample(prisma, monitor)));
+      }
       observer?.({
         running: false,
         lastCompletedAt: new Date(),

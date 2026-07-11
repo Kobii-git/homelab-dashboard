@@ -1,6 +1,6 @@
 services:
   dashboard:
-    image: 10.0.21.40:3000/kobus/homelabdashboard:latest
+    image: ghcr.io/kobus/homelabdashboard:latest
     container_name: homelab-dashboard
     restart: unless-stopped
     environment:
@@ -26,12 +26,20 @@ services:
       # AI_BRIEFING_INTERVAL_SECONDS: "21600"
       # AI_INCLUDE_TARGETS: "false"
       # Optional API widget secrets, referenced by widget config:
+      # API_WIDGET_SECRET_ALLOWLIST: MY_CUSTOM_WIDGET_TOKEN
       # HOME_ASSISTANT_TOKEN: your-long-lived-token
       # SONARR_API_KEY: your-api-key
     ports:
       - "4173:4173"
     volumes:
       - homelab-dashboard-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   homelab-dashboard-data:

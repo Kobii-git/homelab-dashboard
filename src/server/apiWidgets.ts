@@ -1,5 +1,3 @@
-import http from "node:http";
-import https from "node:https";
 import { Prisma, type ApiWidget, type ApiWidgetSample, type PrismaClient, type Resource } from "@prisma/client";
 import type {
   ApiWidgetDto,
@@ -11,6 +9,7 @@ import type {
   HealthStatus
 } from "../shared/types.js";
 import type { SchedulerUpdate } from "./healthChecks.js";
+import { boundedJsonRequest } from "./httpJson.js";
 
 export const API_WIDGET_SAMPLE_RETENTION = 1440;
 
@@ -208,6 +207,31 @@ export const apiWidgetTemplates: ApiWidgetTemplateDto[] = [
     ]
   }
 ];
+
+const BUILT_IN_SECRET_NAMES = new Set(
+  apiWidgetTemplates.flatMap((template) => template.authEnvVarHint ? [template.authEnvVarHint] : [])
+);
+const HTTP_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+const FORBIDDEN_HEADERS = new Set([
+  "connection", "content-length", "cookie", "host", "keep-alive", "proxy-authenticate",
+  "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"
+]);
+
+export function isApiWidgetSecretAllowed(name: string | null | undefined, allowlist: readonly string[]): boolean {
+  return !name || BUILT_IN_SECRET_NAMES.has(name) || allowlist.includes(name);
+}
+
+function assertSafeWidgetConfiguration(widget: Pick<ApiWidget, "authEnvVar" | "authHeaderName">, allowlist: readonly string[]) {
+  if (!isApiWidgetSecretAllowed(widget.authEnvVar, allowlist)) {
+    throw new Error("API widget secret environment variable is not allowlisted");
+  }
+  if (widget.authHeaderName) {
+    const lower = widget.authHeaderName.toLowerCase();
+    if (!HTTP_TOKEN.test(widget.authHeaderName) || FORBIDDEN_HEADERS.has(lower) || lower.startsWith("proxy-")) {
+      throw new Error("API widget header name is not permitted");
+    }
+  }
+}
 
 const suggestionTemplateAliases: Array<{ templateId: string; aliases: string[] }> = [
   { templateId: "home-assistant", aliases: ["home assistant", "homeassistant", "home-assistant", "hass"] },
@@ -435,60 +459,19 @@ function buildUrl(baseUrl: string, endpointPath: string): URL {
 
 async function requestJson(baseUrl: string, endpointPath: string, options: RequestOptions = {}): Promise<unknown> {
   const url = buildUrl(baseUrl, endpointPath);
-  const transport = url.protocol === "https:" ? https : http;
-  const body = options.body === undefined ? null : JSON.stringify(options.body);
-
-  return new Promise((resolve, reject) => {
-    const request = transport.request(
-      url,
-      {
-        method: options.method ?? "GET",
-        headers: {
-          Accept: "application/json",
-          ...(body ? { "Content-Type": "application/json", "Content-Length": String(Buffer.byteLength(body)) } : {}),
-          ...(options.headers ?? {})
-        },
-        rejectUnauthorized: options.tlsVerify ?? true
-      },
-      (response) => {
-        let responseBody = "";
-        let size = 0;
-        response.setEncoding("utf8");
-        response.on("data", (chunk: string) => {
-          size += Buffer.byteLength(chunk);
-          if (size > MAX_RESPONSE_BYTES) {
-            request.destroy(new Error("API widget response was too large"));
-            return;
-          }
-          responseBody += chunk;
-        });
-
-        response.on("end", () => {
-          const statusCode = response.statusCode ?? 0;
-          if (statusCode < 200 || statusCode >= 300) {
-            reject(new Error(`API widget returned HTTP ${statusCode}`));
-            return;
-          }
-
-          try {
-            resolve(responseBody ? JSON.parse(responseBody) : {});
-          } catch {
-            reject(new Error("API widget returned invalid JSON"));
-          }
-        });
-      }
-    );
-
-    request.setTimeout(REQUEST_TIMEOUT_MS, () => {
-      request.destroy(new Error(`API widget timed out after ${REQUEST_TIMEOUT_MS} ms`));
-    });
-    request.on("error", (error) => reject(error));
-    if (body) request.write(body);
-    request.end();
+  return boundedJsonRequest(url, {
+    method: options.method,
+    body: options.body,
+    headers: options.headers,
+    tlsVerify: options.tlsVerify,
+    timeoutMs: REQUEST_TIMEOUT_MS,
+    maxBytes: MAX_RESPONSE_BYTES,
+    label: "API widget"
   });
 }
 
-function authHeaders(widget: ApiWidget): Record<string, string> {
+function authHeaders(widget: ApiWidget, allowlist: readonly string[]): Record<string, string> {
+  assertSafeWidgetConfiguration(widget, allowlist);
   if (widget.authType === "none" || widget.authType === "pihole") return {};
   if (!widget.authEnvVar) throw new Error("API widget auth env var is not configured");
   const secret = process.env[widget.authEnvVar];
@@ -504,10 +487,11 @@ function authHeaders(widget: ApiWidget): Record<string, string> {
   return { [header]: `${widget.authValuePrefix ?? ""}${secret}` };
 }
 
-async function requestWidgetData(widget: ApiWidget): Promise<unknown> {
+async function requestWidgetData(widget: ApiWidget, allowlist: readonly string[]): Promise<unknown> {
+  assertSafeWidgetConfiguration(widget, allowlist);
   if (widget.authType !== "pihole") {
     return requestJson(widget.baseUrl, widget.endpointPath, {
-      headers: authHeaders(widget),
+      headers: authHeaders(widget, allowlist),
       tlsVerify: widget.tlsVerify
     });
   }
@@ -570,9 +554,9 @@ function buildSnapshot(widget: ApiWidget, raw: unknown): ApiWidgetSnapshotDto {
   };
 }
 
-export async function collectApiWidgetSnapshot(widget: ApiWidget): Promise<ApiWidgetOutcome> {
+export async function collectApiWidgetSnapshot(widget: ApiWidget, allowlist: readonly string[] = []): Promise<ApiWidgetOutcome> {
   try {
-    const raw = await requestWidgetData(widget);
+    const raw = await requestWidgetData(widget, allowlist);
     return {
       status: "online",
       snapshot: buildSnapshot(widget, raw)
@@ -585,8 +569,12 @@ export async function collectApiWidgetSnapshot(widget: ApiWidget): Promise<ApiWi
   }
 }
 
-export async function runApiWidgetSample(prisma: PrismaClient, widget: ApiWidget): Promise<ApiWidgetOutcome> {
-  const outcome = await collectApiWidgetSnapshot(widget);
+export async function runApiWidgetSample(
+  prisma: PrismaClient,
+  widget: ApiWidget,
+  allowlist: readonly string[] = []
+): Promise<ApiWidgetOutcome> {
+  const outcome = await collectApiWidgetSnapshot(widget, allowlist);
   const snapshotJson = outcome.snapshot
     ? outcome.snapshot as unknown as Prisma.InputJsonValue
     : Prisma.JsonNull;
@@ -668,7 +656,8 @@ export function toApiWidgetDto(widget: ApiWidgetWithSamples): ApiWidgetDto {
 export function startApiWidgetScheduler(
   prisma: PrismaClient,
   intervalMs = 15_000,
-  observer?: (update: SchedulerUpdate) => void
+  observer?: (update: SchedulerUpdate) => void,
+  allowlist: readonly string[] = []
 ): () => void {
   let running = false;
 
@@ -691,7 +680,9 @@ export function startApiWidgetScheduler(
       );
 
       observer?.({ lastDueCount: due.length });
-      await Promise.allSettled(due.map((widget) => runApiWidgetSample(prisma, widget)));
+      for (let index = 0; index < due.length; index += 8) {
+        await Promise.allSettled(due.slice(index, index + 8).map((widget) => runApiWidgetSample(prisma, widget, allowlist)));
+      }
       observer?.({
         running: false,
         lastCompletedAt: new Date(),

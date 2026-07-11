@@ -27,25 +27,12 @@ export async function testTcpReachable(host: string, port: number, timeoutMs = 3
 }
 
 function parseSslTarget(target: string): { host: string; port: number; servername: string } {
-  if (target.includes("://")) {
-    const url = new URL(target);
-    return {
-      host: url.hostname,
-      port: Number(url.port || 443),
-      servername: url.hostname
-    };
-  }
-
-  const [host, portValue] = target.split(":");
-  if (!host) {
+  const url = new URL(target.includes("://") ? target : `https://${target}`);
+  const port = Number(url.port || 443);
+  if (!url.hostname || !Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error("SSL target must be a URL or host:port");
   }
-
-  return {
-    host,
-    port: portValue ? Number(portValue) : 443,
-    servername: host
-  };
+  return { host: url.hostname, port, servername: url.hostname };
 }
 
 export async function checkSslCertificate(target: string, timeoutMs: number): Promise<{

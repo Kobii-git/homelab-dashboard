@@ -13,7 +13,7 @@ import { apiGet, apiSend, type SystemSettingsDto } from "./lib/api";
 import { useAppChrome } from "./lib/appChrome";
 import { statusFor } from "./lib/format";
 import type { DashboardResource } from "../shared/types";
-import type { DashboardDto, HealthCheckDto } from "./lib/api";
+import type { DashboardDto } from "./lib/api";
 
 const navItems: Array<{ id: AppView; label: string; icon: React.ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
@@ -21,7 +21,7 @@ const navItems: Array<{ id: AppView; label: string; icon: React.ReactNode }> = [
   { id: "settings", label: "Admin", icon: <Settings size={18} /> }
 ];
 
-function LoginView({ onLogin }: { onLogin: () => void }) {
+function LoginView({ onLogin, message }: { onLogin: () => void; message: string | null }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +61,8 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
             value={username}
             onChange={(event) => setUsername(event.target.value)}
             placeholder="admin"
+            autoComplete="username"
+            name="username"
           />
         </label>
         <label>
@@ -69,8 +71,11 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
+            name="password"
           />
         </label>
+        {message ? <p className="form-notice" role="status">{message}</p> : null}
         {error ? <p className="form-error">{error}</p> : null}
         <button className="primary-button" type="submit" disabled={submitting}>
           {submitting ? <InlineSpinner size={16} /> : <Shield size={16} />} {submitting ? "Unlocking…" : "Unlock"}
@@ -85,20 +90,24 @@ function SetupScreen({
   loading,
   error,
   needsAccount,
+  needsSetupCode,
   onComplete
 }: {
   loading: boolean;
   error: string | null;
   needsAccount: boolean;
-  onComplete: (username: string | null, password: string | null, withDemo: boolean) => void;
+  needsSetupCode: boolean;
+  onComplete: (username: string | null, password: string | null, setupCode: string | null, withDemo: boolean) => void;
 }) {
   const [withDemo, setWithDemo] = useState(true);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [setupCode, setSetupCode] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
-  function submit() {
+  function submit(event: FormEvent) {
+    event.preventDefault();
     if (needsAccount) {
       if (!username) {
         setLocalError("Please choose a username.");
@@ -112,21 +121,25 @@ function SetupScreen({
         setLocalError("Passwords do not match.");
         return;
       }
-      if (password.length < 6) {
-        setLocalError("Password must be at least 6 characters.");
+      if (password.length < 12) {
+        setLocalError("Password must be at least 12 characters.");
         return;
       }
     }
+    if (needsSetupCode && !setupCode.trim()) {
+      setLocalError("Enter the one-time setup code shown in the server logs.");
+      return;
+    }
 
     setLocalError(null);
-    onComplete(needsAccount ? username : null, needsAccount ? password : null, withDemo);
+    onComplete(needsAccount ? username : null, needsAccount ? password : null, needsSetupCode ? setupCode : null, withDemo);
   }
 
   return (
     <main className="login-shell">
       <div className="login-orb login-orb-a" aria-hidden />
       <div className="login-orb login-orb-b" aria-hidden />
-      <div className="setup-panel">
+      <form className="setup-panel" onSubmit={submit}>
         <div className="brand-lock">
           <span className="brand-mark"><Gauge size={22} /></span>
           <div>
@@ -146,6 +159,8 @@ function SetupScreen({
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
                 placeholder="admin"
+                name="username"
+                autoComplete="username"
               />
             </label>
             <label>
@@ -154,7 +169,10 @@ function SetupScreen({
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="Minimum 6 characters"
+                placeholder="Minimum 12 characters"
+                name="password"
+                autoComplete="new-password"
+                minLength={12}
               />
             </label>
             <label>
@@ -164,13 +182,38 @@ function SetupScreen({
                 value={confirm}
                 onChange={(event) => setConfirm(event.target.value)}
                 placeholder="Repeat password"
+                name="confirmPassword"
+                autoComplete="new-password"
+                minLength={12}
               />
             </label>
+            {needsSetupCode ? (
+              <label>
+                One-time setup code
+                <input
+                  type="text"
+                  value={setupCode}
+                  onChange={(event) => setSetupCode(event.target.value.toUpperCase())}
+                  name="setupCode"
+                  autoComplete="one-time-code"
+                  inputMode="text"
+                  maxLength={20}
+                  placeholder="Shown in server logs"
+                  required
+                />
+              </label>
+            ) : null}
           </>
         ) : null}
 
-        <label className="toggle-row" onClick={() => setWithDemo((value) => !value)}>
-          <span className={`toggle-track ${withDemo ? "is-on" : ""}`}>
+        <label className="toggle-row">
+          <input
+            className="toggle-input"
+            type="checkbox"
+            checked={withDemo}
+            onChange={(event) => setWithDemo(event.target.checked)}
+          />
+          <span className={`toggle-track ${withDemo ? "is-on" : ""}`} aria-hidden="true">
             <span className="toggle-thumb" />
           </span>
           <span>
@@ -181,10 +224,10 @@ function SetupScreen({
 
         {(error ?? localError) ? <p className="form-error">{error ?? localError}</p> : null}
 
-        <button className="primary-button" type="button" disabled={loading} onClick={submit}>
+        <button className="primary-button" type="submit" disabled={loading}>
           {loading ? <InlineSpinner size={16} /> : <Gauge size={16} />} {loading ? "Starting…" : "Get started"}
         </button>
-      </div>
+      </form>
     </main>
   );
 }
@@ -229,7 +272,7 @@ function applyLocalOrder(current: AppData, orderedIds: string[]): AppData {
 
 export function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
-  const [setupStatus, setSetupStatus] = useState<{ firstRun: boolean; needsAccount: boolean } | null>(null);
+  const [setupStatus, setSetupStatus] = useState<{ firstRun: boolean; needsAccount: boolean; needsSetupCode: boolean } | null>(null);
   const [setupLoading, setSetupLoading] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   const [view, setView] = useState<AppView>("dashboard");
@@ -237,6 +280,8 @@ export function App() {
   const [systemSettings, setSystemSettings] = useState<SystemSettingsDto>({ autoPingIntervalSeconds: 60 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [sessionMessage, setSessionMessage] = useState<string | null>(null);
   const [username, setUsername] = useState("admin");
   const [authSource, setAuthSource] = useState<"env" | "database">("database");
   const { theme, toggleTheme, sidebarMode, cycleSidebar } = useAppChrome();
@@ -266,7 +311,7 @@ export function App() {
   async function checkAuth() {
     const [me, status] = await Promise.all([
       apiGet<{ authenticated: boolean; username?: string; authSource?: "env" | "database" }>("/api/auth/me"),
-      apiGet<{ firstRun: boolean; needsAccount: boolean }>("/api/setup/status")
+      apiGet<{ firstRun: boolean; needsAccount: boolean; needsSetupCode: boolean }>("/api/setup/status")
     ]);
     setAuthenticated(me.authenticated);
     if (me.username) setUsername(me.username);
@@ -277,7 +322,7 @@ export function App() {
     }
   }
 
-  async function completeSetup(usernameInput: string | null, password: string | null, withDemo: boolean) {
+  async function completeSetup(usernameInput: string | null, password: string | null, setupCode: string | null, withDemo: boolean) {
     setSetupLoading(true);
     setSetupError(null);
 
@@ -285,6 +330,7 @@ export function App() {
       await apiSend("/api/setup", "POST", {
         username: usernameInput ?? undefined,
         password: password ?? undefined,
+        setupCode: setupCode ?? undefined,
         seedDemo: withDemo
       });
       setSetupStatus(null);
@@ -310,7 +356,28 @@ export function App() {
   }
 
   useEffect(() => {
-    void checkAuth();
+    void checkAuth().catch((bootstrapFailure) => {
+      setBootstrapError(bootstrapFailure instanceof Error ? bootstrapFailure.message : "The dashboard could not start");
+    });
+  }, []);
+
+  useEffect(() => {
+    function onSessionExpired() {
+      setAuthenticated(false);
+      setSessionMessage("Your session expired or was invalidated. Sign in again to continue.");
+      setPaletteOpen(false);
+      setData(emptyAppData);
+    }
+    function onApiError(event: Event) {
+      const detail = (event as CustomEvent<string>).detail;
+      if (detail) setError(detail);
+    }
+    window.addEventListener("homelab:session-expired", onSessionExpired);
+    window.addEventListener("homelab:api-error", onApiError);
+    return () => {
+      window.removeEventListener("homelab:session-expired", onSessionExpired);
+      window.removeEventListener("homelab:api-error", onApiError);
+    };
   }, []);
 
   useEffect(() => {
@@ -370,8 +437,13 @@ export function App() {
   }, []);
 
   async function logout() {
-    await apiSend("/api/auth/logout", "POST");
-    setAuthenticated(false);
+    try {
+      await apiSend("/api/auth/logout", "POST");
+      setAuthenticated(false);
+      setSessionMessage("You have been signed out on all browsers.");
+    } catch (logoutError) {
+      setError(logoutError instanceof Error ? logoutError.message : "Logout failed");
+    }
   }
 
   async function patchResource(id: string, body: Record<string, unknown>) {
@@ -395,19 +467,33 @@ export function App() {
       });
     }
 
-    await apiSend(`/api/resources/${id}`, "PATCH", body);
-    await loadData();
+    try {
+      await apiSend(`/api/resources/${id}`, "PATCH", body);
+      await loadData();
+    } catch (patchError) {
+      await loadData();
+      setError(patchError instanceof Error ? patchError.message : "Service update failed");
+    }
   }
 
   async function patchGroup(id: string, body: Record<string, unknown>) {
-    await apiSend(`/api/groups/${id}`, "PATCH", body);
-    await loadData();
+    try {
+      await apiSend(`/api/groups/${id}`, "PATCH", body);
+      await loadData();
+    } catch (patchError) {
+      setError(patchError instanceof Error ? patchError.message : "Group update failed");
+    }
   }
 
   async function reorderResources(orderedIds: string[]) {
     setData((current) => applyLocalOrder(current, orderedIds));
-    await apiSend("/api/resources/reorder", "POST", { ids: orderedIds });
-    await loadData();
+    try {
+      await apiSend("/api/resources/reorder", "POST", { ids: orderedIds });
+      await loadData();
+    } catch (reorderError) {
+      await loadData();
+      setError(reorderError instanceof Error ? reorderError.message : "Reorder failed");
+    }
   }
 
   async function patchSystemSettings(next: SystemSettingsDto) {
@@ -434,34 +520,19 @@ export function App() {
       throw new Error("Set this service to automatic monitoring before running checks.");
     }
 
-    let checkId = resource.healthChecks?.[0]?.id;
-
-    if (!checkId) {
-      const url = resource.url?.trim();
-      const host = resource.host?.trim();
-      const target = url
-        ? (/^https?:\/\//i.test(url) ? url : `http://${url}`)
-        : host;
-
-      if (!target) {
-        throw new Error("Add a URL or host before running a health check.");
-      }
-
-      const created = await apiSend<HealthCheckDto>("/api/health-checks", "POST", {
-        resourceId: resource.id,
-        type: url ? "http" : "ping",
-        target,
-        intervalSeconds: systemSettings.autoPingIntervalSeconds,
-        timeoutMs: 3000,
-        failureThreshold: 1,
-        successThreshold: 1,
-        enabled: true
-      });
-      checkId = created.id;
-    }
-
-    await apiSend(`/api/health-checks/${checkId}/run`, "POST");
+    await apiSend(`/api/resources/${resource.id}/run`, "POST");
     await loadData();
+  }
+
+  function openResource(resource: DashboardResource) {
+    if (!resource.url) return;
+    try {
+      const target = new URL(resource.url, window.location.origin);
+      if (target.protocol !== "http:" && target.protocol !== "https:") throw new Error("Unsafe service URL");
+      window.open(target.toString(), "_blank", "noopener,noreferrer");
+    } catch {
+      setError(`The URL for ${resource.name} is not a safe HTTP/HTTPS address.`);
+    }
   }
 
   const paletteCommands: PaletteCommand[] = [
@@ -483,6 +554,27 @@ export function App() {
     }
   ];
 
+  if ((authenticated === null || setupStatus === null) && bootstrapError) {
+    return (
+      <main className="loading-screen bootstrap-error-screen">
+        <div className="login-panel">
+          <h1>Dashboard unavailable</h1>
+          <p className="form-error">{bootstrapError}</p>
+          <button
+            className="primary-button"
+            type="button"
+            onClick={() => {
+              setBootstrapError(null);
+              void checkAuth().catch((failure) => setBootstrapError(failure instanceof Error ? failure.message : "Retry failed"));
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   if (authenticated === null || setupStatus === null) {
     return <div className="loading-screen">Loading</div>;
   }
@@ -493,13 +585,17 @@ export function App() {
         loading={setupLoading}
         error={setupError}
         needsAccount
+        needsSetupCode={setupStatus.needsSetupCode}
         onComplete={completeSetup}
       />
     );
   }
 
   if (!authenticated) {
-    return <LoginView onLogin={() => void checkAuth()} />;
+    return <LoginView message={sessionMessage} onLogin={() => {
+      setSessionMessage(null);
+      void checkAuth();
+    }} />;
   }
 
   if (setupStatus.firstRun) {
@@ -508,6 +604,7 @@ export function App() {
         loading={setupLoading}
         error={setupError}
         needsAccount={false}
+        needsSetupCode={false}
         onComplete={completeSetup}
       />
     );
@@ -583,7 +680,7 @@ export function App() {
         commands={paletteCommands}
         onLaunch={(resource) => {
           if (resource.url) {
-            window.open(resource.url, "_blank", "noopener,noreferrer");
+            openResource(resource);
           } else {
             setView("dashboard");
           }

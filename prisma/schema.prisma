@@ -51,6 +51,7 @@ model HealthCheck {
   intervalSeconds Int            @default(60)
   timeoutMs       Int            @default(3000)
   enabled         Boolean        @default(true)
+  managed         Boolean        @default(false)
   latestStatus    String         @default("unknown")
   latestLatencyMs Int?
   latestCheckedAt DateTime?

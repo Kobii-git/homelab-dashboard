@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { DashboardResource } from "../../shared/types";
 import { serviceAddress, statusFor } from "../lib/format";
 import { ServiceIcon } from "./ServiceIcon";
+import { ModalSurface } from "./ModalSurface";
 
 export type PaletteCommand = {
   id: string;
@@ -58,8 +59,6 @@ export function CommandPalette({
     if (open) {
       setQuery("");
       setActive(0);
-      const timer = window.setTimeout(() => inputRef.current?.focus(), 10);
-      return () => window.clearTimeout(timer);
     }
   }, [open]);
 
@@ -104,8 +103,13 @@ export function CommandPalette({
   }
 
   return (
-    <div className="palette-backdrop" onMouseDown={onClose}>
-      <div className="command-palette" onMouseDown={(event) => event.stopPropagation()}>
+    <ModalSurface
+      ariaLabel="Command palette"
+      backdropClassName="palette-backdrop"
+      className="command-palette"
+      initialFocusRef={inputRef}
+      onClose={onClose}
+    >
         <div className="palette-input">
           <Search size={17} />
           <input
@@ -162,7 +166,6 @@ export function CommandPalette({
           })}
           {items.length === 0 ? <p className="muted-copy palette-empty">No matches.</p> : null}
         </div>
-      </div>
-    </div>
+    </ModalSurface>
   );
 }

@@ -22,13 +22,14 @@ import {
   Thermometer,
   X
 } from "lucide-react";
-import type { DragEvent, KeyboardEvent, ReactNode } from "react";
+import type { DragEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { AiBriefingActionDto, AiBriefingDto, ApiWidgetDto, DashboardResource, HostMetricSampleDto, HostMonitorDto, IntegrationSampleDto, IntegrationSourceDto, OpnsenseSnapshotDto } from "../../../shared/types";
 import { EmptyPanel, StatusBadge } from "../../components/Primitives";
 import { Heartbeat } from "../../components/Heartbeat";
 import { ServiceDrawer } from "../../components/ServiceDrawer";
 import { ServiceIcon } from "../../components/ServiceIcon";
+import { ModalSurface } from "../../components/ModalSurface";
 import {
   dashboardResources,
   formatByteRate,
@@ -144,18 +145,11 @@ function HostVitalsCard({ host, onInspect }: { host: HostMonitorDto; onInspect: 
   const networkTotal = (host.latestNetworkRxBytesPerSec ?? 0) + (host.latestNetworkTxBytesPerSec ?? 0);
 
   return (
-    <article
+    <button
       className={`host-card host-${status}`}
-      role="button"
-      tabIndex={0}
+      type="button"
       title={`Inspect ${host.name} metrics`}
       onClick={() => onInspect(host)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          onInspect(host);
-        }
-      }}
     >
       <header className="host-card-head">
         <span className="host-icon"><Server size={18} /></span>
@@ -196,7 +190,7 @@ function HostVitalsCard({ host, onInspect }: { host: HostMonitorDto; onInspect: 
       </footer>
 
       {status === "offline" && host.latestError ? <p className="host-error">{host.latestError}</p> : null}
-    </article>
+    </button>
   );
 }
 
@@ -239,21 +233,13 @@ function HostDetailDrawer({
   const oldest = samples[0];
   const networkTotal = (host.latestNetworkRxBytesPerSec ?? 0) + (host.latestNetworkTxBytesPerSec ?? 0);
 
-  useEffect(() => {
-    function onKey(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   return (
-    <>
-      <div className="drawer-backdrop" onMouseDown={onClose} />
-      <aside className="service-drawer host-detail-drawer" role="dialog" aria-label={`${host.name} host metrics`}>
+    <ModalSurface
+      backdropClassName="drawer-backdrop"
+      className="service-drawer host-detail-drawer"
+      ariaLabel={`${host.name} host metrics`}
+      onClose={onClose}
+    >
         <header className="drawer-head">
           <span className="host-icon"><Server size={20} /></span>
           <div className="drawer-title">
@@ -261,7 +247,7 @@ function HostDetailDrawer({
             <small>{host.baseUrl}</small>
           </div>
           <StatusBadge status={host.latestStatus} />
-          <button className="icon-button drawer-close" type="button" title="Close" onClick={onClose}>
+          <button className="icon-button drawer-close" type="button" aria-label={`Close ${host.name} host metrics`} onClick={onClose}>
             <X size={16} />
           </button>
         </header>
@@ -310,8 +296,7 @@ function HostDetailDrawer({
           </div>
           {host.latestError ? <p className="drawer-check-error">{host.latestError}</p> : null}
         </section>
-      </aside>
-    </>
+    </ModalSurface>
   );
 }
 
@@ -377,18 +362,11 @@ function IntegrationCard({
   const detailStatus = gatewaysOffline > 0 ? "offline" : source.status;
 
   return (
-    <article
+    <button
       className={`host-card integration-card host-${detailStatus}`}
-      role="button"
-      tabIndex={0}
+      type="button"
       title={`Inspect ${source.name} integration`}
       onClick={() => onInspect(source)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          onInspect(source);
-        }
-      }}
     >
       <header className="host-card-head">
         <span className="host-icon integration-icon"><ShieldCheck size={18} /></span>
@@ -420,7 +398,7 @@ function IntegrationCard({
 
       {source.latestError ? <p className="host-error">{source.latestError}</p> : null}
       {!source.latestSnapshot && source.status === "unknown" ? <p className="host-error">No OPNsense sample collected yet.</p> : null}
-    </article>
+    </button>
   );
 }
 
@@ -442,21 +420,13 @@ function IntegrationDetailDrawer({
   const networkTotal = latestNetworkRate(snapshot);
   const gatewaysOffline = snapshot?.gateways.filter((gateway) => gateway.status === "offline").length ?? 0;
 
-  useEffect(() => {
-    function onKey(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   return (
-    <>
-      <div className="drawer-backdrop" onMouseDown={onClose} />
-      <aside className="service-drawer host-detail-drawer integration-detail-drawer" role="dialog" aria-label={`${source.name} integration`}>
+    <ModalSurface
+      backdropClassName="drawer-backdrop"
+      className="service-drawer host-detail-drawer integration-detail-drawer"
+      ariaLabel={`${source.name} integration`}
+      onClose={onClose}
+    >
         <header className="drawer-head">
           <span className="host-icon integration-icon"><ShieldCheck size={20} /></span>
           <div className="drawer-title">
@@ -464,7 +434,7 @@ function IntegrationDetailDrawer({
             <small>{source.baseUrl}</small>
           </div>
           <StatusBadge status={source.status} />
-          <button className="icon-button drawer-close" type="button" title="Close" onClick={onClose}>
+          <button className="icon-button drawer-close" type="button" aria-label={`Close ${source.name} integration details`} onClick={onClose}>
             <X size={16} />
           </button>
         </header>
@@ -566,8 +536,7 @@ function IntegrationDetailDrawer({
             {snapshot.warnings.slice(0, 5).map((warning) => <p className="drawer-check-error" key={warning}>{warning}</p>)}
           </section>
         ) : null}
-      </aside>
-    </>
+    </ModalSurface>
   );
 }
 
@@ -719,48 +688,42 @@ function ServiceCard({
     }
   }
 
-  function onKeyDown(event: KeyboardEvent) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      activate();
-    }
-  }
-
   return (
     <article
       className={`svc-card svc-${status} ${dragging ? "is-dragging" : ""}`}
-      role="button"
-      tabIndex={0}
-      title={resource.url ? `Open ${resource.name}` : `Inspect ${resource.name}`}
       draggable={draggable}
-      onClick={activate}
-      onKeyDown={onKeyDown}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
     >
-      <header className="svc-top">
-        <ServiceIcon resource={resource} size={density === "grid" ? 40 : 30} />
-        <div className="svc-name">
-          <strong>{resource.name}</strong>
-          <small>{serviceAddress(resource)}</small>
-        </div>
-        <span className={`svc-dot dot-${status}`} title={status} />
-      </header>
-
-      <Heartbeat ticks={ticks} slots={density === "grid" ? 22 : 16} className="svc-heartbeat" />
+      <button
+        className="svc-primary"
+        type="button"
+        title={resource.url ? `Open ${resource.name}` : `Inspect ${resource.name}`}
+        onClick={activate}
+      >
+        <header className="svc-top">
+          <ServiceIcon resource={resource} size={density === "grid" ? 40 : 30} />
+          <span className="svc-name">
+            <strong>{resource.name}</strong>
+            <small>{serviceAddress(resource)}</small>
+          </span>
+          <span className={`svc-dot dot-${status}`} title={status} />
+        </header>
+        <Heartbeat ticks={ticks} slots={density === "grid" ? 22 : 16} className="svc-heartbeat" />
+      </button>
 
       <footer className="svc-meta">
         <span className="svc-stat" title="Uptime across recent checks">{formatUptime(uptime)}</span>
         <span className="svc-stat" title="Latest latency">{monitoringLabel(resource)}</span>
         <span className="svc-stat svc-when" title="Last checked">{relativeTime(checked)}</span>
 
-        <span className="svc-actions" onClick={(event) => event.stopPropagation()}>
+        <span className="svc-actions">
           <button
             className={`svc-action ${resource.favorite ? "is-active" : ""}`}
             type="button"
-            title={resource.favorite ? "Remove favorite" : "Favorite"}
+            aria-label={resource.favorite ? `Remove ${resource.name} from favorites` : `Add ${resource.name} to favorites`}
             onClick={() => onFavorite(resource)}
           >
             <Star size={14} fill={resource.favorite ? "currentColor" : "none"} />
@@ -769,18 +732,18 @@ function ServiceCard({
             <button
               className="svc-action"
               type="button"
-              title="Run health check now"
+              aria-label={`Run all enabled health checks for ${resource.name}`}
               disabled={checking || (!resource.url && !resource.host)}
               onClick={() => onRunCheck(resource)}
             >
               <RefreshCw size={14} className={checking ? "spin" : ""} />
             </button>
           ) : null}
-          <button className="svc-action" type="button" title="Details" onClick={() => onInspect(resource)}>
+          <button className="svc-action" type="button" aria-label={`Show details for ${resource.name}`} onClick={() => onInspect(resource)}>
             <Info size={14} />
           </button>
           {resource.url ? (
-            <button className="svc-action" type="button" title="Open in new tab" onClick={() => onOpen(resource)}>
+            <button className="svc-action" type="button" aria-label={`Open ${resource.name} in a new tab`} onClick={() => onOpen(resource)}>
               <ExternalLink size={14} />
             </button>
           ) : null}
@@ -967,8 +930,13 @@ export function DashboardConsole({
   }, [inspectedIntegrationId]);
 
   function openResource(resource: DashboardResource) {
-    if (resource.url) {
-      window.open(resource.url, "_blank", "noopener,noreferrer");
+    if (!resource.url) return;
+    try {
+      const target = new URL(resource.url, window.location.origin);
+      if (target.protocol !== "http:" && target.protocol !== "https:") throw new Error("Unsafe URL");
+      window.open(target.toString(), "_blank", "noopener,noreferrer");
+    } catch {
+      setCheckError(`The URL for ${resource.name} is not a safe HTTP/HTTPS address.`);
     }
   }
 

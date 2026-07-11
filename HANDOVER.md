@@ -2,8 +2,8 @@
 
 This document captures the current state of the project so the next session can continue without rediscovering the shape of the app.
 
-- **Repo:** http://10.0.21.40:3000/kobus/homelabdashboard
-- **Image:** `10.0.21.40:3000/kobus/homelabdashboard`
+- **Repo:** https://github.com/kobus/homelabdashboard
+- **Image:** `ghcr.io/kobus/homelabdashboard`
 - **Current version:** `0.8.0`
 - **Port:** `4173`
 - **Current branch:** `main`
@@ -23,7 +23,7 @@ The current product is deliberately not a remote-management platform. SSH, RDP, 
 | Frontend | React 19 + Vite + TypeScript (`src/client/`) |
 | Backend | Fastify 5 + Zod + TypeScript (`src/server/`) |
 | Database | SQLite via Prisma (`prisma/schema.prisma`) |
-| Deploy | Docker Compose / Forgejo package registry |
+| Deploy | Docker Compose / GHCR |
 
 ---
 
@@ -52,12 +52,7 @@ Schema cleanup in `0.5.0` removes old pro-console models: widgets, layout, tags,
 
 ### Pull The Prebuilt Image
 
-The image is private, so authenticate once on the Docker host:
-
-This Forgejo registry is currently LAN HTTP, so each Docker host must trust `10.0.21.40:3000` as an insecure registry before login/pull unless Forgejo is moved behind HTTPS.
-
 ```sh
-echo <FORGEJO_TOKEN_with_package_read> | docker login 10.0.21.40:3000 -u kobus --password-stdin
 docker compose pull
 docker compose up -d --force-recreate
 ```
@@ -72,11 +67,11 @@ docker compose -f docker-compose.build.yml up -d --build --force-recreate
 
 Data lives in the named Docker volume `homelab-dashboard-data`. It survives container removal, image updates, and rebuilds. It is only destroyed by `docker compose down -v` or deleting the volume.
 
-On startup, Docker creates `/data/homelab.before-v0.5-schema.db` once before Prisma applies the simplified schema with `--accept-data-loss`. That backup is specifically for users upgrading from the older V2/pro-console shape.
+The image runs as the unprivileged `node` user. Compose drops Linux capabilities, enables `no-new-privileges`, uses a read-only root filesystem, and keeps SQLite writable only under `/data`.
 
 ### First Run
 
-On first visit, the setup screen creates the single admin account and optionally loads demo services and health checks.
+Without `ADMIN_PASSWORD`, startup prints a new 12-character one-time setup code. The setup screen requires that code and a 12–256 character password before creating the single admin account.
 
 Optional env vars:
 
@@ -116,7 +111,7 @@ AI_BRIEFING_INTERVAL_SECONDS: "21600"
 AI_INCLUDE_TARGETS: "false"
 ```
 
-Optional API widgets can reference arbitrary env var names for secrets, for example:
+API widgets may use built-in template secret names. Custom names must also be listed in `API_WIDGET_SECRET_ALLOWLIST`:
 
 ```yaml
 HOME_ASSISTANT_TOKEN: long-lived-token
@@ -125,6 +120,7 @@ ADGUARD_BASIC_AUTH: username:password
 PIHOLE_PASSWORD: password
 SONARR_API_KEY: api-key
 RADARR_API_KEY: api-key
+API_WIDGET_SECRET_ALLOWLIST: MY_CUSTOM_WIDGET_TOKEN
 ```
 
 ---
@@ -142,7 +138,7 @@ RADARR_API_KEY: api-key
 - Service cards open saved URLs in a new tab.
 - Favorite stars update optimistically.
 - Status and latency chips run the service health check.
-- If a service has no health check, the dashboard creates a default HTTP or ping check from its URL or host.
+- A managed default check is created only with a new automatic service or an explicit transition to automatic monitoring. Paused or deleted defaults remain paused or deleted.
 - Filters: all, favorites, online, offline, unknown.
 - Group sections can be collapsed.
 
@@ -175,16 +171,18 @@ RADARR_API_KEY: api-key
 ## Auth And Runtime Notes
 
 - Single admin only.
-- `ADMIN_PASSWORD` env var still works and bypasses web account creation.
+- `ADMIN_PASSWORD` bypasses web account creation. Otherwise startup requires the one-time setup code.
 - Otherwise an `AdminAccount` row stores the admin username and password hash.
 - `COOKIE_SECURE=false` by default because the target deployment is plain HTTP on a private LAN. Set it to `true` only behind HTTPS.
 - Public unauthenticated routes are limited to login/setup/version/health/status style endpoints.
-- Protected API routes require the session cookie.
+- Sessions are unique signed tokens with a 30-day server-enforced expiry. Logout and password change invalidate every browser for the single admin.
+- Browser mutations require matching origin/fetch metadata; trusted CLI requests without browser origin headers remain supported.
 - `GET /api/admin/runtime` is authenticated and intentionally avoids secret env values.
 - `GET /api/metrics/hosts/:id` is authenticated and returns up to 1,440 recent host samples for the detail drawer.
 - `GET /api/integrations/:id` is authenticated and returns up to 1,440 recent integration samples for the detail drawer.
 - OPNsense credentials live only in environment variables; SQLite stores source metadata and normalized snapshots, never the API key or secret.
-- API widgets only perform read-only JSON GETs. Widget secrets are referenced by environment variable name and are not stored in SQLite.
+- API widgets only perform read-only JSON requests. Widget secrets are referenced by allowlisted environment variable name and are not stored in SQLite.
+- Public `/api/status` resources contain only name, status, uptime percentage, and heartbeat ticks; URLs, hosts, targets, errors, IDs, and latency stay private.
 - AI provider settings are env-backed. `AI_API_KEY` is never stored in SQLite or returned by runtime diagnostics.
 - AI Command Briefing uses sanitized dashboard evidence, redacts service URLs/IPs/check targets by default, caches only the latest briefing in `SystemConfig`, and is never exposed on the public `/status` page.
 - Built-in API widget templates cover Home Assistant, Proxmox VE, Portainer, AdGuard Home, Pi-hole v6, Jellyfin, Grafana, Prometheus, Sonarr, and Radarr; `/api/api-widget-suggestions` matches existing service catalog entries to those templates.

@@ -38,6 +38,7 @@ export type DashboardResource = {
     intervalSeconds: number;
     timeoutMs: number;
     enabled: boolean;
+    managed: boolean;
     latestStatus: HealthStatus;
     latestLatencyMs: number | null;
     latestCheckedAt: string | null;

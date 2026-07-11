@@ -6,7 +6,6 @@ import {
   Star,
   X
 } from "lucide-react";
-import { useEffect } from "react";
 import type { DashboardResource } from "../../shared/types";
 import {
   formatDateTime,
@@ -23,6 +22,7 @@ import { Heartbeat } from "./Heartbeat";
 import { ServiceIcon } from "./ServiceIcon";
 import { Sparkline } from "./Sparkline";
 import { StatusBadge } from "./Primitives";
+import { ModalSurface } from "./ModalSurface";
 
 export function ServiceDrawer({
   resource,
@@ -41,17 +41,6 @@ export function ServiceDrawer({
   onRunCheck: (resource: DashboardResource) => void;
   onEdit: (resource: DashboardResource) => void;
 }) {
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   const status = statusFor(resource);
   const ticks = resourceTicks(resource, 48);
   const uptime = uptimePercent(resource);
@@ -61,9 +50,12 @@ export function ServiceDrawer({
   const automatic = resource.monitoringMode === "auto";
 
   return (
-    <>
-      <div className="drawer-backdrop" onMouseDown={onClose} />
-      <aside className="service-drawer" role="dialog" aria-label={`${resource.name} details`}>
+    <ModalSurface
+      backdropClassName="drawer-backdrop"
+      className="service-drawer"
+      ariaLabel={`${resource.name} details`}
+      onClose={onClose}
+    >
         <header className="drawer-head">
           <ServiceIcon resource={resource} size={44} />
           <div className="drawer-title">
@@ -71,7 +63,7 @@ export function ServiceDrawer({
             <small>{serviceAddress(resource)}</small>
           </div>
           <StatusBadge status={status} />
-          <button className="icon-button drawer-close" type="button" title="Close" onClick={onClose}>
+          <button className="icon-button drawer-close" type="button" aria-label={`Close ${resource.name} details`} onClick={onClose}>
             <X size={16} />
           </button>
         </header>
@@ -161,7 +153,6 @@ export function ServiceDrawer({
             <p className="muted-copy">{resource.description}</p>
           </section>
         ) : null}
-      </aside>
-    </>
+    </ModalSurface>
   );
 }

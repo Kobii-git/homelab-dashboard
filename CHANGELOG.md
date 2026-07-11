@@ -9,6 +9,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## Unreleased
 
 ### Added
+- One-time bootstrap-code protection for database-backed first-run setup.
+- Managed default health checks and resource-level execution of every enabled check.
+- Chromium/axe UI regression coverage plus production/full-tree audit gates.
 - Read-only OPNsense integration with env-backed credentials, allowlisted API
   polling, normalized snapshot history, dashboard cards, Admin status/testing,
   and confirmed Services import suggestions.
@@ -22,6 +25,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Optional AI Command Briefing with env-backed OpenAI-compatible provider
   settings, sanitized dashboard evidence, cached output in `SystemConfig`,
   Dashboard panel, Admin runtime state, and scheduler diagnostics.
+
+### Changed
+- Password storage now uses asynchronous scrypt with legacy PBKDF2 rehashing.
+- Sessions now have unique nonces, server-enforced expiry, credential binding,
+  and global invalidation on logout or password change.
+- Public status resources now expose only name, status, uptime, and heartbeat ticks.
+- API widget secrets require a built-in name or `API_WIDGET_SECRET_ALLOWLIST` entry.
+- Outbound JSON polling is bounded, redirect-free, and TLS verification now applies to AI requests.
+- The runtime container is non-root with a read-only root filesystem and no Linux capabilities.
+
+### Fixed
+- Paused/deleted generated checks no longer resume or reappear during edits or startup.
+- Mobile navigation, service-row action wrapping, nested interactive cards, modal focus handling,
+  setup form accessibility, bootstrap failure recovery, session expiry, and unknown status rendering.
 
 ## [0.8.0] - 2026-06-21
 
