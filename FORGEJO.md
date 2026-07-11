@@ -40,6 +40,8 @@ The canonical Forgejo workflow is `.forgejo/workflows/docker.yml`. It runs typec
 
 Forgejo Actions requires a Docker-capable runner. The workflow uses the automatic `FORGEJO_TOKEN`/`GITHUB_TOKEN` repository token for registry authentication. The GitHub-compatible mirror is retained at `.github/workflows/docker.yml`.
 
+The current registry endpoint is plain HTTP on the private LAN. Configure the runner's Docker daemon with `10.0.21.40:3000` in `insecure-registries`, or put the Forgejo registry behind HTTPS before enabling automated image publishing on a runner.
+
 ## Updating the repository
 
 ```sh
