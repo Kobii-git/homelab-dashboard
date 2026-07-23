@@ -2,11 +2,78 @@ export const RESOURCE_KINDS = ["app", "website", "docker", "vm", "server", "othe
 export const HEALTH_CHECK_TYPES = ["http", "tcp", "ping", "ssl"] as const;
 export const HEALTH_STATUSES = ["unknown", "online", "offline"] as const;
 export const MONITORING_MODES = ["auto", "manual", "disabled"] as const;
+export const DASHBOARD_SEARCH_ENGINES = ["duckduckgo", "google", "brave", "kagi", "startpage"] as const;
+export const WEATHER_UNITS = ["metric", "imperial"] as const;
 
 export type ResourceKind = (typeof RESOURCE_KINDS)[number];
 export type HealthCheckType = (typeof HEALTH_CHECK_TYPES)[number];
 export type HealthStatus = (typeof HEALTH_STATUSES)[number];
 export type MonitoringMode = (typeof MONITORING_MODES)[number];
+export type DashboardSearchEngine = (typeof DASHBOARD_SEARCH_ENGINES)[number];
+export type WeatherUnits = (typeof WEATHER_UNITS)[number];
+
+export type WeatherLocationDto = {
+  label: string;
+  name: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+  timezone: string;
+};
+
+export type DashboardUtilitiesConfigDto = {
+  searchEngine: DashboardSearchEngine;
+  weather: {
+    enabled: boolean;
+    units: WeatherUnits;
+    location: WeatherLocationDto | null;
+  };
+  releases: {
+    enabled: boolean;
+    repositories: string[];
+  };
+};
+
+export type WeatherForecastDayDto = {
+  date: string;
+  weatherCode: number;
+  condition: string;
+  high: number;
+  low: number;
+  precipitationChance: number | null;
+};
+
+export type WeatherSummaryDto = {
+  location: WeatherLocationDto;
+  units: WeatherUnits;
+  temperature: number;
+  apparentTemperature: number | null;
+  weatherCode: number;
+  condition: string;
+  isDay: boolean;
+  days: WeatherForecastDayDto[];
+};
+
+export type ReleaseItemDto = {
+  repository: string;
+  name: string;
+  tag: string;
+  publishedAt: string;
+  url: string;
+};
+
+export type UtilityResultDto<T> = {
+  state: "disabled" | "ready" | "error";
+  data: T | null;
+  fetchedAt: string | null;
+  stale: boolean;
+  error: string | null;
+};
+
+export type DashboardUtilitiesSummaryDto = {
+  weather: UtilityResultDto<WeatherSummaryDto>;
+  releases: UtilityResultDto<ReleaseItemDto[]>;
+};
 
 export type HealthTick = {
   id: string;

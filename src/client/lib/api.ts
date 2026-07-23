@@ -8,9 +8,12 @@ import type {
   ApiWidgetDto,
   ApiWidgetSuggestionDto,
   ApiWidgetTemplateDto,
+  DashboardUtilitiesConfigDto,
+  DashboardUtilitiesSummaryDto,
   HostMetricSampleDto,
   HostMonitorDto,
-  IntegrationSourceDto
+  IntegrationSourceDto,
+  WeatherLocationDto
 } from "../../shared/types";
 
 export type HealthCheckDto = {
@@ -48,6 +51,7 @@ export type DashboardDto = {
 
 export type SystemSettingsDto = {
   autoPingIntervalSeconds: number;
+  dashboardUtilities: DashboardUtilitiesConfigDto;
 };
 
 export type RuntimeStatusDto = {
@@ -126,10 +130,13 @@ export type {
   AiRuntimeDto,
   DashboardGroupDto,
   DashboardResource,
+  DashboardUtilitiesConfigDto,
+  DashboardUtilitiesSummaryDto,
   DailyBriefingDto,
   HostMetricSampleDto,
   HostMonitorDto,
-  IntegrationSourceDto
+  IntegrationSourceDto,
+  WeatherLocationDto
 };
 
 

@@ -9,7 +9,8 @@ A private, self-hosted command center for the services you run at home. It is a 
 
 ## Features
 
-- **Dashboard** - Lab Command Center header, optional AI Command Briefing, Lab Vitals host metrics with host detail drill-downs, expanded Daily Briefing, favorites strip, drag-and-drop card layout, grid/list density toggle, status filters, and an attention strip for anything that is down
+- **Adaptive Dashboard** - device-local Launchpad and Operations presets: Launchpad prioritizes universal search, favorites, and grouped services; Operations keeps the monitoring command center, signal-only briefing, heartbeats, and detail drill-downs
+- **Launchpad utilities** - optional Open-Meteo weather and cached GitHub release summaries configured from Admin, plus an explicit web-search fallback with a selectable search provider
 - **Heartbeat monitoring** - Uptime-Kuma-style heartbeat bars, uptime %, and latency on every card, plus a detail drawer with a latency sparkline, per-check errors, and threshold-gated stable status
 - **Host metrics** - optional Glances endpoints for CPU, RAM, disk, network, temperature, container counts, and recent 24-hour trends
 - **OPNsense integration** - optional read-only API polling for firewall status, system pressure, gateways, interfaces, traffic, firmware state, and service import suggestions
@@ -19,7 +20,7 @@ A private, self-hosted command center for the services you run at home. It is a 
 - **Command palette** - `⌘K` (or `/`) to search and launch any service or action from anywhere
 - **Services** - manual catalog for apps, websites, Docker services, VMs, servers, and other devices, with common homelab templates, duplicate actions, and confirmed OPNsense imports
 - **Health checks** - HTTP, TCP, ping, and SSL checks with latest status, latency, failure reason, thresholds, and check history
-- **Admin** - password change, Glances host monitors, OPNsense integration status, AI briefing runtime state, API widgets, runtime health diagnostics, public status page, build info, and demo-data controls
+- **Admin** - password change, Launchpad search/weather/release settings, Glances host monitors, OPNsense integration status, AI briefing runtime state, API widgets, runtime health diagnostics, public status page, build info, and demo-data controls
 - **Status page** - unauthenticated `/status` wallboard with heartbeats and uptime per service
 
 Remote SSH/RDP/VNC access, Guacamole, saved credentials, vaults, alert channels, incidents, script/plugin widgets, backup/restore, tags, notes, AI control agents, and mutating integration actions are intentionally out of the current app scope.
@@ -28,7 +29,7 @@ Remote SSH/RDP/VNC access, Guacamole, saved credentials, vaults, alert channels,
 
 ## Current Scope
 
-Version `0.8.0` is a focused daily-operations command center with service health, lab vitals, threshold-aware monitoring, optional read-only AI briefings, and safe runtime diagnostics. The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles, network discovery, Docker discovery, Hyper-V discovery, or built-in HTTPS termination.
+Version `0.8.0` is a focused service launchpad and daily-operations command center with service health, lab vitals, threshold-aware monitoring, optional read-only utilities and AI briefings, and safe runtime diagnostics. The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles, network discovery, Docker discovery, Hyper-V discovery, or built-in HTTPS termination.
 
 The active database model is intentionally small: `Resource`, `DashboardGroup`, `HealthCheck`, `HealthResult`, `HostMonitor`, `HostMetricSample`, `IntegrationSource`, `IntegrationSample`, `ApiWidget`, `ApiWidgetSample`, `AdminAccount`, and `SystemConfig`.
 
@@ -119,6 +120,12 @@ By default, service URLs, hosts, IP addresses, and check targets are redacted be
 ### Optional API Widgets
 
 API widgets are configured in **Admin > API widgets**. Widgets only perform read-only JSON requests, and secrets are read from environment variables by name instead of being stored in SQLite. Only names used by built-in templates or explicitly listed in `API_WIDGET_SECRET_ALLOWLIST` can be attached to requests. The Admin panel suggests importable widgets when existing service catalog entries look like known apps. Built-in templates currently cover Home Assistant, Proxmox VE, Portainer, AdGuard Home, Pi-hole v6, Jellyfin, Grafana, Prometheus, Sonarr, and Radarr. Apps with non-trivial auth/session protocols, such as TrueNAS SCALE WebSocket APIs or qBittorrent cookie sessions, should become dedicated connectors rather than generic JSON widgets.
+
+### Optional Launchpad Utilities
+
+Configure Launchpad utilities in **Admin > Launchpad utilities**. Web search defaults to DuckDuckGo and can be changed to Google, Brave, Kagi, or Startpage. Weather uses a normalized Open-Meteo location and can display metric or imperial temperatures. Release tracking accepts up to 12 public GitHub repositories in `owner/repository` format; known service templates can suggest repositories, but additions are not persisted until you confirm with **Save utilities**.
+
+Weather and release data are fetched separately from `/api/dashboard`, so provider outages never block service access. Requests use fixed provider hosts, timeouts, and response-size bounds. Location results are cached for 24 hours, forecasts for 15 minutes, and GitHub releases—including repository-level failures—for six hours. Stale cached data is returned when a refresh fails. Utility configuration is non-secret `SystemConfig` JSON and is never included on the public `/status` page.
 
 ---
 

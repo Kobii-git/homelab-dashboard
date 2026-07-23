@@ -9,6 +9,11 @@ import type { AiEnvConfig } from "../src/server/env";
 import { runHealthCheck } from "../src/server/healthChecks";
 import { collectOpnsenseSnapshot } from "../src/server/opnsense";
 import { createAuthToken } from "../src/server/auth";
+import {
+  DashboardUtilitiesService,
+  DEFAULT_DASHBOARD_UTILITIES_CONFIG
+} from "../src/server/dashboardUtilities";
+import type { DashboardUtilitiesConfigDto } from "../src/shared/types";
 
 const prisma = new PrismaClient();
 const disabledAiEnv: AiEnvConfig = {
@@ -285,6 +290,331 @@ describe("api routes", () => {
     expect(aiBriefing.statusCode).toBe(401);
     const runtime = await app.inject({ method: "GET", url: "/api/admin/runtime" });
     expect(runtime.statusCode).toBe(401);
+    const weatherLocations = await app.inject({ method: "GET", url: "/api/utilities/weather-locations?q=Cape%20Town" });
+    expect(weatherLocations.statusCode).toBe(401);
+    const utilities = await app.inject({ method: "GET", url: "/api/utilities/summary" });
+    expect(utilities.statusCode).toBe(401);
+  });
+
+  it("normalizes partial dashboard utility settings without exposing extra values publicly", async () => {
+    const cookie = await loginCookie();
+    const original = await app.inject({
+      method: "GET",
+      url: "/api/settings",
+      headers: { cookie }
+    });
+    expect(original.statusCode).toBe(200);
+    expect(original.json()).toMatchObject({
+      dashboardUtilities: DEFAULT_DASHBOARD_UTILITIES_CONFIG
+    });
+
+    const intervalOnly = await app.inject({
+      method: "PATCH",
+      url: "/api/settings",
+      headers: { cookie },
+      payload: { autoPingIntervalSeconds: 45 }
+    });
+    expect(intervalOnly.statusCode).toBe(200);
+    expect(intervalOnly.json()).toMatchObject({
+      autoPingIntervalSeconds: 45,
+      dashboardUtilities: DEFAULT_DASHBOARD_UTILITIES_CONFIG
+    });
+
+    const invalidWeather = await app.inject({
+      method: "PATCH",
+      url: "/api/settings",
+      headers: { cookie },
+      payload: {
+        dashboardUtilities: {
+          ...DEFAULT_DASHBOARD_UTILITIES_CONFIG,
+          weather: { enabled: true, units: "metric", location: null }
+        }
+      }
+    });
+    expect(invalidWeather.statusCode).toBe(400);
+
+    const configured = await app.inject({
+      method: "PATCH",
+      url: "/api/settings",
+      headers: { cookie },
+      payload: {
+        dashboardUtilities: {
+          searchEngine: "brave",
+          weather: {
+            enabled: true,
+            units: "metric",
+            location: {
+              label: "Cape Town, Western Cape, South Africa",
+              name: "Cape Town",
+              country: "South Africa",
+              latitude: -33.9258,
+              longitude: 18.4232,
+              timezone: "Africa/Johannesburg",
+              apiToken: "must-not-survive-normalization"
+            }
+          },
+          releases: {
+            enabled: true,
+            repositories: ["GlanceApp/Glance", "glanceapp/glance", "gethomepage/homepage"],
+            githubToken: "must-not-survive-normalization"
+          }
+        }
+      }
+    });
+    expect(configured.statusCode).toBe(200);
+    expect(configured.json()).toMatchObject({
+      dashboardUtilities: {
+        searchEngine: "brave",
+        weather: {
+          enabled: true,
+          location: { name: "Cape Town", country: "South Africa" }
+        },
+        releases: {
+          enabled: true,
+          repositories: ["glanceapp/glance", "gethomepage/homepage"]
+        }
+      }
+    });
+    expect(configured.body).not.toContain("must-not-survive-normalization");
+
+    const status = await app.inject({ method: "GET", url: "/api/status" });
+    expect(status.statusCode).toBe(200);
+    expect(status.body).not.toContain("dashboardUtilities");
+    expect(status.body).not.toContain("glanceapp/glance");
+
+    const tooManyRepositories = await app.inject({
+      method: "PATCH",
+      url: "/api/settings",
+      headers: { cookie },
+      payload: {
+        dashboardUtilities: {
+          ...DEFAULT_DASHBOARD_UTILITIES_CONFIG,
+          releases: {
+            enabled: true,
+            repositories: Array.from({ length: 13 }, (_, index) => `owner/repository-${index}`)
+          }
+        }
+      }
+    });
+    expect(tooManyRepositories.statusCode).toBe(400);
+
+    await app.inject({
+      method: "PATCH",
+      url: "/api/settings",
+      headers: { cookie },
+      payload: { dashboardUtilities: DEFAULT_DASHBOARD_UTILITIES_CONFIG }
+    });
+  });
+
+  it("maps, caches, deduplicates, and isolates dashboard utility providers", async () => {
+    let now = Date.parse("2026-07-24T08:00:00.000Z");
+    let weatherUnavailable = false;
+    const calls = new Map<string, number>();
+    const request = async (rawUrl: URL | string) => {
+      const url = new URL(String(rawUrl));
+      const key = `${url.hostname}${url.pathname}`;
+      calls.set(key, (calls.get(key) ?? 0) + 1);
+
+      if (url.hostname === "geocoding-api.open-meteo.com") {
+        return {
+          results: Array.from({ length: 6 }, (_, index) => ({
+            name: index === 0 ? "Cape Town" : `Cape Town ${index + 1}`,
+            country: "South Africa",
+            admin1: "Western Cape",
+            latitude: -33.9258 + index,
+            longitude: 18.4232 + index,
+            timezone: "Africa/Johannesburg"
+          }))
+        };
+      }
+
+      if (url.hostname === "api.open-meteo.com") {
+        if (weatherUnavailable) throw new Error("Weather forecast timed out");
+        return {
+          current: {
+            temperature_2m: 16.4,
+            apparent_temperature: 15.1,
+            is_day: 1,
+            weather_code: 2
+          },
+          daily: {
+            time: ["2026-07-24", "2026-07-25", "2026-07-26"],
+            weather_code: [2, 61, 0],
+            temperature_2m_max: [19, 17, 21],
+            temperature_2m_min: [11, 10, 12],
+            precipitation_probability_max: [10, 70, 5]
+          }
+        };
+      }
+
+      const repository = url.pathname.match(/^\/repos\/([^/]+\/[^/]+)\/releases\/latest$/)?.[1];
+      if (repository === "missing/project") throw new Error("GitHub release missing (404)");
+      const isNewest = repository === "newest/project";
+      return {
+        html_url: `https://github.com/${repository}/releases/tag/${isNewest ? "v3.0.0" : "v2.0.0"}`,
+        tag_name: isNewest ? "v3.0.0" : "v2.0.0",
+        name: isNewest ? "Newest release" : "Older release",
+        published_at: isNewest ? "2026-07-23T12:00:00Z" : "2026-07-20T12:00:00Z"
+      };
+    };
+    const utilityService = new DashboardUtilitiesService(request, () => now);
+    const utilityApp = await createApp({
+      prisma,
+      env,
+      monitor: false,
+      logger: false,
+      dashboardUtilities: utilityService
+    });
+
+    try {
+      await utilityApp.ready();
+      const login = await utilityApp.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: { password: "test-pass" }
+      });
+      const cookie = login.cookies.map((item) => `${item.name}=${item.value}`).join("; ");
+      const location = {
+        label: "Cape Town, Western Cape, South Africa",
+        name: "Cape Town",
+        country: "South Africa",
+        latitude: -33.9258,
+        longitude: 18.4232,
+        timezone: "Africa/Johannesburg"
+      };
+      const config: DashboardUtilitiesConfigDto = {
+        searchEngine: "duckduckgo",
+        weather: { enabled: true, units: "metric", location },
+        releases: {
+          enabled: true,
+          repositories: ["older/project", "missing/project", "newest/project"]
+        }
+      };
+      expect((await utilityApp.inject({
+        method: "PATCH",
+        url: "/api/settings",
+        headers: { cookie },
+        payload: { dashboardUtilities: config }
+      })).statusCode).toBe(200);
+
+      const [firstLocations, secondLocations] = await Promise.all([
+        utilityApp.inject({
+          method: "GET",
+          url: "/api/utilities/weather-locations?q=Cape%20Town",
+          headers: { cookie }
+        }),
+        utilityApp.inject({
+          method: "GET",
+          url: "/api/utilities/weather-locations?q=Cape%20Town",
+          headers: { cookie }
+        })
+      ]);
+      expect(firstLocations.statusCode).toBe(200);
+      expect(secondLocations.statusCode).toBe(200);
+      expect(firstLocations.json()).toHaveLength(5);
+      expect(firstLocations.json()[0]).toEqual(location);
+      expect(calls.get("geocoding-api.open-meteo.com/v1/search")).toBe(1);
+      expect((await utilityApp.inject({
+        method: "GET",
+        url: "/api/utilities/weather-locations?q=ab",
+        headers: { cookie }
+      })).statusCode).toBe(400);
+
+      const [firstSummary, secondSummary] = await Promise.all([
+        utilityApp.inject({ method: "GET", url: "/api/utilities/summary", headers: { cookie } }),
+        utilityApp.inject({ method: "GET", url: "/api/utilities/summary", headers: { cookie } })
+      ]);
+      expect(firstSummary.statusCode).toBe(200);
+      expect(secondSummary.statusCode).toBe(200);
+      expect(firstSummary.json()).toMatchObject({
+        weather: {
+          state: "ready",
+          stale: false,
+          data: {
+            condition: "Partly cloudy",
+            temperature: 16.4,
+            days: [
+              { condition: "Partly cloudy", high: 19, low: 11 },
+              { condition: "Rain", high: 17, low: 10 },
+              { condition: "Clear", high: 21, low: 12 }
+            ]
+          }
+        },
+        releases: {
+          state: "ready",
+          stale: false,
+          error: "1 tracked repository could not be refreshed.",
+          data: [
+            { repository: "newest/project", tag: "v3.0.0" },
+            { repository: "older/project", tag: "v2.0.0" }
+          ]
+        }
+      });
+      expect(calls.get("api.open-meteo.com/v1/forecast")).toBe(1);
+      expect(calls.get("api.github.com/repos/newest/project/releases/latest")).toBe(1);
+      expect(calls.get("api.github.com/repos/older/project/releases/latest")).toBe(1);
+      expect(calls.get("api.github.com/repos/missing/project/releases/latest")).toBe(1);
+      await utilityApp.inject({ method: "GET", url: "/api/utilities/summary", headers: { cookie } });
+      expect(calls.get("api.github.com/repos/missing/project/releases/latest")).toBe(1);
+
+      now += 7 * 60 * 60_000;
+      weatherUnavailable = true;
+      const staleSummary = await utilityApp.inject({
+        method: "GET",
+        url: "/api/utilities/summary",
+        headers: { cookie }
+      });
+      expect(staleSummary.statusCode).toBe(200);
+      expect(staleSummary.json()).toMatchObject({
+        weather: {
+          state: "ready",
+          stale: true,
+          error: "Weather refresh failed; showing the last available forecast."
+        },
+        releases: {
+          state: "ready",
+          data: [
+            { repository: "newest/project" },
+            { repository: "older/project" }
+          ]
+        }
+      });
+    } finally {
+      await utilityApp.close();
+      await app.inject({
+        method: "PATCH",
+        url: "/api/settings",
+        headers: { cookie: await loginCookie() },
+        payload: { dashboardUtilities: DEFAULT_DASHBOARD_UTILITIES_CONFIG }
+      });
+    }
+
+    const failingService = new DashboardUtilitiesService(async () => {
+      throw new Error("Weather provider response exceeded the timeout");
+    });
+    const failed = await failingService.getSummary({
+      searchEngine: "duckduckgo",
+      weather: {
+        enabled: true,
+        units: "metric",
+        location: {
+          label: "Test location",
+          name: "Test location",
+          country: "Test country",
+          latitude: 0,
+          longitude: 0,
+          timezone: "UTC"
+        }
+      },
+      releases: { enabled: false, repositories: [] }
+    });
+    expect(failed.weather).toMatchObject({
+      state: "error",
+      data: null,
+      stale: false,
+      error: "Weather provider response exceeded the timeout"
+    });
+    expect(failed.releases.state).toBe("disabled");
   });
 
   it("protects first-run setup with a bounded one-time code and strong passwords", async () => {

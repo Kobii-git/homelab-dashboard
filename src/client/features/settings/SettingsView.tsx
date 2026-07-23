@@ -1,5 +1,5 @@
-import { Activity, Clipboard, Cpu, ExternalLink, Gauge, PanelsTopLeft, Play, Plus, RefreshCw, Save, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { Activity, Clipboard, CloudSun, Cpu, ExternalLink, Gauge, Github, MapPin, PanelsTopLeft, Play, Plus, RefreshCw, Save, Search, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "../../components/Primitives";
 import { FormErrorBanner, runFormAction } from "../../lib/forms";
 import {
@@ -13,9 +13,12 @@ import {
   type IntegrationSourceDto,
   type RuntimeStatusDto,
   type SchedulerRuntimeDto,
-  type SystemSettingsDto
+  type SystemSettingsDto,
+  type WeatherLocationDto
 } from "../../lib/api";
 import { formatByteRate, formatPercent, relativeTime } from "../../lib/format";
+import { suggestedReleaseRepositories } from "../../lib/serviceCatalog";
+import type { DashboardResource } from "../../../shared/types";
 
 type HostMonitorForm = {
   id: string | null;
@@ -91,20 +94,27 @@ function SchedulerRuntimeCard({ label, state }: { label: string; state: Schedule
 export function SettingsView({
   username,
   authSource,
+  resources,
   onRefresh,
   systemSettings,
   onSaveSettings
 }: {
   username: string;
   authSource: "env" | "database";
+  resources: DashboardResource[];
   onRefresh: () => Promise<void>;
   systemSettings: SystemSettingsDto;
-  onSaveSettings: (next: SystemSettingsDto) => Promise<void>;
+  onSaveSettings: (next: Partial<SystemSettingsDto>) => Promise<void>;
 }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [autoPingIntervalSeconds, setAutoPingIntervalSeconds] = useState(systemSettings.autoPingIntervalSeconds.toString());
+  const [utilitySettings, setUtilitySettings] = useState(systemSettings.dashboardUtilities);
+  const [weatherQuery, setWeatherQuery] = useState("");
+  const [weatherLocations, setWeatherLocations] = useState<WeatherLocationDto[]>([]);
+  const [weatherSearching, setWeatherSearching] = useState(false);
+  const [releaseRepositoryInput, setReleaseRepositoryInput] = useState("");
   const [hostMonitors, setHostMonitors] = useState<HostMonitorDto[]>([]);
   const [integrations, setIntegrations] = useState<IntegrationSourceDto[]>([]);
   const [apiWidgets, setApiWidgets] = useState<ApiWidgetDto[]>([]);
@@ -124,7 +134,13 @@ export function SettingsView({
 
   useEffect(() => {
     setAutoPingIntervalSeconds(systemSettings.autoPingIntervalSeconds.toString());
-  }, [systemSettings.autoPingIntervalSeconds]);
+    setUtilitySettings(systemSettings.dashboardUtilities);
+  }, [systemSettings]);
+
+  const releaseSuggestions = useMemo(
+    () => suggestedReleaseRepositories(resources, utilitySettings.releases.repositories),
+    [resources, utilitySettings.releases.repositories]
+  );
 
   useEffect(() => {
     void Promise.all([loadHostMonitors(), loadIntegrations(), loadApiWidgets(), loadRuntime()])
@@ -212,7 +228,7 @@ export function SettingsView({
       return;
     }
 
-    const payload: SystemSettingsDto = { autoPingIntervalSeconds: interval };
+    const payload = { autoPingIntervalSeconds: interval };
     await runFormAction(
       async () => {
         await onSaveSettings(payload);
@@ -221,6 +237,81 @@ export function SettingsView({
       setActionError,
       setSubmitting,
       "System settings updated"
+    );
+  }
+
+  async function searchWeatherLocations() {
+    const query = weatherQuery.trim();
+    if (query.length < 3) {
+      setActionError("Enter at least three characters to search for a weather location");
+      return;
+    }
+
+    setWeatherSearching(true);
+    setActionError(null);
+    try {
+      setWeatherLocations(
+        await apiGet<WeatherLocationDto[]>(`/api/utilities/weather-locations?q=${encodeURIComponent(query)}`)
+      );
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Weather location search failed");
+    } finally {
+      setWeatherSearching(false);
+    }
+  }
+
+  function selectWeatherLocation(location: WeatherLocationDto) {
+    setUtilitySettings((current) => ({
+      ...current,
+      weather: { ...current.weather, enabled: true, location }
+    }));
+    setWeatherQuery(location.label);
+    setWeatherLocations([]);
+  }
+
+  function addReleaseRepository(repository: string) {
+    const normalized = repository.trim().toLowerCase();
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(normalized)) {
+      setActionError("Use a public GitHub repository in owner/name format");
+      return;
+    }
+    setUtilitySettings((current) => ({
+      ...current,
+      releases: {
+        enabled: true,
+        repositories: [...new Set([...current.releases.repositories, normalized])].slice(0, 12)
+      }
+    }));
+    setReleaseRepositoryInput("");
+    setActionError(null);
+  }
+
+  function removeReleaseRepository(repository: string) {
+    setUtilitySettings((current) => ({
+      ...current,
+      releases: {
+        ...current.releases,
+        repositories: current.releases.repositories.filter((item) => item !== repository)
+      }
+    }));
+  }
+
+  async function saveDashboardUtilities(event: FormEvent) {
+    event.preventDefault();
+    if (utilitySettings.weather.enabled && !utilitySettings.weather.location) {
+      setActionError("Choose a weather location before enabling weather");
+      return;
+    }
+
+    await runFormAction(
+      async () => {
+        await onSaveSettings({
+          dashboardUtilities: utilitySettings
+        });
+      },
+      setActionError,
+      setSubmitting,
+      "Dashboard utilities updated"
     );
   }
 
@@ -467,6 +558,218 @@ export function SettingsView({
       <FormErrorBanner message={actionError} />
 
       <section className="settings-grid">
+        <section className="table-panel settings-wide-panel">
+          <h3><CloudSun size={16} /> Launchpad utilities</h3>
+          <p className="muted-copy">
+            Configure optional, credential-free context for the Launchpad. Weather and release data are fetched by the dashboard server and cached.
+          </p>
+
+          <form className="dashboard-utility-settings" onSubmit={saveDashboardUtilities}>
+            <div className="utility-settings-block">
+              <div className="section-heading compact-section-heading">
+                <span>
+                  <strong><Search size={15} /> Web search</strong>
+                  <small>Used only when you choose the web fallback from Launchpad search.</small>
+                </span>
+              </div>
+              <label>
+                Search engine
+                <select
+                  value={utilitySettings.searchEngine}
+                  onChange={(event) => setUtilitySettings((current) => ({
+                    ...current,
+                    searchEngine: event.target.value as typeof current.searchEngine
+                  }))}
+                >
+                  <option value="duckduckgo">DuckDuckGo</option>
+                  <option value="google">Google</option>
+                  <option value="brave">Brave</option>
+                  <option value="kagi">Kagi</option>
+                  <option value="startpage">Startpage</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="utility-settings-block">
+              <div className="section-heading compact-section-heading">
+                <span>
+                  <strong><MapPin size={15} /> Weather</strong>
+                  <small>Open-Meteo current conditions and a compact three-day forecast.</small>
+                </span>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={utilitySettings.weather.enabled}
+                    onChange={(event) => setUtilitySettings((current) => ({
+                      ...current,
+                      weather: { ...current.weather, enabled: event.target.checked }
+                    }))}
+                  />
+                  Enabled
+                </label>
+              </div>
+
+              <div className="utility-inline-controls">
+                <label>
+                  Units
+                  <select
+                    value={utilitySettings.weather.units}
+                    onChange={(event) => setUtilitySettings((current) => ({
+                      ...current,
+                      weather: {
+                        ...current.weather,
+                        units: event.target.value as typeof current.weather.units
+                      }
+                    }))}
+                  >
+                    <option value="metric">Metric · °C</option>
+                    <option value="imperial">Imperial · °F</option>
+                  </select>
+                </label>
+                <label className="utility-grow-field">
+                  Location
+                  <span className="utility-search-control">
+                    <input
+                      value={weatherQuery}
+                      onChange={(event) => setWeatherQuery(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void searchWeatherLocations();
+                        }
+                      }}
+                      placeholder="Johannesburg, Cape Town, London"
+                    />
+                    <button
+                      className="icon-text-button"
+                      type="button"
+                      disabled={weatherSearching}
+                      onClick={() => void searchWeatherLocations()}
+                    >
+                      {weatherSearching ? <RefreshCw size={14} className="spin" /> : <Search size={14} />} Search
+                    </button>
+                  </span>
+                </label>
+              </div>
+
+              {utilitySettings.weather.location ? (
+                <div className="selected-utility-value">
+                  <MapPin size={14} />
+                  <span><strong>{utilitySettings.weather.location.label}</strong><small>{utilitySettings.weather.location.timezone}</small></span>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    title="Clear weather location"
+                    onClick={() => setUtilitySettings((current) => ({
+                      ...current,
+                      weather: { ...current.weather, enabled: false, location: null }
+                    }))}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : null}
+
+              {weatherLocations.length > 0 ? (
+                <div className="utility-suggestion-list" aria-label="Weather location results">
+                  {weatherLocations.map((location) => (
+                    <button
+                      type="button"
+                      key={`${location.latitude}-${location.longitude}`}
+                      onClick={() => selectWeatherLocation(location)}
+                    >
+                      <MapPin size={14} />
+                      <span><strong>{location.label}</strong><small>{location.timezone}</small></span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="utility-settings-block">
+              <div className="section-heading compact-section-heading">
+                <span>
+                  <strong><Github size={15} /> Software releases</strong>
+                  <small>Track the latest public GitHub release for up to 12 repositories.</small>
+                </span>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={utilitySettings.releases.enabled}
+                    onChange={(event) => setUtilitySettings((current) => ({
+                      ...current,
+                      releases: { ...current.releases, enabled: event.target.checked }
+                    }))}
+                  />
+                  Enabled
+                </label>
+              </div>
+
+              <label>
+                Add repository
+                <span className="utility-search-control">
+                  <input
+                    value={releaseRepositoryInput}
+                    onChange={(event) => setReleaseRepositoryInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        addReleaseRepository(releaseRepositoryInput);
+                      }
+                    }}
+                    placeholder="owner/repository"
+                  />
+                  <button
+                    className="icon-text-button"
+                    type="button"
+                    disabled={!releaseRepositoryInput.trim() || utilitySettings.releases.repositories.length >= 12}
+                    onClick={() => addReleaseRepository(releaseRepositoryInput)}
+                  >
+                    <Plus size={14} /> Add
+                  </button>
+                </span>
+              </label>
+
+              {utilitySettings.releases.repositories.length > 0 ? (
+                <div className="repository-chip-list" aria-label="Tracked GitHub repositories">
+                  {utilitySettings.releases.repositories.map((repository) => (
+                    <span key={repository}>
+                      <Github size={13} /> {repository}
+                      <button type="button" aria-label={`Stop tracking ${repository}`} onClick={() => removeReleaseRepository(repository)}>
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+
+              {releaseSuggestions.length > 0 ? (
+                <div className="utility-suggestions">
+                  <small>Suggested from your services</small>
+                  <div className="repository-chip-list">
+                    {releaseSuggestions.map((suggestion) => (
+                      <button
+                        type="button"
+                        key={suggestion.repository}
+                        title={`Track releases for ${suggestion.resourceName}`}
+                        onClick={() => addReleaseRepository(suggestion.repository)}
+                      >
+                        <Plus size={12} /> {suggestion.repository}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="form-actions">
+              <button className="primary-button" type="submit" disabled={submitting}>
+                <Save size={15} /> Save Launchpad utilities
+              </button>
+            </div>
+          </form>
+        </section>
+
         <section className="table-panel settings-wide-panel">
           <h3><Cpu size={16} /> Host metrics</h3>
           <p className="muted-copy">

@@ -1,5 +1,5 @@
 import { Gauge, LayoutDashboard, Server, Settings, Shield } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppSidebar } from "./components/AppSidebar";
 import { BuildBadge } from "./components/BuildBadge";
@@ -14,6 +14,15 @@ import { useAppChrome } from "./lib/appChrome";
 import { statusFor } from "./lib/format";
 import type { DashboardResource } from "../shared/types";
 import type { DashboardDto } from "./lib/api";
+
+const defaultSystemSettings: SystemSettingsDto = {
+  autoPingIntervalSeconds: 60,
+  dashboardUtilities: {
+    searchEngine: "duckduckgo",
+    weather: { enabled: false, units: "metric", location: null },
+    releases: { enabled: false, repositories: [] }
+  }
+};
 
 const navItems: Array<{ id: AppView; label: string; icon: React.ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
@@ -277,8 +286,11 @@ export function App() {
   const [setupError, setSetupError] = useState<string | null>(null);
   const [view, setView] = useState<AppView>("dashboard");
   const [data, setData] = useState<AppData>(emptyAppData);
-  const [systemSettings, setSystemSettings] = useState<SystemSettingsDto>({ autoPingIntervalSeconds: 60 });
+  const [systemSettings, setSystemSettings] = useState<SystemSettingsDto>(defaultSystemSettings);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [dataReady, setDataReady] = useState(false);
+  const dataReadyRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [sessionMessage, setSessionMessage] = useState<string | null>(null);
@@ -286,20 +298,26 @@ export function App() {
   const [authSource, setAuthSource] = useState<"env" | "database">("database");
   const { theme, toggleTheme, sidebarMode, cycleSidebar } = useAppChrome();
   const [openAddServiceForm, setOpenAddServiceForm] = useState(false);
+  const [addServiceTemplateId, setAddServiceTemplateId] = useState<string | null>(null);
   const [editServiceId, setEditServiceId] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   async function loadData() {
-    setLoading(true);
+    const initialLoad = !dataReadyRef.current;
+    if (initialLoad) setLoading(true);
+    else setRefreshing(true);
     setError(null);
 
     try {
       const dashboard = await apiGet<DashboardDto>("/api/dashboard");
       setData(deriveAppData(dashboard));
+      dataReadyRef.current = true;
+      setDataReady(true);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Load failed");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }
 
@@ -367,6 +385,8 @@ export function App() {
       setSessionMessage("Your session expired or was invalidated. Sign in again to continue.");
       setPaletteOpen(false);
       setData(emptyAppData);
+      dataReadyRef.current = false;
+      setDataReady(false);
     }
     function onApiError(event: Event) {
       const detail = (event as CustomEvent<string>).detail;
@@ -441,6 +461,9 @@ export function App() {
       await apiSend("/api/auth/logout", "POST");
       setAuthenticated(false);
       setSessionMessage("You have been signed out on all browsers.");
+      setData(emptyAppData);
+      dataReadyRef.current = false;
+      setDataReady(false);
     } catch (logoutError) {
       setError(logoutError instanceof Error ? logoutError.message : "Logout failed");
     }
@@ -496,14 +519,20 @@ export function App() {
     }
   }
 
-  async function patchSystemSettings(next: SystemSettingsDto) {
-    await apiSend("/api/settings", "PATCH", next);
-    await loadSystemSettings();
+  async function patchSystemSettings(next: Partial<SystemSettingsDto>) {
+    setSystemSettings(await apiSend<SystemSettingsDto>("/api/settings", "PATCH", next));
   }
 
   function openServicesForCreate() {
     setView("services");
     setOpenAddServiceForm(true);
+    setAddServiceTemplateId(null);
+  }
+
+  function openServicesForTemplate(templateId: string) {
+    setOpenAddServiceForm(false);
+    setAddServiceTemplateId(templateId);
+    setView("services");
   }
 
   function openSettings() {
@@ -610,6 +639,10 @@ export function App() {
     );
   }
 
+  if (!dataReady && loading) {
+    return <div className="loading-screen"><InlineSpinner size={18} /> Loading dashboard</div>;
+  }
+
   return (
     <div className={`app-shell pro-shell sidebar-${sidebarMode}`}>
       <AppSidebar
@@ -632,17 +665,19 @@ export function App() {
       <div className="content-shell">
         <div className="workspace-scroll">
           {error ? <div className="app-error">{error}</div> : null}
-          {loading ? <div className="loading-strip"><InlineSpinner size={12} /> Syncing</div> : null}
+          {refreshing ? <div className="loading-strip" role="status"><InlineSpinner size={12} /> Refreshing</div> : null}
 
           {view === "dashboard" ? (
             <DashboardConsole
               data={data}
               username={username}
+              systemSettings={systemSettings}
               onRefresh={loadData}
               onPatchResource={patchResource}
               onRunCheck={runResourceHealthCheck}
               onPatchGroup={patchGroup}
               onOpenServices={openServicesForCreate}
+              onAddServiceTemplate={openServicesForTemplate}
               onOpenSettings={openSettings}
               onEditService={openServicesForEdit}
               onReorder={reorderResources}
@@ -656,6 +691,8 @@ export function App() {
               autoPingIntervalSeconds={systemSettings.autoPingIntervalSeconds}
               openAddServiceForm={openAddServiceForm}
               onOpenAddServiceFormHandled={() => setOpenAddServiceForm(false)}
+              addServiceTemplateId={addServiceTemplateId}
+              onAddServiceTemplateHandled={() => setAddServiceTemplateId(null)}
               editServiceId={editServiceId}
               onEditServiceHandled={() => setEditServiceId(null)}
             />
@@ -665,6 +702,7 @@ export function App() {
             <SettingsView
               username={username}
               authSource={authSource}
+              resources={data.resources}
               onRefresh={loadData}
               systemSettings={systemSettings}
               onSaveSettings={patchSystemSettings}

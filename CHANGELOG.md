@@ -9,6 +9,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## Unreleased
 
 ### Added
+- Adaptive Dashboard presets: a service-first Launchpad for everyday access and an
+  Operations view for monitoring, with device-local mode and density persistence.
+- Ranked universal service search with favorite/prefix priority and an explicit
+  encoded web-search fallback for DuckDuckGo, Google, Brave, Kagi, or Startpage.
+- Optional Open-Meteo weather and GitHub release utilities with authenticated
+  endpoints, bounded provider requests, cache/deduplication, stale fallback, and
+  Admin configuration stored as versioned non-secret `SystemConfig` JSON.
+- Reusable service-template metadata with confirmed GitHub repository suggestions,
+  plus focused empty-Launchpad onboarding from the existing catalog.
 - Forgejo-native CI and container publishing with permanent `main` and `beta`
   branches, stable `latest`/`main` image tags, and a `beta` image tag.
 - One-time bootstrap-code protection for database-backed first-run setup.
@@ -29,6 +38,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Dashboard panel, Admin runtime state, and scheduler diagnostics.
 
 ### Changed
+- Operations now hides unconfigured monitoring sections behind one connection
+  action and renders detailed Daily Briefing cards only for active signals.
+- Background dashboard refreshes use a non-blocking indicator after the initial load.
+- Dashboard UI spacing, color emphasis, responsive utility ordering, and card
+  hierarchy were simplified while preserving service actions, drawers, keyboard
+  behavior, drag ordering, filtering, and health details.
 - Password storage now uses asynchronous scrypt with legacy PBKDF2 rehashing.
 - Sessions now have unique nonces, server-enforced expiry, credential binding,
   and global invalidation on logout or password change.

@@ -12,7 +12,7 @@ This document captures the current state of the project so the next session can 
 
 ## What It Is Now
 
-Homelab Dashboard is a private, single-admin, self-hosted service launcher and lab command center with health monitoring, lab-vitals cards, read-only OPNsense status, custom API widgets, and optional AI command briefings. It is focused on manually managed hosted services, optional Glances host monitors, optional env-backed OPNsense API polling, read-only JSON API widgets, and sanitized read-only AI summaries.
+Homelab Dashboard is a private, single-admin, self-hosted service launcher and lab command center with an adaptive Launchpad/Operations dashboard, health monitoring, optional weather and release utilities, lab-vitals cards, read-only OPNsense status, custom API widgets, and optional AI command briefings. It is focused on manually managed hosted services, optional Glances host monitors, optional env-backed OPNsense API polling, read-only JSON API widgets, and sanitized read-only AI summaries.
 
 The current product is deliberately not a remote-management platform. SSH, RDP, VNC, Guacamole, credential vaults, session history, incidents, alert delivery, backup/restore, tags, notes, script/plugin widgets, AI control agents, mutating arbitrary API calls, and firewall-changing OPNsense actions are out of the active scope.
 
@@ -129,12 +129,17 @@ API_WIDGET_SECRET_ALLOWLIST: MY_CUSTOM_WIDGET_TOKEN
 
 ### Dashboard
 
-- Operations header with overall service and host status.
+- Dashboard remains one sidebar destination with an accessible Launchpad/Operations segmented switch. Mode and grid/list density are stored per device; new devices default to Launchpad.
+- Launchpad leads with greeting/time, compact health, ranked local service search, explicit web-search fallback, favorites, and compact service groups.
+- Empty Launchpads show one template-backed onboarding panel instead of empty monitoring sections.
+- Optional Open-Meteo weather and GitHub release cards form a narrow desktop utility rail and follow services on mobile.
+- Operations keeps the command-center header, monitoring cards, service actions, drag ordering, heartbeats, filters, and detail drawers.
+- Unconfigured monitoring surfaces collapse into one **Connect operations data** action.
 - Optional AI Command Briefing summarizes sanitized dashboard evidence and suggests read-only next checks.
 - Lab Vitals cards show Glances CPU, RAM, disk, network, temperature, container counts, recent trends, and a click-through 24-hour host detail drawer.
 - OPNsense cards show API reachability, CPU/RAM/disk, gateway health, interface throughput, firmware version, and a click-through 24-hour integration detail drawer.
 - API widget cards show mapped fields from configured read-only JSON APIs.
-- Daily Briefing summarizes online/offline counts, threshold watchlist items, recent transitions, host pressure, stale checks, and unmonitored automatic services.
+- Daily Briefing is signal-only: failures, pressure, transitions, stale checks, and threshold activity get detailed cards; quiet periods render one all-clear summary.
 - Service cards open saved URLs in a new tab.
 - Favorite stars update optimistically.
 - Status and latency chips run the service health check.
@@ -157,6 +162,8 @@ API_WIDGET_SECRET_ALLOWLIST: MY_CUSTOM_WIDGET_TOKEN
 ### Admin
 
 - Password change for database-managed admin accounts.
+- Launchpad utility configuration for web-search provider, normalized weather location/units, and up to 12 tracked GitHub repositories.
+- Known service templates can suggest release repositories; suggestions and manual repositories are only persisted after **Save utilities**.
 - Host monitor management for unauthenticated LAN/VPN Glances endpoints.
 - OPNsense env/config status, latest sample state, manual read-only poll action, and integration scheduler diagnostics.
 - AI briefing env/config status, cache state, manual run action, and scheduler diagnostics.
@@ -180,6 +187,11 @@ API_WIDGET_SECRET_ALLOWLIST: MY_CUSTOM_WIDGET_TOKEN
 - `GET /api/admin/runtime` is authenticated and intentionally avoids secret env values.
 - `GET /api/metrics/hosts/:id` is authenticated and returns up to 1,440 recent host samples for the detail drawer.
 - `GET /api/integrations/:id` is authenticated and returns up to 1,440 recent integration samples for the detail drawer.
+- Dashboard utility configuration is stored as versioned, non-secret JSON in `SystemConfig`; no Prisma model is involved.
+- `PATCH /api/settings` accepts partial top-level settings and returns the complete normalized settings object.
+- `GET /api/utilities/weather-locations?q=` and `GET /api/utilities/summary` are authenticated. They use only fixed Open-Meteo/GitHub hosts with bounded responses and timeouts.
+- Utility provider calls are isolated from `/api/dashboard`; geocoding is cached for 24 hours, forecasts for 15 minutes, and GitHub releases/repository failures for six hours, with concurrent-request deduplication and stale fallback.
+- Utility settings and results contain no credentials and are excluded from public `/status`.
 - OPNsense credentials live only in environment variables; SQLite stores source metadata and normalized snapshots, never the API key or secret.
 - API widgets only perform read-only JSON requests. Widget secrets are referenced by allowlisted environment variable name and are not stored in SQLite.
 - Public `/api/status` resources contain only name, status, uptime percentage, and heartbeat ticks; URLs, hosts, targets, errors, IDs, and latency stay private.

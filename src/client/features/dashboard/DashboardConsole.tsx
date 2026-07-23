@@ -48,7 +48,14 @@ import {
   uptimePercent
 } from "../../lib/format";
 import { apiGet, apiSend } from "../../lib/api";
+import type { SystemSettingsDto } from "../../lib/api";
 import { type AppData } from "../types";
+import {
+  DASHBOARD_MODE_KEY,
+  DashboardLaunchpad,
+  DashboardModeSwitch,
+  type DashboardMode
+} from "./DashboardLaunchpad";
 
 type StatusFilter = "all" | "favorites" | "online" | "offline" | "unknown";
 type Density = "grid" | "list";
@@ -57,6 +64,10 @@ const DENSITY_KEY = "homelab-density";
 
 function readDensity(): Density {
   return localStorage.getItem(DENSITY_KEY) === "list" ? "list" : "grid";
+}
+
+function readDashboardMode(): DashboardMode {
+  return localStorage.getItem(DASHBOARD_MODE_KEY) === "operations" ? "operations" : "launchpad";
 }
 
 function monitoringLabel(resource: DashboardResource): string {
@@ -756,27 +767,32 @@ function ServiceCard({
 export function DashboardConsole({
   data,
   username,
+  systemSettings,
   onRefresh,
   onPatchResource,
   onRunCheck,
   onPatchGroup,
   onOpenServices,
+  onAddServiceTemplate,
   onOpenSettings,
   onEditService,
   onReorder
 }: {
   data: AppData;
   username: string;
+  systemSettings: SystemSettingsDto;
   onRefresh: () => Promise<void>;
   onPatchResource: (id: string, body: Record<string, unknown>) => Promise<void>;
   onRunCheck: (resource: DashboardResource) => Promise<void>;
   onPatchGroup: (id: string, body: Record<string, unknown>) => Promise<void>;
   onOpenServices: () => void;
+  onAddServiceTemplate: (templateId: string) => void;
   onOpenSettings: () => void;
   onEditService: (resource: DashboardResource) => void;
   onReorder: (orderedIds: string[]) => Promise<void>;
 }) {
   const [query, setQuery] = useState("");
+  const [mode, setMode] = useState<DashboardMode>(readDashboardMode);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [density, setDensity] = useState<Density>(readDensity);
   const [checkingResourceId, setCheckingResourceId] = useState<string | null>(null);
@@ -797,6 +813,10 @@ export function DashboardConsole({
   useEffect(() => {
     localStorage.setItem(DENSITY_KEY, density);
   }, [density]);
+
+  useEffect(() => {
+    localStorage.setItem(DASHBOARD_MODE_KEY, mode);
+  }, [mode]);
 
   const resources = useMemo(
     () => dashboardResources(data.dashboard.groups, data.dashboard.ungroupedResources),
@@ -833,7 +853,6 @@ export function DashboardConsole({
     offlineGateways +
     pressureHosts +
     briefing.staleChecks.length +
-    briefing.unmonitoredServices.length +
     briefing.watchlist.length;
   const lastUpdatedAt = [
     ...resources.map(latestCheckedAt),
@@ -1076,8 +1095,160 @@ export function DashboardConsole({
     );
   }
 
+  const serviceDirectory = (
+    <>
+      <div className="dash-toolbar launchpad-service-toolbar">
+        <label className="search-box service-search">
+          <Search size={16} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter services" />
+        </label>
+
+        <div className="filter-chips" aria-label="Service filters">
+          {filters.map((filter) => (
+            <button
+              key={filter.id}
+              className={statusFilter === filter.id ? "active" : ""}
+              type="button"
+              onClick={() => setStatusFilter(filter.id)}
+            >
+              {filter.label}
+              <i>{filter.count}</i>
+            </button>
+          ))}
+        </div>
+
+        <div className="dash-toolbar-end">
+          <div className="segmented-control density-toggle" role="group" aria-label="Layout density">
+            <button
+              className={density === "grid" ? "active" : ""}
+              type="button"
+              title="Grid view"
+              onClick={() => setDensity("grid")}
+            >
+              <LayoutGrid size={15} />
+            </button>
+            <button
+              className={density === "list" ? "active" : ""}
+              type="button"
+              title="List view"
+              onClick={() => setDensity("list")}
+            >
+              <Rows3 size={15} />
+            </button>
+          </div>
+          <button className="icon-button" type="button" title="Refresh" onClick={() => void onRefresh()}>
+            <RefreshCw size={16} />
+          </button>
+          <button className="primary-button header-primary-action" type="button" onClick={onOpenServices}>
+            <Plus size={16} /> Add service
+          </button>
+        </div>
+      </div>
+
+      {checkError ? <div className="app-error">{checkError}</div> : null}
+
+      {filteredGroups.map((group) => {
+        const groupTotals = summarizeResourceStatus(group.resources);
+        return (
+          <section className="service-group" key={group.id}>
+            <div className="service-group-header">
+              <button
+                className="group-toggle"
+                type="button"
+                onClick={() => onPatchGroup(group.id, { collapsed: !group.collapsed })}
+              >
+                {group.collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                <h3>{group.name}</h3>
+              </button>
+              <span className="group-meta">{groupTotals.online}/{group.resources.length} online</span>
+            </div>
+            {!group.collapsed ? renderCards(group.id, group.resources) : null}
+          </section>
+        );
+      })}
+
+      {filteredUngrouped.length > 0 ? (
+        <section className="service-group">
+          <div className="service-group-header">
+            <h3>Ungrouped</h3>
+            <span className="group-meta">
+              {summarizeResourceStatus(filteredUngrouped).online}/{filteredUngrouped.length} online
+            </span>
+          </div>
+          {renderCards("ungrouped", filteredUngrouped)}
+        </section>
+      ) : null}
+
+      {resources.length > 0 && visibleCount === 0 ? (
+        <EmptyPanel icon={<Search size={36} />} title="No services match" body="Clear search or change the status filter." />
+      ) : null}
+    </>
+  );
+
+  const overlays = (
+    <>
+      {inspected ? (
+        <ServiceDrawer
+          resource={inspected}
+          checking={checkingResourceId === inspected.id}
+          onClose={() => setInspectedId(null)}
+          onOpen={openResource}
+          onFavorite={(item) => void onPatchResource(item.id, { favorite: !item.favorite })}
+          onRunCheck={(item) => void runCheck(item)}
+          onEdit={(item) => {
+            setInspectedId(null);
+            onEditService(item);
+          }}
+        />
+      ) : null}
+
+      {inspectedHost ? (
+        <HostDetailDrawer
+          host={inspectedHost}
+          loading={hostDetailLoading}
+          error={hostDetailError}
+          onClose={() => setInspectedHostId(null)}
+        />
+      ) : null}
+
+      {inspectedIntegration ? (
+        <IntegrationDetailDrawer
+          source={inspectedIntegration}
+          loading={integrationDetailLoading}
+          error={integrationDetailError}
+          onClose={() => setInspectedIntegrationId(null)}
+        />
+      ) : null}
+    </>
+  );
+
   const dateLine = now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
   const clock = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  if (mode === "launchpad") {
+    return (
+      <main className="view-shell dashboard-view launchpad-view">
+        <DashboardLaunchpad
+          now={now}
+          username={username}
+          resources={resources}
+          totals={totals}
+          favorites={favorites}
+          offlineResources={offlineResources}
+          utilityConfig={systemSettings.dashboardUtilities}
+          serviceDirectory={serviceDirectory}
+          mode={mode}
+          onModeChange={setMode}
+          onLaunch={openResource}
+          onInspect={(resource) => setInspectedId(resource.id)}
+          onOpenSettings={onOpenSettings}
+          onAddService={onOpenServices}
+          onAddTemplate={onAddServiceTemplate}
+        />
+        {overlays}
+      </main>
+    );
+  }
 
   return (
     <main className="view-shell dashboard-view">
@@ -1122,35 +1293,36 @@ export function DashboardConsole({
             {dailyIssueCount > 0 ? `${dailyIssueCount} item${dailyIssueCount === 1 ? "" : "s"} need attention` : "All clear"}
           </span>
           <small>{lastUpdatedAt ? `Updated ${relativeTime(lastUpdatedAt)}` : "No samples yet"}</small>
+          <DashboardModeSwitch mode={mode} onChange={setMode} />
         </div>
       </header>
 
-      <section className="lab-vitals">
+      {hostMonitors.length > 0 ? (
+        <section className="lab-vitals">
         <div className="section-heading compact-section-heading">
           <h3>Lab Vitals</h3>
           <button className="icon-text-button" type="button" onClick={onOpenSettings}>
             <Plus size={14} /> Host monitor
           </button>
         </div>
-        {hostMonitors.length > 0 ? (
-          <div className="host-grid">
-            {hostMonitors.map((host) => (
-              <HostVitalsCard key={host.id} host={host} onInspect={(item) => setInspectedHostId(item.id)} />
-            ))}
-          </div>
-        ) : (
-          <div className="metrics-empty-panel">
-            <Server size={26} />
-            <span>
-              <strong>No host metrics yet</strong>
-              <small>Add a Glances endpoint to show CPU, RAM, disk, network, containers, and 24h trends.</small>
-            </span>
-            <button className="primary-button" type="button" onClick={onOpenSettings}>
-              <Plus size={15} /> Add Glances host
-            </button>
-          </div>
-        )}
+        <div className="host-grid">
+          {hostMonitors.map((host) => (
+            <HostVitalsCard key={host.id} host={host} onInspect={(item) => setInspectedHostId(item.id)} />
+          ))}
+        </div>
       </section>
+      ) : null}
+
+      {hostMonitors.length === 0 && integrations.length === 0 && apiWidgets.length === 0 && !aiBriefing ? (
+        <button className="operations-connect-panel" type="button" onClick={onOpenSettings}>
+          <span className="host-icon"><Server size={19} /></span>
+          <span>
+            <strong>Connect operations data</strong>
+            <small>Add a Glances host, OPNsense integration, or read-only API widget when you are ready.</small>
+          </span>
+          <Plus size={16} />
+        </button>
+      ) : null}
 
       {integrations.length > 0 ? (
         <section className="lab-vitals integration-vitals">
@@ -1197,6 +1369,16 @@ export function DashboardConsole({
         />
       ) : null}
 
+      {dailyIssueCount === 0 && briefing.recentChanges.length === 0 ? (
+        <section className="operations-all-clear">
+          <span className="ops-state ops-state-ok">All clear</span>
+          <span>
+            <strong>No operational issues need attention</strong>
+            <small>{resources.length > 0 ? `${totals.online}/${resources.length} services online with no recent transitions.` : "Add services when you are ready to start monitoring."}</small>
+          </span>
+          <span className="group-meta">last 24h</span>
+        </section>
+      ) : (
       <section className="daily-briefing">
         <div className="section-heading compact-section-heading">
           <h3>Daily Briefing</h3>
@@ -1209,10 +1391,10 @@ export function DashboardConsole({
           <span><small>Watchlist</small><strong>{briefing.summary.pendingFailures} failing · {briefing.summary.pendingRecoveries} recovering</strong></span>
         </div>
         <div className="briefing-grid">
-          <article className={`briefing-card ${briefing.offlineServices.length > 0 ? "briefing-danger" : ""}`}>
+          {briefing.offlineServices.length > 0 ? (
+          <article className="briefing-card briefing-danger">
             <strong><AlertTriangle size={15} /> Offline services</strong>
-            {briefing.offlineServices.length > 0 ? (
-              briefing.offlineServices.map((item) => {
+            {briefing.offlineServices.map((item) => {
                 const resource = resourceById(item.id);
                 return (
                   <div className="briefing-action-row" key={item.id}>
@@ -1227,38 +1409,38 @@ export function DashboardConsole({
                     ) : null}
                   </div>
                 );
-              })
-            ) : <p>No services are down.</p>}
+              })}
           </article>
+          ) : null}
 
-          <article className={briefing.hostsUnderPressure.length > 0 ? "briefing-card briefing-warning" : "briefing-card"}>
+          {briefing.hostsUnderPressure.length > 0 ? (
+          <article className="briefing-card briefing-warning">
             <strong><Cpu size={15} /> Host pressure</strong>
-            {briefing.hostsUnderPressure.length > 0 ? (
-              briefing.hostsUnderPressure.map((item) => (
+            {briefing.hostsUnderPressure.map((item) => (
                 <span key={`${item.id}-${item.metric}`}>
                   <i>{item.name}</i>
                   <small>{item.metric} {formatPercent(item.value)}</small>
                 </span>
-              ))
-            ) : <p>CPU, RAM, and disk pressure look normal.</p>}
+              ))}
           </article>
+          ) : null}
 
+          {briefing.recentChanges.length > 0 ? (
           <article className="briefing-card">
             <strong><Activity size={15} /> 24h timeline</strong>
-            {briefing.recentChanges.length > 0 ? (
-              briefing.recentChanges.map((item) => (
+            {briefing.recentChanges.map((item) => (
                 <button key={`${item.resourceId}-${item.changedAt}`} type="button" onClick={() => inspectResource(item.resourceId)}>
                   <span>{item.name}</span>
                   <small>{item.status} · {relativeTime(item.changedAt)}</small>
                 </button>
-              ))
-            ) : <p>No status transitions in the last day.</p>}
+              ))}
           </article>
+          ) : null}
 
-          <article className={briefing.watchlist.length > 0 ? "briefing-card briefing-warning" : "briefing-card"}>
+          {briefing.watchlist.length > 0 ? (
+          <article className="briefing-card briefing-warning">
             <strong><RefreshCw size={15} /> Threshold watchlist</strong>
-            {briefing.watchlist.length > 0 ? (
-              briefing.watchlist.map((item) => (
+            {briefing.watchlist.map((item) => (
                 <div className="briefing-action-row" key={item.checkId}>
                   <button className="briefing-main-action" type="button" onClick={() => inspectResource(item.resourceId)}>
                     <span>{item.resourceName}</span>
@@ -1270,12 +1452,13 @@ export function DashboardConsole({
                     <RefreshCw size={13} />
                   </button>
                 </div>
-              ))
-            ) : <p>No checks are waiting on thresholds.</p>}
+              ))}
           </article>
+          ) : null}
 
-          <article className={briefing.staleChecks.length + briefing.unmonitoredServices.length > 0 ? "briefing-card briefing-warning" : "briefing-card"}>
-            <strong><RefreshCw size={15} /> Monitoring gaps</strong>
+          {briefing.staleChecks.length > 0 ? (
+          <article className="briefing-card briefing-warning">
+            <strong><RefreshCw size={15} /> Stale checks</strong>
             {briefing.staleChecks.slice(0, 4).map((item) => (
               <div className="briefing-action-row" key={item.checkId}>
                 <button className="briefing-main-action" type="button" onClick={() => inspectResource(item.resourceId)}>
@@ -1287,21 +1470,11 @@ export function DashboardConsole({
                 </button>
               </div>
             ))}
-            {briefing.unmonitoredServices.slice(0, 4).map((item) => (
-              <div className="briefing-action-row" key={item.id}>
-                <button className="briefing-main-action" type="button" onClick={() => inspectResource(item.id)}>
-                  <span>{item.name}</span>
-                  <small>no active checks</small>
-                </button>
-                <button className="svc-action" type="button" title="Edit service" onClick={() => editResource(item.id)}>
-                  <Info size={13} />
-                </button>
-              </div>
-            ))}
-            {briefing.staleChecks.length === 0 && briefing.unmonitoredServices.length === 0 ? <p>All automatic services have fresh checks.</p> : null}
           </article>
+          ) : null}
         </div>
       </section>
+      )}
 
       <div className="dash-toolbar">
         <label className="search-box service-search">
@@ -1447,38 +1620,7 @@ export function DashboardConsole({
         <EmptyPanel icon={<Search size={36} />} title="No services match" body="Clear search or change the status filter." />
       ) : null}
 
-      {inspected ? (
-        <ServiceDrawer
-          resource={inspected}
-          checking={checkingResourceId === inspected.id}
-          onClose={() => setInspectedId(null)}
-          onOpen={openResource}
-          onFavorite={(item) => void onPatchResource(item.id, { favorite: !item.favorite })}
-          onRunCheck={(item) => void runCheck(item)}
-          onEdit={(item) => {
-            setInspectedId(null);
-            onEditService(item);
-          }}
-        />
-      ) : null}
-
-      {inspectedHost ? (
-        <HostDetailDrawer
-          host={inspectedHost}
-          loading={hostDetailLoading}
-          error={hostDetailError}
-          onClose={() => setInspectedHostId(null)}
-        />
-      ) : null}
-
-      {inspectedIntegration ? (
-        <IntegrationDetailDrawer
-          source={inspectedIntegration}
-          loading={integrationDetailLoading}
-          error={integrationDetailError}
-          onClose={() => setInspectedIntegrationId(null)}
-        />
-      ) : null}
+      {overlays}
     </main>
   );
 }

@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { HEALTH_CHECK_TYPES, HEALTH_STATUSES, MONITORING_MODES, RESOURCE_KINDS } from "../shared/types.js";
+import {
+  DASHBOARD_SEARCH_ENGINES,
+  HEALTH_CHECK_TYPES,
+  HEALTH_STATUSES,
+  MONITORING_MODES,
+  RESOURCE_KINDS,
+  WEATHER_UNITS
+} from "../shared/types.js";
 
 const nullableText = z.string().trim().min(1).max(2000).optional().nullable();
 
@@ -216,8 +223,46 @@ export const apiWidgetSchema = z.object({
 
 export const apiWidgetPatchSchema = apiWidgetSchema.partial();
 
+export const weatherLocationSchema = z.object({
+  label: z.string().trim().min(1).max(180),
+  name: z.string().trim().min(1).max(120),
+  country: z.string().trim().min(1).max(120),
+  latitude: z.number().finite().min(-90).max(90),
+  longitude: z.number().finite().min(-180).max(180),
+  timezone: z.string().trim().min(1).max(120)
+});
+
+const releaseRepository = z
+  .string()
+  .trim()
+  .min(3)
+  .max(200)
+  .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, "Use a public GitHub repository in owner/name format");
+
+export const dashboardUtilitiesConfigSchema = z.object({
+  searchEngine: z.enum(DASHBOARD_SEARCH_ENGINES),
+  weather: z.object({
+    enabled: z.boolean(),
+    units: z.enum(WEATHER_UNITS),
+    location: weatherLocationSchema.nullable()
+  }).refine((value) => !value.enabled || value.location !== null, {
+    path: ["location"],
+    message: "Choose a weather location before enabling weather"
+  }),
+  releases: z.object({
+    enabled: z.boolean(),
+    repositories: z.array(releaseRepository).max(12)
+  }).transform((value) => ({
+    ...value,
+    repositories: [...new Set(value.repositories.map((repository) => repository.toLowerCase()))]
+  }))
+});
+
 export const settingsSchema = z.object({
-  autoPingIntervalSeconds: z.number().int().min(15).max(86400)
+  autoPingIntervalSeconds: z.number().int().min(15).max(86400).optional(),
+  dashboardUtilities: dashboardUtilitiesConfigSchema.optional()
+}).refine((value) => value.autoPingIntervalSeconds !== undefined || value.dashboardUtilities !== undefined, {
+  message: "Provide at least one setting"
 });
 
 export const reorderSchema = z.object({

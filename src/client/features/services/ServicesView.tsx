@@ -6,6 +6,11 @@ import { ServiceIcon } from "../../components/ServiceIcon";
 import { FormErrorBanner, runFormAction, runFormSubmit } from "../../lib/forms";
 import { apiSend, emptyToNull } from "../../lib/api";
 import { formatDateTime, statusFor } from "../../lib/format";
+import {
+  serviceTemplateById,
+  serviceTemplates,
+  type ServiceTemplate
+} from "../../lib/serviceCatalog";
 import type { AppData } from "../types";
 import type { DashboardResource, OpnsenseImportSuggestionDto } from "../../../shared/types";
 import type { HealthCheckDto } from "../../lib/api";
@@ -19,31 +24,6 @@ const serviceTabs: Array<{ id: ServiceTab; label: string }> = [
 
 type EditMode = "resource" | "check" | null;
 type FormMode = "group" | "resource" | "check" | null;
-
-type ServiceTemplate = {
-  name: string;
-  kind: DashboardResource["kind"];
-  icon: string;
-  color: string;
-  url: string;
-  description: string;
-  groupHint: string;
-};
-
-const serviceTemplates: ServiceTemplate[] = [
-  { name: "Portainer", kind: "docker", icon: "portainer", color: "#60a5fa", url: "https://portainer.lab.local", description: "Docker stack management.", groupHint: "Applications" },
-  { name: "Proxmox", kind: "server", icon: "proxmox", color: "#f97316", url: "https://proxmox.lab.local:8006", description: "Virtualization cluster.", groupHint: "Infrastructure" },
-  { name: "Home Assistant", kind: "app", icon: "home-assistant", color: "#38bdf8", url: "https://homeassistant.lab.local", description: "Home automation controller.", groupHint: "Applications" },
-  { name: "Pi-hole", kind: "app", icon: "pi-hole", color: "#ef4444", url: "https://pihole.lab.local/admin", description: "DNS filtering and local resolver.", groupHint: "Network" },
-  { name: "TrueNAS", kind: "server", icon: "truenas", color: "#0284c7", url: "https://truenas.lab.local", description: "Storage and shares.", groupHint: "Infrastructure" },
-  { name: "Jellyfin", kind: "app", icon: "jellyfin", color: "#a855f7", url: "https://jellyfin.lab.local", description: "Media library.", groupHint: "Media" },
-  { name: "Grafana", kind: "app", icon: "grafana", color: "#f97316", url: "https://grafana.lab.local", description: "Dashboards and observability.", groupHint: "Monitoring" },
-  { name: "Nginx Proxy Manager", kind: "app", icon: "nginx-proxy-manager", color: "#22c55e", url: "https://npm.lab.local", description: "Reverse proxy management.", groupHint: "Network" },
-  { name: "Vaultwarden", kind: "app", icon: "vaultwarden", color: "#64748b", url: "https://vaultwarden.lab.local", description: "Password vault service.", groupHint: "Applications" },
-  { name: "UniFi", kind: "app", icon: "unifi", color: "#0ea5e9", url: "https://unifi.lab.local", description: "Network controller.", groupHint: "Network" },
-  { name: "Nextcloud", kind: "app", icon: "nextcloud", color: "#2563eb", url: "https://nextcloud.lab.local", description: "Private cloud files.", groupHint: "Applications" },
-  { name: "Uptime Kuma", kind: "app", icon: "uptime-kuma", color: "#22c55e", url: "https://uptime.lab.local", description: "External uptime monitor.", groupHint: "Monitoring" }
-];
 
 function Field({
   label,
@@ -74,6 +54,8 @@ export function ServicesView({
   autoPingIntervalSeconds,
   openAddServiceForm,
   onOpenAddServiceFormHandled,
+  addServiceTemplateId,
+  onAddServiceTemplateHandled,
   editServiceId,
   onEditServiceHandled
 }: {
@@ -82,6 +64,8 @@ export function ServicesView({
   autoPingIntervalSeconds: number;
   openAddServiceForm?: boolean;
   onOpenAddServiceFormHandled?: () => void;
+  addServiceTemplateId?: string | null;
+  onAddServiceTemplateHandled?: () => void;
   editServiceId?: string | null;
   onEditServiceHandled?: () => void;
 }) {
@@ -120,6 +104,13 @@ export function ServicesView({
     }
     onEditServiceHandled?.();
   }, [editServiceId, data.resources, onEditServiceHandled]);
+
+  useEffect(() => {
+    if (!addServiceTemplateId) return;
+    const template = serviceTemplateById(addServiceTemplateId);
+    if (template) applyTemplate(template);
+    onAddServiceTemplateHandled?.();
+  }, [addServiceTemplateId, onAddServiceTemplateHandled]);
 
   function startEditResource(resource: DashboardResource) {
     setEditResource(resource);
@@ -409,7 +400,7 @@ export function ServicesView({
           <div className="service-template-strip" aria-label="Service templates">
             <span>Templates</span>
             {serviceTemplates.map((template) => (
-              <button key={template.name} type="button" onClick={() => applyTemplate(template)}>
+              <button key={template.id} type="button" onClick={() => applyTemplate(template)}>
                 {template.name}
               </button>
             ))}

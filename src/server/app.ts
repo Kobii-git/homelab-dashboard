@@ -53,6 +53,11 @@ import {
 } from "./aiBriefing.js";
 import { buildDailyBriefing } from "./dailyBriefing.js";
 import {
+  DashboardUtilitiesService,
+  getDashboardUtilitiesConfig,
+  setDashboardUtilitiesConfig
+} from "./dashboardUtilities.js";
+import {
   apiWidgetPatchSchema,
   apiWidgetSchema,
   dashboardGroupPatchSchema,
@@ -79,6 +84,7 @@ type CreateAppOptions = {
   monitor?: boolean;
   logger?: boolean;
   setupCode?: string;
+  dashboardUtilities?: DashboardUtilitiesService;
 };
 
 type SchedulerRuntime = {
@@ -511,6 +517,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const loginLimiter = new RateLimiter(10, 60_000);
   const setupLimiter = new RateLimiter(5, 15 * 60_000);
   const app = Fastify({ logger: options.logger ?? env.nodeEnv === "production" });
+  const dashboardUtilities = options.dashboardUtilities ?? new DashboardUtilitiesService();
   const startedAt = new Date();
   const healthScheduler = createSchedulerRuntime(15_000);
   const metricsScheduler = createSchedulerRuntime(15_000);
@@ -869,14 +876,36 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   });
 
   app.get("/api/settings", async () => {
-    const autoPingIntervalSeconds = await getAutoPingIntervalSeconds(prisma);
-    return { autoPingIntervalSeconds };
+    const [autoPingIntervalSeconds, utilities] = await Promise.all([
+      getAutoPingIntervalSeconds(prisma),
+      getDashboardUtilitiesConfig(prisma)
+    ]);
+    return { autoPingIntervalSeconds, dashboardUtilities: utilities };
   });
 
   app.patch("/api/settings", async (request) => {
     const body = settingsSchema.parse(request.body);
-    await setAutoPingIntervalSeconds(prisma, body.autoPingIntervalSeconds);
-    return { autoPingIntervalSeconds: body.autoPingIntervalSeconds };
+    if (body.autoPingIntervalSeconds !== undefined) {
+      await setAutoPingIntervalSeconds(prisma, body.autoPingIntervalSeconds);
+    }
+    if (body.dashboardUtilities !== undefined) {
+      await setDashboardUtilitiesConfig(prisma, body.dashboardUtilities);
+    }
+    const [autoPingIntervalSeconds, utilities] = await Promise.all([
+      getAutoPingIntervalSeconds(prisma),
+      getDashboardUtilitiesConfig(prisma)
+    ]);
+    return { autoPingIntervalSeconds, dashboardUtilities: utilities };
+  });
+
+  app.get("/api/utilities/weather-locations", async (request) => {
+    const query = z.object({ q: z.string().trim().min(3).max(120) }).parse(request.query);
+    return dashboardUtilities.searchWeatherLocations(query.q);
+  });
+
+  app.get("/api/utilities/summary", async () => {
+    const config = await getDashboardUtilitiesConfig(prisma);
+    return dashboardUtilities.getSummary(config);
   });
 
   app.get("/api/admin/runtime", async () => {

@@ -15,6 +15,37 @@ async function expectNoSeriousAxeViolations(page: Page) {
   expect(results.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
 }
 
+const emptyDashboard = {
+  groups: [],
+  ungroupedResources: [],
+  hostMonitors: [],
+  integrations: [],
+  apiWidgets: [],
+  aiBriefing: null,
+  dailyBriefing: {
+    summary: {
+      servicesTotal: 0,
+      servicesOnline: 0,
+      servicesOffline: 0,
+      servicesUnknown: 0,
+      hostsTotal: 0,
+      hostsOffline: 0,
+      hostsUnderPressure: 0,
+      staleChecks: 0,
+      unmonitoredServices: 0,
+      pendingFailures: 0,
+      pendingRecoveries: 0
+    },
+    offlineServices: [],
+    recentChanges: [],
+    hostsUnderPressure: [],
+    staleChecks: [],
+    unmonitoredServices: [],
+    watchlist: []
+  },
+  layout: {}
+};
+
 test("setup uses labeled, keyboard-focusable account controls", async ({ page }) => {
   await page.route("**/api/auth/me", (route) => route.fulfill({ json: { authenticated: false } }));
   await page.route("**/api/setup/status", (route) => route.fulfill({
@@ -42,6 +73,188 @@ test("mobile navigation and service rows remain visible without overflow", async
   const rowBox = await row.boundingBox();
   const deleteBox = await page.getByRole("button", { name: "Delete OPNsense Gateway" }).boundingBox();
   expect(rowBox && deleteBox && deleteBox.y + deleteBox.height <= rowBox.y + rowBox.height + 1).toBe(true);
+});
+
+test("Launchpad is the device default, ranks local search, and remembers the selected preset", async ({ page }) => {
+  await login(page);
+  const viewSwitch = page.getByRole("group", { name: "Dashboard view" });
+  const launchpad = viewSwitch.getByRole("button", { name: "Launchpad" });
+  const operations = viewSwitch.getByRole("button", { name: "Operations" });
+  await expect(launchpad).toHaveClass(/active/);
+
+  const search = page.getByLabel("Open a service or search the web");
+  await search.fill("opn");
+  const results = page.getByRole("listbox", { name: "Launchpad search results" });
+  await expect(results.getByRole("option").first()).toContainText("OPNsense Gateway");
+  await expect(results.getByRole("option", { name: /Search DuckDuckGo/ })).toBeVisible();
+
+  await page.evaluate(() => {
+    (window as Window & { __openedUrl?: string }).open = ((url?: string | URL) => {
+      (window as Window & { __openedUrl?: string }).__openedUrl = String(url);
+      return null;
+    }) as typeof window.open;
+  });
+  await search.fill("home lab & vpn");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => page.evaluate(() => (window as Window & { __openedUrl?: string }).__openedUrl)).toBe(
+    "https://duckduckgo.com/?q=home%20lab%20%26%20vpn"
+  );
+
+  await operations.click();
+  await expect(operations).toHaveClass(/active/);
+  await page.reload();
+  await expect(page.getByRole("group", { name: "Dashboard view" }).getByRole("button", { name: "Operations" })).toHaveClass(/active/);
+});
+
+test("an empty Launchpad shows focused onboarding and Operations stays signal-only", async ({ page }) => {
+  await page.route("**/api/dashboard", (route) => route.fulfill({ json: emptyDashboard }));
+  await login(page);
+
+  await expect(page.getByText("Start your Launchpad")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Add custom service/ })).toBeVisible();
+  await expect(page.getByText("Lab Vitals")).toHaveCount(0);
+  await expect(page.getByText("Daily Briefing")).toHaveCount(0);
+  await expect(page.locator(".empty-panel")).toHaveCount(0);
+
+  await page.getByRole("group", { name: "Dashboard view" }).getByRole("button", { name: "Operations" }).click();
+  await expect(page.getByRole("button", { name: /Connect operations data/ })).toBeVisible();
+  await expect(page.getByText("No operational issues need attention")).toBeVisible();
+  await expect(page.locator(".briefing-grid")).toHaveCount(0);
+  await expectNoSeriousAxeViolations(page);
+});
+
+test("Launchpad utilities render independently and move after services on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/settings", (route) => route.fulfill({
+    json: {
+      autoPingIntervalSeconds: 60,
+      dashboardUtilities: {
+        searchEngine: "startpage",
+        weather: {
+          enabled: true,
+          units: "metric",
+          location: {
+            label: "Cape Town, Western Cape, South Africa",
+            name: "Cape Town",
+            country: "South Africa",
+            latitude: -33.9258,
+            longitude: 18.4232,
+            timezone: "Africa/Johannesburg"
+          }
+        },
+        releases: {
+          enabled: true,
+          repositories: ["gethomepage/homepage"]
+        }
+      }
+    }
+  }));
+  await page.route("**/api/utilities/summary", (route) => route.fulfill({
+    json: {
+      weather: {
+        state: "ready",
+        data: {
+          location: {
+            label: "Cape Town, Western Cape, South Africa",
+            name: "Cape Town",
+            country: "South Africa",
+            latitude: -33.9258,
+            longitude: 18.4232,
+            timezone: "Africa/Johannesburg"
+          },
+          units: "metric",
+          temperature: 16.4,
+          apparentTemperature: 15.1,
+          weatherCode: 2,
+          condition: "Partly cloudy",
+          isDay: true,
+          days: [
+            { date: "2026-07-24", weatherCode: 2, condition: "Partly cloudy", high: 19, low: 11, precipitationChance: 10 },
+            { date: "2026-07-25", weatherCode: 61, condition: "Rain", high: 17, low: 10, precipitationChance: 70 },
+            { date: "2026-07-26", weatherCode: 0, condition: "Clear", high: 21, low: 12, precipitationChance: 5 }
+          ]
+        },
+        fetchedAt: "2026-07-24T08:00:00.000Z",
+        stale: false,
+        error: null
+      },
+      releases: {
+        state: "ready",
+        data: [{
+          repository: "gethomepage/homepage",
+          name: "Homepage 1.8",
+          tag: "v1.8.0",
+          publishedAt: "2026-07-23T12:00:00.000Z",
+          url: "https://github.com/gethomepage/homepage/releases/tag/v1.8.0"
+        }],
+        fetchedAt: "2026-07-24T08:00:00.000Z",
+        stale: false,
+        error: null
+      }
+    }
+  }));
+  await login(page);
+
+  await expect(page.getByText("Cape Town", { exact: true })).toBeVisible();
+  const release = page.getByRole("link", { name: /gethomepage\/homepage/ });
+  await expect(release).toHaveAttribute("href", "https://github.com/gethomepage/homepage/releases/tag/v1.8.0");
+  const servicesBox = await page.locator(".launchpad-services").boundingBox();
+  const utilitiesBox = await page.locator(".launchpad-utilities").boundingBox();
+  expect(servicesBox && utilitiesBox && utilitiesBox.y >= servicesBox.y + servicesBox.height).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await expectNoSeriousAxeViolations(page);
+});
+
+test("a utility provider failure does not hide successful utility data or services", async ({ page }) => {
+  await page.route("**/api/settings", (route) => route.fulfill({
+    json: {
+      autoPingIntervalSeconds: 60,
+      dashboardUtilities: {
+        searchEngine: "google",
+        weather: {
+          enabled: true,
+          units: "metric",
+          location: {
+            label: "Cape Town, South Africa",
+            name: "Cape Town",
+            country: "South Africa",
+            latitude: -33.9258,
+            longitude: 18.4232,
+            timezone: "Africa/Johannesburg"
+          }
+        },
+        releases: { enabled: true, repositories: ["gethomepage/homepage"] }
+      }
+    }
+  }));
+  await page.route("**/api/utilities/summary", (route) => route.fulfill({
+    json: {
+      weather: {
+        state: "error",
+        data: null,
+        fetchedAt: null,
+        stale: false,
+        error: "Weather provider timed out"
+      },
+      releases: {
+        state: "ready",
+        data: [{
+          repository: "gethomepage/homepage",
+          name: "Homepage 1.8",
+          tag: "v1.8.0",
+          publishedAt: "2026-07-23T12:00:00.000Z",
+          url: "https://github.com/gethomepage/homepage/releases/tag/v1.8.0"
+        }],
+        fetchedAt: "2026-07-24T08:00:00.000Z",
+        stale: false,
+        error: null
+      }
+    }
+  }));
+  await login(page);
+  await expect(page.getByText("Weather unavailable")).toBeVisible();
+  await expect(page.getByText("Software releases")).toBeVisible();
+  await expect(page.locator(".svc-primary").first()).toBeVisible();
 });
 
 test("cards and modal surfaces are keyboard operable and restore focus", async ({ page }) => {
@@ -79,7 +292,7 @@ test("authenticated views, palette, and drawer have no serious axe violations", 
   await expectNoSeriousAxeViolations(page);
   await navigation.getByRole("button", { name: "Admin", exact: true }).click();
   await expectNoSeriousAxeViolations(page);
-  await page.getByRole("button", { name: /Search/ }).click();
+  await page.getByTitle("Search (⌘K)").click();
   await expectNoSeriousAxeViolations(page);
   await page.keyboard.press("Escape");
   await navigation.getByRole("button", { name: "Dashboard", exact: true }).click();
