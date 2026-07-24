@@ -118,9 +118,9 @@ export function validateHealthCheckTarget(type: string, target: string): string 
     if (type === "tcp") {
       const parsed = value.includes("://") ? new URL(value) : new URL(`tcp://${value}`);
       const port = Number(parsed.port || (parsed.protocol === "https:" ? 443 : parsed.protocol === "http:" ? 80 : 0));
-      return parsed.hostname && Number.isInteger(port) && port >= 1 && port <= 65_535
+      return !parsed.username && !parsed.password && parsed.hostname && Number.isInteger(port) && port >= 1 && port <= 65_535
         ? null
-        : "TCP targets must include a valid hostname and port";
+        : "TCP targets must include a valid hostname and port without credentials";
     }
     if (type === "ssl") {
       const parsed = value.includes("://") ? new URL(value) : new URL(`https://${value}`);

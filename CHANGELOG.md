@@ -9,6 +9,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## Unreleased
 
 ### Added
+- Production security boundary with exact HTTPS origin/proxy validation, explicit
+  outbound CIDR/host allowlists, pinned DNS connections, and metadata/special-address blocking.
+- Five-minute password reauthentication for sensitive connector, target, secret-binding,
+  and destructive administration changes, with redacted structured security events.
+- Versioned API-widget secret-to-origin bindings, same-origin bounded icon proxying,
+  Runtime Health security-readiness diagnostics, and secure deployment/backup runbooks.
+- Pinned CI security gates for Gitleaks, Trivy, ZAP baselines, SBOM/provenance,
+  Cosign digest signing, registry TLS preflight, and stale duplicate-file rejection.
 - Adaptive Dashboard presets: a service-first Launchpad for everyday access and an
   Operations view for monitoring, with device-local mode and density persistence.
 - Ranked universal service search with favorite/prefix priority and an explicit
@@ -38,6 +46,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Dashboard panel, Admin runtime state, and scheduler diagnostics.
 
 ### Changed
+- Production now requires `APP_ORIGIN`, `TRUST_PROXY_CIDRS`, a 32-character
+  `COOKIE_SECRET`, and `OUTBOUND_ALLOWED_CIDRS`; first database-backed boot additionally requires `SETUP_CODE`.
+- Sessions default to seven days, public status defaults off, public build endpoints
+  omit Git metadata, and credentialed integrations require verified HTTPS by default.
+- Runtime images use a pinned Node digest, omit global package tooling, and Compose
+  binds loopback with CPU, memory, PID, temporary-storage, and log-rotation limits.
+- Fastify and related dependencies were upgraded to the audit-clean release set.
 - Operations now hides unconfigured monitoring sections behind one connection
   action and renders detailed Daily Briefing cards only for active signals.
 - Background dashboard refreshes use a non-blocking indicator after the initial load.
@@ -49,7 +64,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and global invalidation on logout or password change.
 - Public status resources now expose only name, status, uptime, and heartbeat ticks.
 - API widget secrets require a built-in name or `API_WIDGET_SECRET_ALLOWLIST` entry.
-- Outbound JSON polling is bounded, redirect-free, and TLS verification now applies to AI requests.
+- Outbound JSON polling is concurrency-limited, pinned after validation, bounded by
+  response size and wall-clock time, redirect-free, and TLS verification now applies to AI requests.
 - The runtime container is non-root with a read-only root filesystem and no Linux capabilities.
 
 ### Fixed

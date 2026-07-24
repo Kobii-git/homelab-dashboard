@@ -10,6 +10,7 @@ import type {
 } from "../shared/types.js";
 import type { SchedulerUpdate } from "./healthChecks.js";
 import { boundedJsonRequest } from "./httpJson.js";
+import { assertApiWidgetSecretBinding } from "./apiWidgetBindings.js";
 
 export const API_WIDGET_SAMPLE_RETENTION = 1440;
 
@@ -34,6 +35,7 @@ type RequestOptions = {
   body?: unknown;
   headers?: Record<string, string>;
   tlsVerify?: boolean;
+  credentialed?: boolean;
 };
 
 export const apiWidgetTemplates: ApiWidgetTemplateDto[] = [
@@ -464,6 +466,7 @@ async function requestJson(baseUrl: string, endpointPath: string, options: Reque
     body: options.body,
     headers: options.headers,
     tlsVerify: options.tlsVerify,
+    credentialed: options.credentialed,
     timeoutMs: REQUEST_TIMEOUT_MS,
     maxBytes: MAX_RESPONSE_BYTES,
     label: "API widget"
@@ -492,7 +495,8 @@ async function requestWidgetData(widget: ApiWidget, allowlist: readonly string[]
   if (widget.authType !== "pihole") {
     return requestJson(widget.baseUrl, widget.endpointPath, {
       headers: authHeaders(widget, allowlist),
-      tlsVerify: widget.tlsVerify
+      tlsVerify: widget.tlsVerify,
+      credentialed: widget.authType !== "none"
     });
   }
 
@@ -503,7 +507,8 @@ async function requestWidgetData(widget: ApiWidget, allowlist: readonly string[]
   const auth = await requestJson(widget.baseUrl, "/api/auth", {
     method: "POST",
     body: { password },
-    tlsVerify: widget.tlsVerify
+    tlsVerify: widget.tlsVerify,
+    credentialed: true
   });
   const sid = valueAtPath(auth, "session.sid");
   if (typeof sid !== "string" || !sid) {
@@ -515,13 +520,15 @@ async function requestWidgetData(widget: ApiWidget, allowlist: readonly string[]
 
   try {
     return await requestJson(endpoint.origin, `${endpoint.pathname}${endpoint.search}`, {
-      tlsVerify: widget.tlsVerify
+      tlsVerify: widget.tlsVerify,
+      credentialed: true
     });
   } finally {
     try {
       await requestJson(widget.baseUrl, `/api/auth?sid=${encodeURIComponent(sid)}`, {
         method: "DELETE",
-        tlsVerify: widget.tlsVerify
+        tlsVerify: widget.tlsVerify,
+        credentialed: true
       });
     } catch {
       // Logout is best-effort; the session will expire server-side.
@@ -574,7 +581,16 @@ export async function runApiWidgetSample(
   widget: ApiWidget,
   allowlist: readonly string[] = []
 ): Promise<ApiWidgetOutcome> {
-  const outcome = await collectApiWidgetSnapshot(widget, allowlist);
+  let outcome: ApiWidgetOutcome;
+  try {
+    await assertApiWidgetSecretBinding(prisma, widget);
+    outcome = await collectApiWidgetSnapshot(widget, allowlist);
+  } catch (error) {
+    outcome = {
+      status: "offline",
+      error: sanitizeApiWidgetError(error)
+    };
+  }
   const snapshotJson = outcome.snapshot
     ? outcome.snapshot as unknown as Prisma.InputJsonValue
     : Prisma.JsonNull;

@@ -458,7 +458,7 @@ export function ServicesView({
                 </select>
               </label>
               <Field label="URL" name="url" placeholder="https://service.local" defaultValue={resourceDefaults?.url ?? ""} />
-              <Field label="Host" name="host" placeholder="192.168.1.10" defaultValue={resourceDefaults?.host ?? ""} />
+              <Field label="Host" name="host" placeholder="server.home.arpa" defaultValue={resourceDefaults?.host ?? ""} />
               <Field
                 label="Icon (auto-detected from name if empty)"
                 name="icon"

@@ -48,9 +48,9 @@ tests/        Vitest routes and Playwright UI/accessibility tests
 
 This project uses [Semantic Versioning](https://semver.org). Tag releases as `vMAJOR.MINOR.PATCH` on `main`.
 
-The canonical repository is [Forgejo](http://10.0.21.40:3000/kobuslabs/homelabdashboard). Keep both long-lived branches available:
+The canonical repository is Forgejo and must be accessed over the operator-configured SSH remote. Keep both long-lived branches available:
 
 - `main` is stable and publishes the `latest` and `main` images.
 - `beta` is pre-release and publishes the `beta` image.
 
-Forgejo Actions is defined in `.forgejo/workflows/`; `.github/workflows/` is retained as a compatible mirror for GitHub. Do not commit credentials, local databases, build output, or dependency directories. For manual image publishing, authenticate with `docker login 10.0.21.40:3000` and use the `10.0.21.40:3000/kobuslabs/homelabdashboard` image name.
+Forgejo Actions is defined in `.forgejo/workflows/`; `.github/workflows/` is retained as a compatible mirror for GitHub. Do not commit credentials, local databases, build output, dependency directories, Cosign private keys, or plaintext environment files. Manual image publishing must use the TLS registry in `REGISTRY_HOST`; plaintext registries are unsupported.

@@ -1,5 +1,10 @@
 import http from "node:http";
 import https from "node:https";
+import {
+  assertIntegrationTransport,
+  resolveOutboundTarget,
+  withFixedProviderLimit
+} from "./outboundPolicy.js";
 
 export type JsonRequestOptions = {
   method?: "GET" | "POST" | "DELETE";
@@ -8,6 +13,8 @@ export type JsonRequestOptions = {
   timeoutMs: number;
   maxBytes: number;
   tlsVerify?: boolean;
+  credentialed?: boolean;
+  fixedProvider?: boolean;
   label: string;
 };
 
@@ -16,15 +23,37 @@ export async function boundedJsonRequest(url: URL | string, options: JsonRequest
   if (target.protocol !== "http:" && target.protocol !== "https:") {
     throw new Error(`${options.label} URL must use HTTP or HTTPS`);
   }
+  if (target.username || target.password) {
+    throw new Error(`${options.label} URL must not contain embedded credentials`);
+  }
+  assertIntegrationTransport(target, options);
+
+  return withFixedProviderLimit(options.fixedProvider === true, () =>
+    performBoundedJsonRequest(target, options)
+  );
+}
+
+async function performBoundedJsonRequest(target: URL, options: JsonRequestOptions): Promise<unknown> {
+  const resolved = await resolveOutboundTarget(target.hostname, {
+    fixedProvider: options.fixedProvider
+  });
 
   const body = options.body === undefined ? null : JSON.stringify(options.body);
   const transport = target.protocol === "https:" ? https : http;
 
   return new Promise((resolve, reject) => {
     let settled = false;
+    let timeout: NodeJS.Timeout;
+    const finishResolve = (value: unknown) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve(value);
+    };
     const finishReject = (error: Error) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timeout);
       reject(error);
     };
     const request = transport.request(
@@ -36,12 +65,14 @@ export async function boundedJsonRequest(url: URL | string, options: JsonRequest
           ...(body ? { "Content-Type": "application/json", "Content-Length": String(Buffer.byteLength(body)) } : {}),
           ...(options.headers ?? {})
         },
-        rejectUnauthorized: options.tlsVerify ?? true
+        rejectUnauthorized: options.tlsVerify ?? true,
+        lookup: resolved.lookup,
+        maxHeaderSize: 16 * 1024
       },
       (response) => {
         const statusCode = response.statusCode ?? 0;
         if (statusCode < 200 || statusCode >= 300) {
-          response.resume();
+          response.destroy();
           finishReject(new Error(`${options.label} returned HTTP ${statusCode}`));
           return;
         }
@@ -52,28 +83,30 @@ export async function boundedJsonRequest(url: URL | string, options: JsonRequest
           const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
           size += buffer.length;
           if (size > options.maxBytes) {
-            request.destroy(new Error(`${options.label} response exceeded ${options.maxBytes} bytes`));
+            const error = new Error(`${options.label} response exceeded ${options.maxBytes} bytes`);
+            response.destroy();
+            request.destroy();
+            finishReject(error);
             return;
           }
           chunks.push(buffer);
         });
         response.on("end", () => {
           if (settled) return;
-          settled = true;
           const responseBody = Buffer.concat(chunks).toString("utf8");
           try {
-            resolve(responseBody ? JSON.parse(responseBody) : {});
+            finishResolve(responseBody ? JSON.parse(responseBody) : {});
           } catch {
-            reject(new Error(`${options.label} returned invalid JSON`));
+            finishReject(new Error(`${options.label} returned invalid JSON`));
           }
         });
         response.on("error", finishReject);
       }
     );
 
-    request.setTimeout(options.timeoutMs, () => {
+    timeout = setTimeout(() => {
       request.destroy(new Error(`${options.label} timed out after ${options.timeoutMs} ms`));
-    });
+    }, options.timeoutMs);
     request.on("error", finishReject);
     if (body) request.write(body);
     request.end();

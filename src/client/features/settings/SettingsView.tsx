@@ -43,6 +43,7 @@ type ApiWidgetForm = {
   pollIntervalSeconds: string;
   fieldMappings: string;
   enabled: boolean;
+  confirmSecretOrigin: boolean;
 };
 
 const emptyHostMonitorForm: HostMonitorForm = {
@@ -67,8 +68,17 @@ const emptyApiWidgetForm: ApiWidgetForm = {
   tlsVerify: true,
   pollIntervalSeconds: "300",
   fieldMappings: JSON.stringify([{ label: "Status", path: "status", kind: "text" }], null, 2),
-  enabled: true
+  enabled: true,
+  confirmSecretOrigin: false
 };
+
+function normalizedOrigin(value: string): string | null {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
 
 function formatUptimeSeconds(seconds: number): string {
   const days = Math.floor(seconds / 86400);
@@ -391,6 +401,7 @@ export function SettingsView({
       authHeaderName: template?.authHeaderName ?? "",
       authEnvVar: current.authEnvVar || template?.authEnvVarHint || "",
       authValuePrefix: template?.authValuePrefix ?? "",
+      confirmSecretOrigin: false,
       fieldMappings: JSON.stringify(template?.fieldMappings ?? JSON.parse(emptyApiWidgetForm.fieldMappings), null, 2)
     }));
   }
@@ -411,7 +422,10 @@ export function SettingsView({
           tlsVerify: true,
           pollIntervalSeconds: 300,
           fieldMappings: suggestion.fieldMappings,
-          enabled: true
+          enabled: true,
+          ...(suggestion.authType !== "none"
+            ? { confirmSecretOrigin: normalizedOrigin(suggestion.baseUrl) }
+            : {})
         });
         await Promise.all([loadApiWidgets(), loadRuntime(), onRefresh()]);
       },
@@ -436,7 +450,8 @@ export function SettingsView({
       tlsVerify: widget.tlsVerify,
       pollIntervalSeconds: String(widget.pollIntervalSeconds),
       fieldMappings: JSON.stringify(widget.fieldMappings, null, 2),
-      enabled: widget.enabled
+      enabled: widget.enabled,
+      confirmSecretOrigin: false
     });
   }
 
@@ -462,8 +477,16 @@ export function SettingsView({
       tlsVerify: widgetForm.tlsVerify,
       pollIntervalSeconds: Number(widgetForm.pollIntervalSeconds || 300),
       fieldMappings,
-      enabled: widgetForm.enabled
+      enabled: widgetForm.enabled,
+      ...(widgetForm.authType !== "none" && widgetForm.confirmSecretOrigin
+        ? { confirmSecretOrigin: normalizedOrigin(widgetForm.baseUrl) }
+        : {})
     };
+
+    if (widgetForm.authType !== "none" && !widgetForm.confirmSecretOrigin) {
+      setActionError("Confirm the credential destination origin before saving this widget");
+      return;
+    }
 
     await runFormAction(
       async () => {
@@ -791,7 +814,7 @@ export function SettingsView({
               <input
                 value={hostForm.baseUrl}
                 onChange={(event) => setHostForm((current) => ({ ...current, baseUrl: event.target.value }))}
-                placeholder="http://192.168.1.10:61208"
+                placeholder="https://glances.home.arpa"
                 required
               />
             </label>
@@ -992,7 +1015,11 @@ export function SettingsView({
               Base URL
               <input
                 value={widgetForm.baseUrl}
-                onChange={(event) => setWidgetForm((current) => ({ ...current, baseUrl: event.target.value }))}
+                onChange={(event) => setWidgetForm((current) => ({
+                  ...current,
+                  baseUrl: event.target.value,
+                  confirmSecretOrigin: false
+                }))}
                 placeholder="https://service.lab.local"
                 required
               />
@@ -1010,7 +1037,11 @@ export function SettingsView({
               Auth
               <select
                 value={widgetForm.authType}
-                onChange={(event) => setWidgetForm((current) => ({ ...current, authType: event.target.value as ApiWidgetDto["authType"] }))}
+                onChange={(event) => setWidgetForm((current) => ({
+                  ...current,
+                  authType: event.target.value as ApiWidgetDto["authType"],
+                  confirmSecretOrigin: false
+                }))}
               >
                 <option value="none">None</option>
                 <option value="bearer">Bearer token</option>
@@ -1031,7 +1062,11 @@ export function SettingsView({
               Env var
               <input
                 value={widgetForm.authEnvVar}
-                onChange={(event) => setWidgetForm((current) => ({ ...current, authEnvVar: event.target.value.toUpperCase() }))}
+                onChange={(event) => setWidgetForm((current) => ({
+                  ...current,
+                  authEnvVar: event.target.value.toUpperCase(),
+                  confirmSecretOrigin: false
+                }))}
                 placeholder="HOME_ASSISTANT_TOKEN"
               />
             </label>
@@ -1070,6 +1105,19 @@ export function SettingsView({
               />
               Enabled
             </label>
+            {widgetForm.authType !== "none" ? (
+              <label className="checkbox-row api-widget-mapping-field">
+                <input
+                  type="checkbox"
+                  checked={widgetForm.confirmSecretOrigin}
+                  onChange={(event) => setWidgetForm((current) => ({
+                    ...current,
+                    confirmSecretOrigin: event.target.checked
+                  }))}
+                />
+                Send credentials only to {normalizedOrigin(widgetForm.baseUrl) ?? "a valid HTTPS origin"}
+              </label>
+            ) : null}
             <label className="api-widget-mapping-field">
               Field mappings
               <textarea
@@ -1161,13 +1209,17 @@ export function SettingsView({
             <button className="icon-text-button" type="button" onClick={() => void onRefresh()}>
               <RefreshCw size={16} /> Sync all data
             </button>
-            <button
-              className="icon-text-button"
-              type="button"
-              onClick={() => window.open("/status", "_blank", "noopener,noreferrer")}
-            >
-              <ExternalLink size={16} /> Public status page
-            </button>
+            {runtime?.security.publicStatusMode !== "disabled" ? (
+              <button
+                className="icon-text-button"
+                type="button"
+                onClick={() => window.open("/status", "_blank", "noopener,noreferrer")}
+              >
+                <ExternalLink size={16} /> Public status page
+              </button>
+            ) : (
+              <span className="muted-copy">Public status is disabled by deployment policy.</span>
+            )}
           </div>
         </section>
 
@@ -1182,7 +1234,19 @@ export function SettingsView({
                 <span><span>Node</span><strong>{runtime.process.nodeVersion}</strong></span>
                 <span><span>Listen</span><strong>{runtime.process.host}:{runtime.process.port}</strong></span>
                 <span><span>Database</span><strong>{runtime.database.ok ? runtime.database.url : "unavailable"}</strong></span>
+                <span><span>App origin</span><strong>{runtime.security.appOrigin ?? "development mode"}</strong></span>
+                <span><span>Session</span><strong>{runtime.auth.sessionMaxAgeHours}h · {runtime.auth.cookieSecure ? "secure cookie" : "HTTP cookie"}</strong></span>
+                <span><span>Public status</span><strong>{runtime.security.publicStatusMode}</strong></span>
+                <span><span>Outbound policy</span><strong>{runtime.security.outboundPolicy.configured ? `${runtime.security.outboundPolicy.allowedCidrCount} CIDR · ${runtime.security.outboundPolicy.allowedHostCount} hosts` : "not configured"}</strong></span>
               </div>
+              {runtime.security.readinessWarnings.length > 0 ? (
+                <div className="form-error" role="status">
+                  <strong>Security readiness</strong>
+                  <ul>
+                    {runtime.security.readinessWarnings.map((warning) => <li key={warning}>{warning}</li>)}
+                  </ul>
+                </div>
+              ) : null}
 
               <div className="runtime-count-grid">
                 <span><small>Services</small><strong>{runtime.database.counts.resources}</strong></span>

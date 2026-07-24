@@ -201,6 +201,7 @@ export class DashboardUtilitiesService {
       const response = geocodingResponseSchema.parse(await this.request(url, {
         timeoutMs: 4_000,
         maxBytes: 128 * 1024,
+        fixedProvider: true,
         label: "Weather location search"
       }));
 
@@ -251,6 +252,7 @@ export class DashboardUtilitiesService {
       const response = forecastResponseSchema.parse(await this.request(url, {
         timeoutMs: 5_000,
         maxBytes: 256 * 1024,
+        fixedProvider: true,
         label: "Weather forecast"
       }));
 
@@ -303,6 +305,7 @@ export class DashboardUtilitiesService {
           },
           timeoutMs: 5_000,
           maxBytes: 256 * 1024,
+          fixedProvider: true,
           label: `GitHub release ${repository}`
         }));
 

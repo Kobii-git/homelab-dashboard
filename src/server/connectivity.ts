@@ -1,5 +1,6 @@
 import net from "node:net";
 import tls from "node:tls";
+import { resolveOutboundTarget } from "./outboundPolicy.js";
 
 export async function testTcpReachable(host: string, port: number, timeoutMs = 3000): Promise<{
   ok: boolean;
@@ -10,26 +11,31 @@ export async function testTcpReachable(host: string, port: number, timeoutMs = 3
 
   return new Promise((resolve) => {
     let settled = false;
-    const socket = net.createConnection({ host, port });
+    let socket: net.Socket;
 
     const finish = (result: { ok: boolean; error?: string }) => {
       if (settled) return;
       settled = true;
-      socket.destroy();
+      socket?.destroy();
       resolve({ ...result, latencyMs: Math.max(1, Date.now() - startedAt) });
     };
-
-    socket.setTimeout(timeoutMs);
-    socket.once("connect", () => finish({ ok: true }));
-    socket.once("timeout", () => finish({ ok: false, error: "Connection timed out" }));
-    socket.once("error", (error) => finish({ ok: false, error: error.message }));
+    void resolveOutboundTarget(host).then((resolved) => {
+      socket = net.createConnection({ host: resolved.address, family: resolved.family, port });
+      socket.setTimeout(timeoutMs);
+      socket.once("connect", () => finish({ ok: true }));
+      socket.once("timeout", () => finish({ ok: false, error: "Connection timed out" }));
+      socket.once("error", (error) => finish({ ok: false, error: error.message }));
+    }).catch((error: unknown) => finish({
+      ok: false,
+      error: error instanceof Error ? error.message : "Target resolution failed"
+    }));
   });
 }
 
 function parseSslTarget(target: string): { host: string; port: number; servername: string } {
   const url = new URL(target.includes("://") ? target : `https://${target}`);
   const port = Number(url.port || 443);
-  if (!url.hostname || !Number.isInteger(port) || port < 1 || port > 65_535) {
+  if (url.username || url.password || !url.hostname || !Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error("SSL target must be a URL or host:port");
   }
   return { host: url.hostname, port, servername: url.hostname };
@@ -44,22 +50,37 @@ export async function checkSslCertificate(target: string, timeoutMs: number): Pr
 
   try {
     const { host, port, servername } = parseSslTarget(target);
+    const resolved = await resolveOutboundTarget(host);
     const cert = await new Promise<tls.PeerCertificate>((resolve, reject) => {
-      const socket = tls.connect({ host, port, servername, rejectUnauthorized: false }, () => {
+      let settled = false;
+      const finishReject = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        reject(error);
+      };
+      const socket = tls.connect({
+        host: resolved.address,
+        port,
+        servername: net.isIP(servername) ? undefined : servername,
+        rejectUnauthorized: true
+      }, () => {
         const peer = socket.getPeerCertificate();
         socket.end();
         if (!peer || Object.keys(peer).length === 0) {
-          reject(new Error("No certificate returned"));
+          finishReject(new Error("No certificate returned"));
           return;
         }
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
         resolve(peer);
       });
-      socket.setTimeout(timeoutMs);
-      socket.once("timeout", () => {
+      const timeout = setTimeout(() => {
         socket.destroy();
-        reject(new Error("Timeout"));
-      });
-      socket.once("error", reject);
+        finishReject(new Error("Timeout"));
+      }, timeoutMs);
+      socket.once("error", finishReject);
     });
 
     const validTo = cert.valid_to ? new Date(cert.valid_to) : null;

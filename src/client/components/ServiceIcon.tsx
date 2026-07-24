@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DashboardResource } from "../../shared/types";
 
-const CDN_BASE = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/webp";
-
 /** Remembers which image URLs already failed so polling re-renders don't flash retries. */
 const sourceHealth = new Map<string, "ok" | "bad">();
 
@@ -21,44 +19,22 @@ function initialsFor(name: string): string {
   return (words[0][0] + words[1][0]).toUpperCase();
 }
 
-function candidatesFor(resource: Pick<DashboardResource, "name" | "icon" | "url">): string[] {
-  const sources: string[] = [];
-  const icon = resource.icon?.trim();
-
-  if (icon) {
-    if (/^https?:\/\//i.test(icon)) {
-      sources.push(icon);
-    } else {
-      sources.push(`${CDN_BASE}/${iconSlug(icon)}.webp`);
-    }
-  }
-
-  const nameSlug = iconSlug(resource.name);
-  if (nameSlug) {
-    sources.push(`${CDN_BASE}/${nameSlug}.webp`);
-  }
-
-  if (resource.url) {
-    try {
-      sources.push(new URL("/favicon.ico", resource.url).toString());
-    } catch {
-      // unparseable URL — skip favicon candidate
-    }
-  }
-
-  return [...new Set(sources)].filter((source) => sourceHealth.get(source) !== "bad");
+function candidatesFor(resource: { id?: string }): string[] {
+  if (!resource.id) return [];
+  const source = `/api/resources/${encodeURIComponent(resource.id)}/icon`;
+  return sourceHealth.get(source) === "bad" ? [] : [source];
 }
 
 export function ServiceIcon({
   resource,
   size = 40
 }: {
-  resource: Pick<DashboardResource, "name" | "icon" | "url" | "color">;
+  resource: Pick<DashboardResource, "name" | "icon" | "url" | "color"> & { id?: string };
   size?: number;
 }) {
   const candidates = useMemo(
     () => candidatesFor(resource),
-    [resource.name, resource.icon, resource.url]
+    [resource.id, resource.name, resource.icon, resource.url]
   );
   const [index, setIndex] = useState(0);
 

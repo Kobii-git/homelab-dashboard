@@ -280,6 +280,49 @@ test("cards and modal surfaces are keyboard operable and restore focus", async (
   await expect(details).toBeFocused();
 });
 
+test("sensitive administration prompts for reauthentication and retries once", async ({ page }) => {
+  await login(page);
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Services", exact: true }).click();
+  const deleteButton = page.getByRole("button", { name: "Delete Windows Admin VM" });
+  await expect(deleteButton).toBeVisible();
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await deleteButton.click();
+
+  const reauth = page.getByRole("dialog", { name: "Confirm it’s you" });
+  await expect(reauth).toBeVisible({ timeout: 10_000 });
+  const password = reauth.getByLabel(/administrator password/i);
+  await expect(password).toBeFocused();
+  await password.fill("e2e-admin-password");
+  await reauth.getByRole("button", { name: "Confirm", exact: true }).click();
+
+  await expect(reauth).toHaveCount(0);
+  await expect(deleteButton).toHaveCount(0);
+});
+
+test("Runtime Health surfaces security warnings and disabled public-status policy", async ({ page }) => {
+  await login(page);
+  const runtimeResponse = await page.request.get("/api/admin/runtime");
+  expect(runtimeResponse.ok()).toBe(true);
+  const runtime = await runtimeResponse.json();
+  await page.route("**/api/admin/runtime", (route) => route.fulfill({
+    json: {
+      ...runtime,
+      security: {
+        ...runtime.security,
+        publicStatusMode: "disabled",
+        readinessWarnings: ["CRITICAL: Insecure integration transport override is enabled"]
+      }
+    }
+  }));
+
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Admin", exact: true }).click();
+  await expect(page.getByText("Security readiness")).toBeVisible();
+  await expect(page.getByText("CRITICAL: Insecure integration transport override is enabled")).toBeVisible();
+  await expect(page.getByText("Public status is disabled by deployment policy.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Public status page" })).toHaveCount(0);
+});
+
 test("authenticated views, palette, and drawer have no serious axe violations", async ({ page }) => {
   await page.goto("/");
   await expectNoSeriousAxeViolations(page);

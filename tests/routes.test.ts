@@ -1,20 +1,46 @@
 import http from "node:http";
+import tls from "node:tls";
 import crypto from "node:crypto";
+import dns from "node:dns";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { execFile } from "node:child_process";
 import type { AddressInfo } from "node:net";
+import { Writable } from "node:stream";
+import { promisify } from "node:util";
 import { PrismaClient } from "@prisma/client";
+import type { FastifyRequest } from "fastify";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/server/app";
 import { AI_BRIEFING_CACHE_KEY, buildAiBriefingEvidence, isAiBriefingDue } from "../src/server/aiBriefing";
-import type { AiEnvConfig } from "../src/server/env";
+import { getEnv, type AiEnvConfig } from "../src/server/env";
 import { runHealthCheck } from "../src/server/healthChecks";
+import { checkSslCertificate } from "../src/server/connectivity";
+import { boundedJsonRequest } from "../src/server/httpJson";
 import { collectOpnsenseSnapshot } from "../src/server/opnsense";
-import { createAuthToken } from "../src/server/auth";
+import {
+  createAuthToken,
+  createReauthToken,
+  isRecentlyReauthenticated,
+  REAUTH_COOKIE,
+  SESSION_COOKIE
+} from "../src/server/auth";
 import {
   DashboardUtilitiesService,
   DEFAULT_DASHBOARD_UTILITIES_CONFIG
 } from "../src/server/dashboardUtilities";
 import type { DashboardUtilitiesConfigDto } from "../src/shared/types";
+import {
+  assertIntegrationTransport,
+  configureOutboundPolicy,
+  parseCidr,
+  resolveOutboundTarget,
+  withFixedProviderLimit
+} from "../src/server/outboundPolicy";
+import { isValidIconBody } from "../src/server/iconProxy";
 
+const execFileAsync = promisify(execFile);
 const prisma = new PrismaClient();
 const disabledAiEnv: AiEnvConfig = {
   enabled: false,
@@ -32,9 +58,17 @@ const env = {
   host: "127.0.0.1",
   port: 0,
   databaseUrl: process.env.DATABASE_URL ?? "file:../data/test.db",
+  appOrigin: null,
+  trustedProxyCidrs: [],
   adminPassword: "test-pass",
   cookieSecret: "test-cookie-secret-with-more-than-32-chars",
   cookieSecure: false,
+  sessionMaxAgeSeconds: 60 * 60 * 24 * 7,
+  setupCode: null,
+  publicStatusMode: "services" as const,
+  outboundAllowedCidrs: [],
+  outboundAllowedHosts: [],
+  allowInsecureIntegrations: true,
   apiWidgetSecretAllowlist: ["CUSTOM_WIDGET_TOKEN", "TEST_WIDGET_TOKEN"],
   opnsense: {
     enabled: false,
@@ -64,7 +98,18 @@ async function loginCookie(): Promise<string> {
   });
 
   expect(login.statusCode).toBe(200);
-  cachedCookie = login.cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+  const sessionCookie = login.cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+  const reauth = await app.inject({
+    method: "POST",
+    url: "/api/auth/reauth",
+    headers: { cookie: sessionCookie },
+    payload: { password: "test-pass" }
+  });
+  expect(reauth.statusCode).toBe(204);
+  cachedCookie = [
+    sessionCookie,
+    ...reauth.cookies.map((cookie) => `${cookie.name}=${cookie.value}`)
+  ].filter(Boolean).join("; ");
   return cachedCookie;
 }
 
@@ -1600,6 +1645,23 @@ describe("api routes", () => {
       });
       expect(protectedSecret.statusCode).toBe(400);
 
+      const unconfirmedSecret = await app.inject({
+        method: "POST",
+        url: "/api/api-widgets",
+        headers: { cookie },
+        payload: {
+          name: "Unconfirmed secure API",
+          templateId: "custom-json",
+          baseUrl,
+          endpointPath: "/secure",
+          authType: "bearer",
+          authEnvVar: "TEST_WIDGET_TOKEN",
+          fieldMappings: [{ label: "Status", path: "status", kind: "text" }]
+        }
+      });
+      expect(unconfirmedSecret.statusCode).toBe(400);
+      expect(unconfirmedSecret.body).toContain("Confirm the credential destination origin exactly");
+
       const secure = await app.inject({
         method: "POST",
         url: "/api/api-widgets",
@@ -1611,6 +1673,7 @@ describe("api routes", () => {
           endpointPath: "/secure",
           authType: "bearer",
           authEnvVar: "TEST_WIDGET_TOKEN",
+          confirmSecretOrigin: baseUrl,
           fieldMappings: [{ label: "Status", path: "status", kind: "text" }]
         }
       });
@@ -1619,6 +1682,47 @@ describe("api routes", () => {
 
       const secureRun = await app.inject({ method: "POST", url: `/api/api-widgets/${secureId}/run`, headers: { cookie } });
       expect(secureRun.json<{ status: string }>().status).toBe("online");
+
+      const tamperedOrigin = new URL(baseUrl);
+      tamperedOrigin.port = String(Number(tamperedOrigin.port) + 1);
+      await prisma.apiWidget.update({
+        where: { id: secureId },
+        data: { baseUrl: tamperedOrigin.origin }
+      });
+      const tamperedRun = await app.inject({
+        method: "POST",
+        url: `/api/api-widgets/${secureId}/run`,
+        headers: { cookie }
+      });
+      expect(tamperedRun.statusCode).toBe(200);
+      expect(tamperedRun.json<{ status: string; error: string }>()).toMatchObject({
+        status: "offline"
+      });
+      expect(tamperedRun.body).toContain("not bound to this origin");
+      await prisma.apiWidget.update({
+        where: { id: secureId },
+        data: { baseUrl }
+      });
+
+      const directWidget = await prisma.apiWidget.create({
+        data: {
+          name: "Direct database widget",
+          templateId: "custom-json",
+          baseUrl,
+          endpointPath: "/secure",
+          authType: "bearer",
+          authEnvVar: "TEST_WIDGET_TOKEN",
+          fieldMappings: [{ label: "Status", path: "status", kind: "text" }]
+        }
+      });
+      const directRun = await app.inject({
+        method: "POST",
+        url: `/api/api-widgets/${directWidget.id}/run`,
+        headers: { cookie }
+      });
+      expect(directRun.json<{ status: string; error: string }>()).toMatchObject({ status: "offline" });
+      expect(directRun.body).toContain("not bound to this origin");
+      await prisma.apiWidget.delete({ where: { id: directWidget.id } });
 
       const forbiddenPatch = await app.inject({
         method: "PATCH",
@@ -1664,6 +1768,7 @@ describe("api routes", () => {
 
   it("uses health thresholds as stable status gates and surfaces pending checks", async () => {
     const cookie = await loginCookie();
+    await withMockGlances({ offline: true }, async (baseUrl, update) => {
 
     const resource = await app.inject({
       method: "POST",
@@ -1683,7 +1788,7 @@ describe("api routes", () => {
       payload: {
         resourceId,
         type: "http",
-        target: "http://threshold-web.test",
+        target: `${baseUrl}/quicklook`,
         intervalSeconds: 15,
         timeoutMs: 250,
         failureThreshold: 3,
@@ -1691,8 +1796,6 @@ describe("api routes", () => {
       }
     });
     const checkId = check.json<{ id: string }>().id;
-
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("down", { status: 503 }));
 
     await app.inject({ method: "POST", url: `/api/health-checks/${checkId}/run`, headers: { cookie } });
     let current = await prisma.healthCheck.findUniqueOrThrow({ where: { id: checkId } });
@@ -1724,8 +1827,7 @@ describe("api routes", () => {
     expect(current.latestStatus).toBe("offline");
     expect(current.consecutiveFailures).toBe(3);
 
-    vi.restoreAllMocks();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok", { status: 200 }));
+    update({ offline: false });
 
     await app.inject({ method: "POST", url: `/api/health-checks/${checkId}/run`, headers: { cookie } });
     current = await prisma.healthCheck.findUniqueOrThrow({ where: { id: checkId } });
@@ -1752,6 +1854,7 @@ describe("api routes", () => {
     expect(current.latestStatus).toBe("online");
     expect(current.consecutiveSuccesses).toBe(2);
     expect(await prisma.healthResult.count({ where: { checkId } })).toBe(5);
+    });
   });
 
   it("syncs the default health check when a service address changes", async () => {
@@ -1954,12 +2057,9 @@ describe("api routes", () => {
       headers: { cookie },
       payload: { resourceId, type: "http", target: "http://disabled-check.test", enabled: false }
     });
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok", { status: 200 }));
-
     const run = await app.inject({ method: "POST", url: `/api/resources/${resourceId}/run`, headers: { cookie } });
     expect(run.statusCode).toBe(200);
     expect(run.json<{ outcomes: unknown[] }>().outcomes).toHaveLength(2);
-    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     expect(await prisma.healthResult.count({
       where: { checkId: { in: [first.json<{ id: string }>().id, second.json<{ id: string }>().id] } }
     })).toBe(2);
@@ -2005,11 +2105,13 @@ describe("api routes", () => {
       }
     });
 
+    await withMockGlances({}, async (baseUrl) => {
+    const nextTarget = `${baseUrl}/quicklook`;
     const patched = await app.inject({
       method: "PATCH",
       url: `/api/health-checks/${check.id}`,
       headers: { cookie },
-      payload: { target: "http://new-web.test" }
+      payload: { target: nextTarget }
     });
     expect(patched.statusCode).toBe(200);
     expect(patched.json<{
@@ -2022,7 +2124,7 @@ describe("api routes", () => {
       consecutiveSuccesses: number;
       lastTransitionAt: string | null;
     }>()).toMatchObject({
-      target: "http://new-web.test",
+      target: nextTarget,
       latestStatus: "unknown",
       latestLatencyMs: null,
       latestCheckedAt: null,
@@ -2032,7 +2134,6 @@ describe("api routes", () => {
       lastTransitionAt: null
     });
 
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok", { status: 200 }));
     const run = await app.inject({
       method: "POST",
       url: `/api/health-checks/${check.id}/run`,
@@ -2049,9 +2150,10 @@ describe("api routes", () => {
       }>;
     }>().ungroupedResources.find((item) => item.id === resourceId);
     expect(entry?.healthChecks).toContainEqual(expect.objectContaining({
-      target: "http://new-web.test",
+      target: nextTarget,
       latestStatus: "online"
     }));
+    });
   });
 
   it("runs a TCP health check and stores the latest result", async () => {
@@ -2275,5 +2377,479 @@ describe("api routes", () => {
       ticks: []
     });
     expect(body.overallStatus).toBe("degraded");
+  });
+
+  it("requires recent password confirmation and binds it to the active session", async () => {
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { password: "test-pass" }
+    });
+    const sessionCookie = login.cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+
+    const blocked = await app.inject({
+      method: "POST",
+      url: "/api/resources",
+      headers: { cookie: sessionCookie },
+      payload: { name: "Reauth blocked resource", kind: "other", monitoringMode: "disabled" }
+    });
+    expect(blocked.statusCode).toBe(403);
+    expect(blocked.json<{ code: string }>().code).toBe("REAUTH_REQUIRED");
+
+    const reauth = await app.inject({
+      method: "POST",
+      url: "/api/auth/reauth",
+      headers: { cookie: sessionCookie },
+      payload: { password: "test-pass" }
+    });
+    expect(reauth.statusCode).toBe(204);
+    const reauthCookie = reauth.cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+
+    const approved = await app.inject({
+      method: "POST",
+      url: "/api/resources",
+      headers: { cookie: `${sessionCookie}; ${reauthCookie}` },
+      payload: { name: "Reauth approved resource", kind: "other", monitoringMode: "disabled" }
+    });
+    expect(approved.statusCode).toBe(201);
+
+    const secondLogin = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { password: "test-pass" }
+    });
+    const secondSession = secondLogin.cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+    const mismatched = await app.inject({
+      method: "POST",
+      url: "/api/resources",
+      headers: { cookie: `${secondSession}; ${reauthCookie}` },
+      payload: { name: "Wrong session resource", kind: "other", monitoringMode: "disabled" }
+    });
+    expect(mismatched.statusCode).toBe(403);
+
+    const issuedAt = new Date("2026-01-01T00:00:00Z");
+    const fakeRequest = {
+      cookies: { [SESSION_COOKIE]: "test-session" }
+    } as unknown as FastifyRequest;
+    fakeRequest.cookies![REAUTH_COOKIE] = createReauthToken(fakeRequest, env, issuedAt);
+    expect(isRecentlyReauthenticated(fakeRequest, env, new Date(issuedAt.getTime() + 301_000))).toBe(false);
+  });
+
+  it("disables public status by default and supports aggregate-only mode", async () => {
+    const disabledApp = await createApp({
+      prisma,
+      env: { ...env, publicStatusMode: "disabled" },
+      monitor: false,
+      logger: false
+    });
+    expect((await disabledApp.inject({ method: "GET", url: "/api/status" })).statusCode).toBe(404);
+    expect((await disabledApp.inject({ method: "GET", url: "/status" })).statusCode).toBe(404);
+    expect((await disabledApp.inject({ method: "GET", url: "/api/health" })).json()).toEqual({ ok: true });
+    expect(Object.keys((await disabledApp.inject({ method: "GET", url: "/api/version" })).json())).toEqual(["version"]);
+    await disabledApp.close();
+
+    const aggregateApp = await createApp({
+      prisma,
+      env: { ...env, publicStatusMode: "aggregate" },
+      monitor: false,
+      logger: false
+    });
+    const aggregate = await aggregateApp.inject({ method: "GET", url: "/api/status" });
+    expect(aggregate.statusCode).toBe(200);
+    expect(aggregate.json<{ resources: unknown[]; summary: { resources: number } }>().resources).toEqual([]);
+    expect(aggregate.json<{ summary: { resources: number } }>().summary.resources).toBeGreaterThan(0);
+    expect(aggregate.body).not.toContain("gitSha");
+    expect(aggregate.body).not.toContain("buildTime");
+    await aggregateApp.close();
+    configureOutboundPolicy(env);
+  });
+
+  it("enforces the production origin and keeps public build metadata minimal", async () => {
+    const productionApp = await createApp({
+      prisma,
+      env: {
+        ...env,
+        nodeEnv: "production",
+        appOrigin: "https://dashboard.test",
+        cookieSecure: true,
+        trustedProxyCidrs: ["127.0.0.1/32"],
+        outboundAllowedCidrs: ["10.0.21.0/24"],
+        allowInsecureIntegrations: false,
+        publicStatusMode: "disabled"
+      },
+      monitor: false,
+      logger: false
+    });
+
+    expect((await productionApp.inject({
+      method: "GET",
+      url: "/api/version",
+      headers: { host: "wrong.test", "x-forwarded-proto": "https" }
+    })).statusCode).toBe(421);
+    expect((await productionApp.inject({
+      method: "GET",
+      url: "/api/version",
+      headers: { host: "dashboard.test" }
+    })).statusCode).toBe(421);
+    expect((await productionApp.inject({
+      method: "GET",
+      url: "/api/version",
+      remoteAddress: "10.0.0.25",
+      headers: { host: "dashboard.test", "x-forwarded-proto": "https" }
+    })).statusCode).toBe(421);
+    const version = await productionApp.inject({
+      method: "GET",
+      url: "/api/version",
+      headers: { host: "dashboard.test", "x-forwarded-proto": "https" }
+    });
+    expect(version.statusCode).toBe(200);
+    expect(Object.keys(version.json())).toEqual(["version"]);
+    expect((await productionApp.inject({
+      method: "GET",
+      url: "/api/health",
+      headers: { host: "127.0.0.1:4173" }
+    })).statusCode).toBe(200);
+    expect((await productionApp.inject({
+      method: "GET",
+      url: "/api/health",
+      remoteAddress: "10.0.0.25",
+      headers: { host: "wrong.test" }
+    })).statusCode).toBe(421);
+    expect((await productionApp.inject({
+      method: "GET",
+      url: "/api/health",
+      remoteAddress: "10.0.0.25",
+      headers: { host: "dashboard.test", "x-forwarded-proto": "https" }
+    })).statusCode).toBe(421);
+    expect((await productionApp.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      headers: { host: "dashboard.test", origin: "https://evil.test", "x-forwarded-proto": "https" },
+      payload: { password: "test-pass" }
+    })).statusCode).toBe(403);
+    expect((await productionApp.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      headers: { host: "dashboard.test", origin: "https://dashboard.test", "x-forwarded-proto": "https" },
+      payload: { password: "test-pass" }
+    })).statusCode).toBe(200);
+
+    await productionApp.close();
+    configureOutboundPolicy(env);
+  });
+
+  it("blocks special addresses, DNS rebinding, and insecure credential transport", async () => {
+    expect(() => parseCidr("10.0.0.0/99")).toThrow("Invalid CIDR");
+    configureOutboundPolicy({
+      ...env,
+      nodeEnv: "production",
+      outboundAllowedCidrs: ["10.0.21.0/24"],
+      outboundAllowedHosts: [],
+      allowInsecureIntegrations: false
+    });
+    const lookup = vi.spyOn(dns.promises, "lookup");
+    try {
+      lookup.mockResolvedValueOnce([{ address: "10.0.21.15", family: 4 }] as never);
+      await expect(resolveOutboundTarget("allowed.test")).resolves.toMatchObject({ address: "10.0.21.15" });
+
+      lookup.mockResolvedValueOnce([{ address: "10.0.22.15", family: 4 }] as never);
+      await expect(resolveOutboundTarget("outside.test")).rejects.toThrow("outside the configured allowlist");
+
+      lookup.mockResolvedValueOnce([{ address: "169.254.169.254", family: 4 }] as never);
+      await expect(resolveOutboundTarget("metadata.test")).rejects.toThrow("forbidden address");
+
+      lookup.mockResolvedValueOnce([
+        { address: "10.0.21.20", family: 4 },
+        { address: "127.0.0.1", family: 4 }
+      ] as never);
+      await expect(resolveOutboundTarget("rebind.test")).rejects.toThrow("forbidden address");
+
+      lookup.mockResolvedValueOnce([{ address: "::ffff:127.0.0.1", family: 6 }] as never);
+      await expect(resolveOutboundTarget("mapped.test")).rejects.toThrow("forbidden address");
+
+      lookup.mockImplementationOnce(() => new Promise(() => undefined));
+      await expect(resolveOutboundTarget("slow-dns.test", { timeoutMs: 10 })).rejects.toThrow(
+        "DNS resolution for slow-dns.test timed out"
+      );
+
+      expect(() => assertIntegrationTransport(new URL("http://10.0.21.15"), {
+        credentialed: true,
+        tlsVerify: true
+      })).toThrow("must use HTTPS");
+      expect(() => assertIntegrationTransport(new URL("https://10.0.21.15"), {
+        credentialed: true,
+        tlsVerify: false
+      })).toThrow("cannot be disabled");
+    } finally {
+      lookup.mockRestore();
+      configureOutboundPolicy(env);
+    }
+  });
+
+  it("caps fixed-provider concurrency and validates proxied image bytes", async () => {
+    let active = 0;
+    let peak = 0;
+    await Promise.all(Array.from({ length: 12 }, () =>
+      withFixedProviderLimit(true, async () => {
+        active += 1;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        active -= 1;
+      })
+    ));
+    expect(peak).toBe(4);
+
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.alloc(16)
+    ]);
+    expect(isValidIconBody(png, "image/png")).toBe(true);
+    expect(isValidIconBody(Buffer.from("<svg onload=alert(1)>"), "image/png")).toBe(false);
+    expect(isValidIconBody(Buffer.from([0xff, 0xd8, 0xff, 0x00, 0xff, 0xd9]), "image/jpeg")).toBe(true);
+    expect(isValidIconBody(Buffer.from([0xff, 0xd8, 0xff, 0x00]), "image/jpeg")).toBe(false);
+  });
+
+  it("pins outbound HTTP resolution and enforces redirects, size limits, and wall-clock timeouts", async () => {
+    let observedHost = "";
+    const server = http.createServer((request, response) => {
+      observedHost = request.headers.host ?? "";
+      const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+      if (pathname === "/redirect") {
+        response.writeHead(302, { Location: "/ok" });
+        response.end();
+        return;
+      }
+      if (pathname === "/large") {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ value: "x".repeat(512) }));
+        return;
+      }
+      if (pathname === "/slow") {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        const interval = setInterval(() => response.write(" "), 10);
+        response.once("close", () => clearInterval(interval));
+        return;
+      }
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ ok: true }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address() as AddressInfo;
+    const lookup = vi.spyOn(dns.promises, "lookup");
+    lookup.mockResolvedValue([{ address: "127.0.0.1", family: 4 }] as never);
+    configureOutboundPolicy(env);
+    const request = (pathname: string, overrides: Partial<Parameters<typeof boundedJsonRequest>[1]> = {}) =>
+      boundedJsonRequest(`http://pinned.test:${address.port}${pathname}`, {
+        timeoutMs: 500,
+        maxBytes: 1024,
+        label: "Pinned test",
+        ...overrides
+      });
+    try {
+      await expect(boundedJsonRequest(`http://user:password@pinned.test:${address.port}/ok`, {
+        timeoutMs: 500,
+        maxBytes: 1024,
+        label: "Credential forwarding test"
+      })).rejects.toThrow("must not contain embedded credentials");
+      await expect(request("/ok")).resolves.toEqual({ ok: true });
+      expect(observedHost).toBe(`pinned.test:${address.port}`);
+      await expect(request("/redirect")).rejects.toThrow("HTTP 302");
+      await expect(request("/large", { maxBytes: 32 })).rejects.toThrow("exceeded 32 bytes");
+      const startedAt = Date.now();
+      await expect(request("/slow", { timeoutMs: 75 })).rejects.toThrow("timed out");
+      expect(Date.now() - startedAt).toBeLessThan(500);
+    } finally {
+      lookup.mockRestore();
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      configureOutboundPolicy(env);
+    }
+  });
+
+  it("verifies SSL trust, hostname identity, expiry pressure, and a private CA bundle", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "homelab-dashboard-tls-"));
+    const caKey = path.join(directory, "ca-key.pem");
+    const caCert = path.join(directory, "ca.pem");
+    const serverKey = path.join(directory, "server-key.pem");
+    const serverCsr = path.join(directory, "server.csr");
+    const serverCert = path.join(directory, "server.pem");
+    const shortCert = path.join(directory, "server-short.pem");
+    const extensions = path.join(directory, "server.ext");
+    fs.writeFileSync(extensions, "subjectAltName=IP:127.0.0.1\nextendedKeyUsage=serverAuth\n", { mode: 0o600 });
+
+    try {
+      await execFileAsync("openssl", [
+        "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+        "-keyout", caKey, "-out", caCert, "-subj", "/CN=Homelab Test CA", "-days", "3650"
+      ]);
+      await execFileAsync("openssl", [
+        "req", "-newkey", "rsa:2048", "-nodes",
+        "-keyout", serverKey, "-out", serverCsr, "-subj", "/CN=127.0.0.1"
+      ]);
+      await execFileAsync("openssl", [
+        "x509", "-req", "-in", serverCsr, "-CA", caCert, "-CAkey", caKey,
+        "-CAcreateserial", "-out", serverCert, "-days", "365", "-extfile", extensions
+      ]);
+      await execFileAsync("openssl", [
+        "x509", "-req", "-in", serverCsr, "-CA", caCert, "-CAkey", caKey,
+        "-CAcreateserial", "-out", shortCert, "-days", "1", "-extfile", extensions
+      ]);
+
+      const runServer = async (certificatePath: string, run: (port: number) => Promise<void>) => {
+        const server = tls.createServer({
+          key: fs.readFileSync(serverKey),
+          cert: fs.readFileSync(certificatePath)
+        }, (socket) => socket.end());
+        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+        try {
+          await run((server.address() as AddressInfo).port);
+        } finally {
+          await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        }
+      };
+      const runWithPrivateCa = async (target: string, pinLocalhost = false) => {
+        const script = [
+          "import dns from 'node:dns';",
+          pinLocalhost
+            ? "dns.promises.lookup = async () => [{ address: '127.0.0.1', family: 4 }];"
+            : "",
+          "const { checkSslCertificate } = await import('./src/server/connectivity.ts');",
+          `process.stdout.write(JSON.stringify(await checkSslCertificate(${JSON.stringify(target)}, 3000)));`
+        ].join("\n");
+        const result = await execFileAsync(process.execPath, [
+          "--import", "tsx", "--input-type=module", "-e", script
+        ], {
+          cwd: process.cwd(),
+          env: { ...process.env, NODE_EXTRA_CA_CERTS: caCert },
+          timeout: 10_000
+        });
+        return JSON.parse(result.stdout) as { status: string; error?: string };
+      };
+
+      configureOutboundPolicy(env);
+      await runServer(serverCert, async (port) => {
+        const untrusted = await checkSslCertificate(`127.0.0.1:${port}`, 3000);
+        expect(untrusted.status).toBe("offline");
+        expect(untrusted.error).toMatch(/certificate|self-signed|issuer/i);
+
+        await expect(runWithPrivateCa(`127.0.0.1:${port}`)).resolves.toMatchObject({ status: "online" });
+        const mismatch = await runWithPrivateCa(`mismatch.test:${port}`, true);
+        expect(mismatch.status).toBe("offline");
+        expect(mismatch.error).toMatch(/hostname|altnames|IP address/i);
+      });
+      await runServer(shortCert, async (port) => {
+        const expiring = await runWithPrivateCa(`127.0.0.1:${port}`);
+        expect(expiring.status).toBe("offline");
+        expect(expiring.error).toMatch(/expires in/i);
+      });
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+      configureOutboundPolicy(env);
+    }
+  }, 30_000);
+
+  it("normalizes and bounds the production security environment", () => {
+    const keys = [
+      "NODE_ENV",
+      "APP_ORIGIN",
+      "TRUST_PROXY_CIDRS",
+      "OUTBOUND_ALLOWED_CIDRS",
+      "OUTBOUND_ALLOWED_HOSTS",
+      "COOKIE_SECRET",
+      "ADMIN_PASSWORD",
+      "SESSION_MAX_AGE_HOURS"
+    ] as const;
+    const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+    try {
+      process.env.NODE_ENV = "production";
+      process.env.APP_ORIGIN = "https://dashboard.test";
+      process.env.TRUST_PROXY_CIDRS = "172.17.0.1/32";
+      process.env.OUTBOUND_ALLOWED_CIDRS = "10.0.21.0/24";
+      process.env.OUTBOUND_ALLOWED_HOSTS = "Status.Example.com";
+      process.env.COOKIE_SECRET = "production-cookie-secret-with-more-than-32-characters";
+      process.env.ADMIN_PASSWORD = "production-admin-password";
+      process.env.SESSION_MAX_AGE_HOURS = "999";
+
+      const production = getEnv();
+      expect(production.appOrigin).toBe("https://dashboard.test");
+      expect(production.outboundAllowedHosts).toEqual(["status.example.com"]);
+      expect(production.sessionMaxAgeSeconds).toBe(30 * 24 * 60 * 60);
+      expect(production.cookieSecure).toBe(true);
+
+      process.env.OUTBOUND_ALLOWED_HOSTS = "*.example.com";
+      expect(() => getEnv()).toThrow("invalid exact hostname");
+      process.env.OUTBOUND_ALLOWED_HOSTS = "status.example.com";
+      delete process.env.TRUST_PROXY_CIDRS;
+      expect(() => getEnv()).toThrow("TRUST_PROXY_CIDRS");
+      process.env.TRUST_PROXY_CIDRS = "172.17.0.1/32";
+      process.env.APP_ORIGIN = "https://dashboard.test/path";
+      expect(() => getEnv()).toThrow("APP_ORIGIN");
+    } finally {
+      for (const key of keys) {
+        const value = previous[key];
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
+  it("emits redacted structured security records", async () => {
+    let output = "";
+    const stream = new Writable({
+      write(chunk, _encoding, callback) {
+        output += chunk.toString();
+        callback();
+      }
+    });
+    const loggedApp = await createApp({
+      prisma,
+      env,
+      monitor: false,
+      logger: { level: "info", stream }
+    });
+    const secretAttempt = "do-not-log-this-password";
+    await loggedApp.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { password: secretAttempt }
+    });
+    const login = await loggedApp.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { password: "test-pass" }
+    });
+    const session = login.cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+    await loggedApp.inject({
+      method: "POST",
+      url: "/api/auth/reauth",
+      headers: { cookie: session },
+      payload: { password: secretAttempt }
+    });
+    await loggedApp.close();
+
+    const events = output
+      .trim()
+      .split("\n")
+      .flatMap((line) => {
+        try {
+          const entry = JSON.parse(line) as { securityEvent?: Record<string, unknown> };
+          return entry.securityEvent ? [entry.securityEvent] : [];
+        } catch {
+          return [];
+        }
+      });
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ event: "auth.login", result: "failure" }),
+      expect.objectContaining({ event: "auth.login", result: "success" }),
+      expect.objectContaining({ event: "auth.reauthenticate", result: "failure" })
+    ]));
+    const serialized = JSON.stringify(events);
+    expect(serialized).not.toContain(secretAttempt);
+    expect(serialized).not.toContain("test-pass");
+    expect(serialized).not.toContain("url");
+    expect(events.every((event) =>
+      Object.keys(event).every((key) =>
+        ["event", "result", "clientIp", "objectType", "objectId"].includes(key)
+      )
+    )).toBe(true);
   });
 });

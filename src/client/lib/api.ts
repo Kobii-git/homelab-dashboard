@@ -73,6 +73,20 @@ export type RuntimeStatusDto = {
   auth: {
     source: "env" | "database";
     cookieSecure: boolean;
+    sessionMaxAgeHours: number;
+  };
+  security: {
+    appOrigin: string | null;
+    publicStatusMode: "disabled" | "aggregate" | "services";
+    trustedProxyConfigured: boolean;
+    outboundPolicy: {
+      enforced: boolean;
+      configured: boolean;
+      allowedCidrCount: number;
+      allowedHostCount: number;
+      allowInsecureIntegrations: boolean;
+    };
+    readinessWarnings: string[];
   };
   database: {
     ok: boolean;
@@ -142,8 +156,25 @@ export type {
 
 type ApiErrorBody = {
   error?: string;
+  code?: string;
   details?: Array<{ path?: string; message?: string }>;
 };
+
+export class ApiResponseError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string
+  ) {
+    super(message);
+  }
+}
+
+let reauthenticationHandler: (() => Promise<void>) | null = null;
+
+export function setReauthenticationHandler(handler: (() => Promise<void>) | null): void {
+  reauthenticationHandler = handler;
+}
 
 export function getApiError(error: unknown): string {
   return error instanceof Error ? error.message : "Request failed";
@@ -166,12 +197,14 @@ async function parseResponse<T>(response: Response, path: string): Promise<T> {
       ? `: ${data.details.map((item) => (item.path ? `${item.path} — ${item.message}` : item.message)).join("; ")}`
       : "";
     const message = `${data.error ?? "Request failed"}${details}`;
-    if (response.status === 401 && path !== "/api/auth/login") {
+    if (data.code === "REAUTH_REQUIRED") {
+      // The mutation wrapper opens the accessible password dialog and retries once.
+    } else if (response.status === 401 && path !== "/api/auth/login" && path !== "/api/auth/reauth") {
       window.dispatchEvent(new CustomEvent("homelab:session-expired"));
     } else {
       window.dispatchEvent(new CustomEvent("homelab:api-error", { detail: message }));
     }
-    throw new Error(message);
+    throw new ApiResponseError(message, response.status, data.code);
   }
 
   return data as T;
@@ -196,20 +229,37 @@ export async function apiSend<T>(
   method: "POST" | "PUT" | "PATCH" | "DELETE",
   body?: unknown
 ): Promise<T> {
-  let response: Response;
+  const send = async (): Promise<T> => {
+    let response: Response;
+    try {
+      response = await fetch(path, {
+        method,
+        credentials: "include",
+        headers: body ? { "Content-Type": "application/json" } : undefined,
+        body: body ? JSON.stringify(body) : undefined
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Network request failed";
+      window.dispatchEvent(new CustomEvent("homelab:api-error", { detail: message }));
+      throw error;
+    }
+    return parseResponse<T>(response, path);
+  };
+
   try {
-    response = await fetch(path, {
-      method,
-      credentials: "include",
-      headers: body ? { "Content-Type": "application/json" } : undefined,
-      body: body ? JSON.stringify(body) : undefined
-    });
+    return await send();
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Network request failed";
-    window.dispatchEvent(new CustomEvent("homelab:api-error", { detail: message }));
+    if (
+      error instanceof ApiResponseError &&
+      error.code === "REAUTH_REQUIRED" &&
+      path !== "/api/auth/reauth" &&
+      reauthenticationHandler
+    ) {
+      await reauthenticationHandler();
+      return send();
+    }
     throw error;
   }
-  return parseResponse<T>(response, path);
 }
 
 export function emptyToNull(value: FormDataEntryValue | null): string | null {

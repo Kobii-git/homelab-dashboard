@@ -16,12 +16,12 @@ A private, self-hosted command center for the services you run at home. It is a 
 - **OPNsense integration** - optional read-only API polling for firewall status, system pressure, gateways, interfaces, traffic, firmware state, and service import suggestions
 - **API widgets** - custom read-only JSON widgets with env-backed secrets, service-based import suggestions, and templates for common homelab apps
 - **AI Command Briefing** - optional OpenAI-compatible read-only summaries of sanitized dashboard evidence, cached in SQLite and never exposed on the public status page
-- **Real service icons** - auto-resolved from the service name via the [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) CDN, with favicon and letter-avatar fallbacks
+- **Private service icons** - fetched through a bounded same-origin proxy from the [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) catalog or approved service favicon, with letter-avatar fallback
 - **Command palette** - `⌘K` (or `/`) to search and launch any service or action from anywhere
 - **Services** - manual catalog for apps, websites, Docker services, VMs, servers, and other devices, with common homelab templates, duplicate actions, and confirmed OPNsense imports
 - **Health checks** - HTTP, TCP, ping, and SSL checks with latest status, latency, failure reason, thresholds, and check history
 - **Admin** - password change, Launchpad search/weather/release settings, Glances host monitors, OPNsense integration status, AI briefing runtime state, API widgets, runtime health diagnostics, public status page, build info, and demo-data controls
-- **Status page** - unauthenticated `/status` wallboard with heartbeats and uptime per service
+- **Optional status page** - disabled by default, with aggregate-only or service-detail modes when deliberately enabled
 
 Remote SSH/RDP/VNC access, Guacamole, saved credentials, vaults, alert channels, incidents, script/plugin widgets, backup/restore, tags, notes, AI control agents, and mutating integration actions are intentionally out of the current app scope.
 
@@ -37,65 +37,57 @@ The active database model is intentionally small: `Resource`, `DashboardGroup`, 
 
 ## Quick Start With Docker
 
-### Install
+Production deployment requires an existing HTTPS reverse proxy, a TLS-enabled registry, and
+an explicit monitoring boundary. Copy `.env.example`, configure the required values, then:
 
 ```sh
-curl -fsSL http://10.0.21.40:3000/kobuslabs/homelabdashboard/raw/branch/main/docker-compose.yml \
-  -o /tmp/homelab.yml && docker compose -f /tmp/homelab.yml up -d
+docker compose pull
+docker compose up -d
 ```
 
-Or pull the image directly:
+The Compose file binds `127.0.0.1:4173`; open the HTTPS `APP_ORIGIN` through the reverse
+proxy. On the first database-backed boot, enter the explicit `SETUP_CODE`, create the
+administrator, then remove `SETUP_CODE` from the environment.
 
-```sh
-docker pull 10.0.21.40:3000/kobuslabs/homelabdashboard:latest
-
-# Beta channel:
-docker pull 10.0.21.40:3000/kobuslabs/homelabdashboard:beta
-```
-
-Open **http://localhost:4173**. When `ADMIN_PASSWORD` is not set, the server logs a 12-character one-time setup code. Enter that code on the first-run screen to create the admin account with a 12–256 character password and optionally load demo data.
-
-### Optional Environment Variables
-
-```yaml
-ADMIN_PASSWORD: your-password        # optional; skips web account creation
-COOKIE_SECRET: random-32-char-string # optional; persistent sessions across restarts
-API_WIDGET_SECRET_ALLOWLIST: MY_CUSTOM_WIDGET_TOKEN # optional custom widget secret names
-OPNSENSE_ENABLED: "true"             # optional; enables read-only firewall polling
-OPNSENSE_BASE_URL: https://opnsense.local
-OPNSENSE_API_KEY: your-api-key
-OPNSENSE_API_SECRET: your-api-secret
-AI_ENABLED: "true"                   # optional; enables AI Command Briefing
-AI_MODEL: your-model-name
-AI_API_KEY: your-ai-api-key
-```
+Read [Secure Deployment](docs/SECURE_DEPLOYMENT.md) and complete its launch checklist before
+using real integration credentials. Backups follow the external
+[SQLite Backup and Restore Runbook](docs/BACKUP_AND_RESTORE.md).
 
 | Variable | Required | Description |
 |---|---|---|
-| `ADMIN_PASSWORD` | No | Skip web account creation and use this password instead |
-| `COOKIE_SECRET` | No | Signs session cookies; auto-generated if unset |
-| `COOKIE_SECURE` | No | Set to `true` only when serving over HTTPS. Default is `false` for plain-HTTP LAN use |
+| `APP_ORIGIN` | Production | Exact externally visible HTTPS origin |
+| `TRUST_PROXY_CIDRS` | Production | Exact reverse-proxy source CIDRs trusted for forwarded HTTPS/client information |
+| `OUTBOUND_ALLOWED_CIDRS` | Production | Smallest network CIDRs that monitoring may contact |
+| `OUTBOUND_ALLOWED_HOSTS` | No | Exact approved public DNS names for admin-defined monitoring |
+| `COOKIE_SECRET` | Production | At least 32 random characters; never stored in Git |
+| `SETUP_CODE` | First production boot | Explicit 12-character bootstrap code when `ADMIN_PASSWORD` is absent |
+| `ADMIN_PASSWORD` | No | Skip web account creation and use this password instead; minimum 12 characters in production |
+| `SESSION_MAX_AGE_HOURS` | No | Session lifetime, bounded to 1–720 hours; default `168` |
+| `PUBLIC_STATUS_MODE` | No | `disabled`, `aggregate`, or `services`; default `disabled` |
+| `ALLOW_INSECURE_INTEGRATIONS` | No | Emergency-only opt-in for HTTP credentials or disabled TLS verification |
 | `DATABASE_URL` | No | Prisma SQLite path; default `file:/data/homelab.db` in Docker |
+| `NODE_EXTRA_CA_CERTS` | No | In-container path to an operator-mounted private CA PEM bundle |
+| `REGISTRY_HOST` | Compose/workflow | Trusted TLS registry hostname without a URL scheme |
 | `PORT` | No | HTTP port; default `4173` |
 | `OPNSENSE_ENABLED` | No | Set to `true` to enable the read-only OPNsense integration |
 | `OPNSENSE_NAME` | No | Display name for the firewall; default `OPNsense` |
 | `OPNSENSE_BASE_URL` | No | OPNsense web/API base URL, for example `https://opnsense.local` |
 | `OPNSENSE_API_KEY` | No | OPNsense API key; stored only in environment |
 | `OPNSENSE_API_SECRET` | No | OPNsense API secret; stored only in environment |
-| `OPNSENSE_TLS_VERIFY` | No | Set to `false` only for self-signed/private certificates you explicitly trust |
+| `OPNSENSE_TLS_VERIFY` | No | Defaults true; install a private CA with `NODE_EXTRA_CA_CERTS` |
 | `OPNSENSE_POLL_INTERVAL_SECONDS` | No | OPNsense polling interval, 15-86400 seconds; default `60` |
 | `AI_ENABLED` | No | Set to `true` to enable the authenticated AI Command Briefing |
 | `AI_PROVIDER_NAME` | No | Display name for the provider; default `AI` |
 | `AI_BASE_URL` | No | OpenAI-compatible API root; default `https://api.openai.com/v1` |
 | `AI_API_KEY` | No | Optional provider key; stored only in environment and omitted for local endpoints when unset |
 | `AI_MODEL` | Yes, when AI is enabled | Model name sent to the OpenAI-compatible chat completions endpoint |
-| `AI_TLS_VERIFY` | No | Set to `false` only for self-signed/private provider certificates you explicitly trust |
+| `AI_TLS_VERIFY` | No | Defaults true; install a private CA with `NODE_EXTRA_CA_CERTS` |
 | `AI_BRIEFING_INTERVAL_SECONDS` | No | AI briefing cache refresh interval, 300-86400 seconds; default `21600` |
 | `AI_INCLUDE_TARGETS` | No | Set to `true` to include service URLs, hosts, and check targets in AI evidence; default redacts them |
 | API widget secret vars | No | Optional env vars referenced by widget config, such as `HOME_ASSISTANT_TOKEN` or `SONARR_API_KEY` |
 | `API_WIDGET_SECRET_ALLOWLIST` | No | Comma-separated custom widget secret names. Built-in template secret names are allowed automatically |
 
-Keep this behind a LAN, VPN, or private mesh network. If exposing it beyond that, put a reverse proxy such as Caddy, nginx, or Traefik in front and enable HTTPS.
+Direct internet exposure is unsupported. Keep administration behind the LAN/VPN boundary.
 
 ### Optional Host Metrics
 
@@ -119,13 +111,15 @@ By default, service URLs, hosts, IP addresses, and check targets are redacted be
 
 ### Optional API Widgets
 
-API widgets are configured in **Admin > API widgets**. Widgets only perform read-only JSON requests, and secrets are read from environment variables by name instead of being stored in SQLite. Only names used by built-in templates or explicitly listed in `API_WIDGET_SECRET_ALLOWLIST` can be attached to requests. The Admin panel suggests importable widgets when existing service catalog entries look like known apps. Built-in templates currently cover Home Assistant, Proxmox VE, Portainer, AdGuard Home, Pi-hole v6, Jellyfin, Grafana, Prometheus, Sonarr, and Radarr. Apps with non-trivial auth/session protocols, such as TrueNAS SCALE WebSocket APIs or qBittorrent cookie sessions, should become dedicated connectors rather than generic JSON widgets.
+API widgets are configured in **Admin > API widgets**. Widgets only perform read-only JSON requests, and secrets are read from environment variables by name instead of being stored in SQLite. Each credential is bound to its confirmed normalized origin in non-secret `SystemConfig` metadata, and changing that origin requires recent password confirmation. Only names used by built-in templates or explicitly listed in `API_WIDGET_SECRET_ALLOWLIST` can be attached to requests. Built-in templates currently cover Home Assistant, Proxmox VE, Portainer, AdGuard Home, Pi-hole v6, Jellyfin, Grafana, Prometheus, Sonarr, and Radarr.
 
 ### Optional Launchpad Utilities
 
 Configure Launchpad utilities in **Admin > Launchpad utilities**. Web search defaults to DuckDuckGo and can be changed to Google, Brave, Kagi, or Startpage. Weather uses a normalized Open-Meteo location and can display metric or imperial temperatures. Release tracking accepts up to 12 public GitHub repositories in `owner/repository` format; known service templates can suggest repositories, but additions are not persisted until you confirm with **Save utilities**.
 
-Weather and release data are fetched separately from `/api/dashboard`, so provider outages never block service access. Requests use fixed provider hosts, timeouts, and response-size bounds. Location results are cached for 24 hours, forecasts for 15 minutes, and GitHub releases—including repository-level failures—for six hours. Stale cached data is returned when a refresh fails. Utility configuration is non-secret `SystemConfig` JSON and is never included on the public `/status` page.
+Weather and release data are fetched separately from `/api/dashboard`, so provider outages never block service access. Requests use fixed provider hosts, concurrency limits, wall-clock timeouts, and response-size bounds. Location results are cached for 24 hours, forecasts for 15 minutes, and GitHub releases—including repository-level failures—for six hours. Stale cached data is returned when a refresh fails. Utility configuration is non-secret `SystemConfig` JSON and is never included on the public `/status` page.
+
+Enabling weather shares the configured coordinates/timezone with Open-Meteo; enabling releases shares repository identifiers with GitHub. Catalog-icon requests share the selected catalog slug with jsDelivr. API-widget credentials, service metadata, and monitoring targets are not sent to those fixed utility providers.
 
 ---
 
@@ -154,7 +148,7 @@ docker compose ps && docker compose logs --tail=200 dashboard
 ## Local Development
 
 ```sh
-git clone http://10.0.21.40:3000/kobuslabs/homelabdashboard.git
+git clone ssh://git@forgejo.home.arpa/kobuslabs/homelabdashboard.git
 cd homelab-dashboard
 npm ci
 npm run db:push
@@ -193,16 +187,19 @@ To publish multi-architecture images to the Forgejo container registry from a wo
 
 ```sh
 VERSION=$(node -p "require('./package.json').version")
+test -n "${REGISTRY_HOST}"
 docker buildx create --name homelab-builder --driver docker-container --use --bootstrap
 docker buildx build --builder homelab-builder --platform linux/amd64,linux/arm64 \
   --build-arg APP_GIT_SHA="$(git rev-parse --short=12 HEAD)" \
   --build-arg APP_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -t "10.0.21.40:3000/kobuslabs/homelabdashboard:${VERSION}" \
-  -t 10.0.21.40:3000/kobuslabs/homelabdashboard:latest \
+  -t "${REGISTRY_HOST}/kobuslabs/homelabdashboard:${VERSION}" \
+  -t "${REGISTRY_HOST}/kobuslabs/homelabdashboard:latest" \
   --push .
 ```
 
-Log in first with a Forgejo personal access token: `docker login 10.0.21.40:3000`. The `beta` branch publishes the `beta` image; `main` publishes `latest` and `main`. Every branch build also publishes a short immutable `sha-*` tag.
+Log in only to a trusted TLS registry with `docker login "${REGISTRY_HOST}"`. The
+`beta` branch publishes the `beta` image; `main` publishes `latest` and `main`.
+Every branch build also publishes a short immutable `sha-*` tag and signs the digest.
 
 ---
 
@@ -224,7 +221,8 @@ Current: **v0.8.0**
 Verify the running build:
 
 ```sh
-curl -s http://localhost:4173/api/version
+curl -s "${APP_ORIGIN}/api/version"
 ```
 
-The sidebar, login screen, `/status` page, and `/api/version` all expose the baked version and git hash.
+Public `/api/version` and the login UI expose only the package version. Authenticated Runtime
+Health contains the Git SHA and build time.

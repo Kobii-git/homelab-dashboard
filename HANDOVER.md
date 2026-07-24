@@ -2,8 +2,8 @@
 
 This document captures the current state of the project so the next session can continue without rediscovering the shape of the app.
 
-- **Repo:** http://10.0.21.40:3000/kobuslabs/homelabdashboard
-- **Images:** `10.0.21.40:3000/kobuslabs/homelabdashboard:latest` and `:beta`
+- **Repo:** operator-configured Forgejo SSH remote
+- **Images:** `${REGISTRY_HOST}/kobuslabs/homelabdashboard:latest` and `:beta`
 - **Current version:** `0.8.0`
 - **Port:** `4173`
 - **Branch channels:** `main` (stable) and `beta` (pre-release)
@@ -71,13 +71,18 @@ The image runs as the unprivileged `node` user. Compose drops Linux capabilities
 
 ### First Run
 
-Without `ADMIN_PASSWORD`, startup prints a new 12-character one-time setup code. The setup screen requires that code and a 12–256 character password before creating the single admin account.
+Production requires an explicit `SETUP_CODE` when `ADMIN_PASSWORD` is absent and no account
+exists. The setup code is never printed to production logs. Remove it after creating the
+single database-backed administrator.
 
 Optional env vars:
 
 ```yaml
-ADMIN_PASSWORD: your-password
+APP_ORIGIN: https://dashboard.home.arpa
+OUTBOUND_ALLOWED_CIDRS: 10.0.21.0/24
 COOKIE_SECRET: random-32-char-string
+SETUP_CODE: ABCDEFGH2345
+# ADMIN_PASSWORD: your-password
 ```
 
 Optional host metrics use trusted LAN/VPN Glances endpoints:
@@ -180,21 +185,22 @@ API_WIDGET_SECRET_ALLOWLIST: MY_CUSTOM_WIDGET_TOKEN
 - Single admin only.
 - `ADMIN_PASSWORD` bypasses web account creation. Otherwise startup requires the one-time setup code.
 - Otherwise an `AdminAccount` row stores the admin username and password hash.
-- `COOKIE_SECURE=false` by default because the target deployment is plain HTTP on a private LAN. Set it to `true` only behind HTTPS.
-- Public unauthenticated routes are limited to login/setup/version/health/status style endpoints.
-- Sessions are unique signed tokens with a 30-day server-enforced expiry. Logout and password change invalidate every browser for the single admin.
+- Production requires exact HTTPS `APP_ORIGIN` and `TRUST_PROXY_CIDRS`; forwarded HTTPS is accepted only from the configured proxy boundary, cookies are Secure, and HSTS is enabled.
+- Public unauthenticated routes are limited to login/setup/version/health. Status is disabled by default.
+- Sessions are unique signed tokens with a seven-day default expiry. Logout and password change invalidate every browser for the single admin.
+- Sensitive target, connector, and destructive changes require a five-minute password reauthentication cookie bound to the active session.
 - Browser mutations require matching origin/fetch metadata; trusted CLI requests without browser origin headers remain supported.
 - `GET /api/admin/runtime` is authenticated and intentionally avoids secret env values.
 - `GET /api/metrics/hosts/:id` is authenticated and returns up to 1,440 recent host samples for the detail drawer.
 - `GET /api/integrations/:id` is authenticated and returns up to 1,440 recent integration samples for the detail drawer.
 - Dashboard utility configuration is stored as versioned, non-secret JSON in `SystemConfig`; no Prisma model is involved.
 - `PATCH /api/settings` accepts partial top-level settings and returns the complete normalized settings object.
-- `GET /api/utilities/weather-locations?q=` and `GET /api/utilities/summary` are authenticated. They use only fixed Open-Meteo/GitHub hosts with bounded responses and timeouts.
+- `GET /api/utilities/weather-locations?q=` and `GET /api/utilities/summary` are authenticated. They use only fixed Open-Meteo/GitHub hosts with bounded responses, wall-clock timeouts, and concurrency limits.
 - Utility provider calls are isolated from `/api/dashboard`; geocoding is cached for 24 hours, forecasts for 15 minutes, and GitHub releases/repository failures for six hours, with concurrent-request deduplication and stale fallback.
 - Utility settings and results contain no credentials and are excluded from public `/status`.
 - OPNsense credentials live only in environment variables; SQLite stores source metadata and normalized snapshots, never the API key or secret.
-- API widgets only perform read-only JSON requests. Widget secrets are referenced by allowlisted environment variable name and are not stored in SQLite.
-- Public `/api/status` resources contain only name, status, uptime percentage, and heartbeat ticks; URLs, hosts, targets, errors, IDs, and latency stay private.
+- API widgets only perform read-only JSON requests. Widget secrets are referenced by allowlisted environment variable name, bound to a confirmed origin, and are not stored in SQLite.
+- `PUBLIC_STATUS_MODE=disabled|aggregate|services` controls `/status`; disabled is the default and service details require explicit opt-in.
 - AI provider settings are env-backed. `AI_API_KEY` is never stored in SQLite or returned by runtime diagnostics.
 - AI Command Briefing uses sanitized dashboard evidence, redacts service URLs/IPs/check targets by default, caches only the latest briefing in `SystemConfig`, and is never exposed on the public `/status` page.
 - Built-in API widget templates cover Home Assistant, Proxmox VE, Portainer, AdGuard Home, Pi-hole v6, Jellyfin, Grafana, Prometheus, Sonarr, and Radarr; `/api/api-widget-suggestions` matches existing service catalog entries to those templates.

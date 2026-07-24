@@ -1,13 +1,24 @@
 services:
   dashboard:
-    image: 10.0.21.40:3000/kobuslabs/homelabdashboard:${IMAGE_TAG:-latest}
+    image: ${REGISTRY_HOST:?Set REGISTRY_HOST to the TLS-enabled registry hostname}/kobuslabs/homelabdashboard:${IMAGE_TAG:-latest}
     container_name: homelab-dashboard
     restart: unless-stopped
+    init: true
     environment:
       DATABASE_URL: file:/data/homelab.db
-      # Optional overrides — leave unset and the app handles everything on first boot:
-      # ADMIN_PASSWORD: your-password   # set to skip the web-based account creation
-      # COOKIE_SECRET: random-32-chars  # set for persistent sessions across restarts
+      APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN to the externally visible HTTPS origin}
+      COOKIE_SECRET: ${COOKIE_SECRET:?Set COOKIE_SECRET to at least 32 random characters}
+      OUTBOUND_ALLOWED_CIDRS: ${OUTBOUND_ALLOWED_CIDRS:?Set the monitored network CIDRs}
+      OUTBOUND_ALLOWED_HOSTS: ${OUTBOUND_ALLOWED_HOSTS:-}
+      TRUST_PROXY_CIDRS: ${TRUST_PROXY_CIDRS:?Set the exact CIDR used by the host reverse proxy}
+      SESSION_MAX_AGE_HOURS: ${SESSION_MAX_AGE_HOURS:-168}
+      PUBLIC_STATUS_MODE: ${PUBLIC_STATUS_MODE:-disabled}
+      ALLOW_INSECURE_INTEGRATIONS: ${ALLOW_INSECURE_INTEGRATIONS:-false}
+      SETUP_CODE: ${SETUP_CODE:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      NODE_EXTRA_CA_CERTS: ${NODE_EXTRA_CA_CERTS:-}
+      # Optional account override:
+      # Set ADMIN_PASSWORD in the environment to skip database-backed account creation.
       # Optional read-only OPNsense integration:
       # OPNSENSE_ENABLED: "true"
       # OPNSENSE_NAME: OPNsense
@@ -30,7 +41,7 @@ services:
       # HOME_ASSISTANT_TOKEN: your-long-lived-token
       # SONARR_API_KEY: your-api-key
     ports:
-      - "4173:4173"
+      - "127.0.0.1:4173:4173"
     volumes:
       - homelab-dashboard-data:/data
     read_only: true
@@ -38,8 +49,16 @@ services:
       - /tmp:size=64m,mode=1777
     cap_drop:
       - ALL
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
     security_opt:
       - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
 
 volumes:
   homelab-dashboard-data:

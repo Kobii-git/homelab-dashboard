@@ -3071,6 +3071,48 @@ label textarea {
   animation: fade-in var(--dur-2) var(--ease);
 }
 
+.reauth-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(3, 8, 11, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.reauth-dialog {
+  width: min(420px, 100%);
+  padding: 24px;
+  border: 1px solid var(--border-strong);
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+}
+
+.reauth-dialog form {
+  display: grid;
+  gap: 14px;
+}
+
+.reauth-dialog h2,
+.reauth-dialog p {
+  margin: 0;
+}
+
+.reauth-dialog > form > p:not(.form-error) {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.reauth-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
 .service-drawer {
   position: fixed;
   top: 0;

@@ -20,6 +20,10 @@ async function resolveSecrets(
     partial.cookieSecret ??
     (await getOrCreate(prisma, "cookie_secret", () => crypto.randomBytes(32).toString("hex")));
 
+  if (partial.cookieSecret) {
+    await prisma.systemConfig.deleteMany({ where: { key: "cookie_secret" } });
+  }
+
   return { ...partial, cookieSecret };
 }
 

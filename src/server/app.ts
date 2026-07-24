@@ -6,17 +6,25 @@ import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import staticFiles from "@fastify/static";
 import { PrismaClient, type HealthCheck, type HostMonitor } from "@prisma/client";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, {
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+  type FastifyServerOptions
+} from "fastify";
 import { z, ZodError } from "zod";
 import {
   clearSetupCode,
   createAuthToken,
+  createReauthToken,
   hashPassword,
   incrementSessionVersion,
   initializeSetupCode,
   isAuthenticated,
+  isRecentlyReauthenticated,
+  REAUTH_COOKIE,
+  REAUTH_MAX_AGE_SECONDS,
   SESSION_COOKIE,
-  SESSION_MAX_AGE_SECONDS,
   verifyAdminLogin,
   verifyAdminPassword,
   verifySetupCode
@@ -77,12 +85,25 @@ import {
 import { seedDemo } from "./seed.js";
 import { registerStatusRoutes } from "./routes/status.js";
 import { RateLimiter } from "./rateLimit.js";
+import {
+  configureOutboundPolicy,
+  assertIntegrationTransport,
+  outboundPolicySummary,
+  resolveOutboundTarget
+} from "./outboundPolicy.js";
+import {
+  adoptExistingApiWidgetBindings,
+  bindApiWidgetSecret,
+  removeApiWidgetSecretBinding,
+  widgetSecretOrigin
+} from "./apiWidgetBindings.js";
+import { fetchProxiedIcon, serverIconSlug } from "./iconProxy.js";
 
 type CreateAppOptions = {
   env?: AppEnv;
   prisma?: PrismaClient;
   monitor?: boolean;
-  logger?: boolean;
+  logger?: FastifyServerOptions["logger"];
   setupCode?: string;
   dashboardUtilities?: DashboardUtilitiesService;
 };
@@ -216,6 +237,36 @@ function resolveClientDist(): string | null {
     fs.existsSync(path.join(candidate, "index.html")) &&
     fs.existsSync(path.join(candidate, "assets"))
   ) ?? null;
+}
+
+function healthCheckHostname(type: string, target: string): string {
+  if (type === "ping") return target.trim();
+  const protocol = type === "tcp" ? "tcp" : "https";
+  const parsed = new URL(target.includes("://") ? target : `${protocol}://${target}`);
+  return parsed.hostname;
+}
+
+async function validateConfiguredOutboundTarget(hostname: string): Promise<void> {
+  if (!outboundPolicySummary().enforced) return;
+  await resolveOutboundTarget(hostname);
+}
+
+function isLocalContainerHealthRequest(request: FastifyRequest, pathname: string): boolean {
+  if (pathname !== "/api/health") return false;
+  const remoteAddress = request.raw.socket.remoteAddress?.toLowerCase();
+  if (
+    remoteAddress !== "127.0.0.1" &&
+    remoteAddress !== "::1" &&
+    remoteAddress !== "::ffff:127.0.0.1"
+  ) {
+    return false;
+  }
+  try {
+    const hostname = new URL(`http://${request.headers.host ?? ""}`).hostname;
+    return hostname === "127.0.0.1" || hostname === "[::1]" || hostname === "::1" || hostname === "localhost";
+  } catch {
+    return false;
+  }
 }
 
 async function adminAccountExists(env: AppEnv, prisma: PrismaClient): Promise<boolean> {
@@ -513,10 +564,27 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     ...raw,
     cookieSecret: raw.cookieSecret ?? crypto.randomBytes(32).toString("hex")
   };
+  configureOutboundPolicy(env);
+  if (env.opnsense.configured && env.opnsense.baseUrl) {
+    assertIntegrationTransport(new URL(env.opnsense.baseUrl), {
+      credentialed: true,
+      tlsVerify: env.opnsense.tlsVerify
+    });
+  }
+  if (env.ai.configured && env.ai.baseUrl) {
+    assertIntegrationTransport(new URL(env.ai.baseUrl), {
+      credentialed: Boolean(env.ai.apiKey),
+      tlsVerify: env.ai.tlsVerify
+    });
+  }
   const prisma = options.prisma ?? new PrismaClient();
   const loginLimiter = new RateLimiter(10, 60_000);
+  const reauthLimiter = new RateLimiter(5, 15 * 60_000);
   const setupLimiter = new RateLimiter(5, 15 * 60_000);
-  const app = Fastify({ logger: options.logger ?? env.nodeEnv === "production" });
+  const app = Fastify({
+    logger: options.logger ?? env.nodeEnv === "production",
+    trustProxy: env.trustedProxyCidrs.length > 0 ? env.trustedProxyCidrs : false
+  });
   const dashboardUtilities = options.dashboardUtilities ?? new DashboardUtilitiesService();
   const startedAt = new Date();
   const healthScheduler = createSchedulerRuntime(15_000);
@@ -535,13 +603,95 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   });
 
   await backfillManagedHealthChecks(prisma);
+  await adoptExistingApiWidgetBindings(prisma);
   await prisma.systemConfig.deleteMany({ where: { key: "vault_key" } });
   enforceDatabasePermissions(env.databaseUrl);
-  const setupCode = await initializeSetupCode(prisma, env, options.setupCode);
+  const setupCode = await initializeSetupCode(prisma, env, options.setupCode ?? env.setupCode ?? undefined);
   if (setupCode) {
     const message = `Homelab Dashboard one-time setup code: ${setupCode}`;
-    if (options.logger ?? env.nodeEnv === "production") app.log.warn(message);
-    else if (env.nodeEnv !== "test") console.warn(message);
+    if (env.nodeEnv !== "production") {
+      if (options.logger) app.log.warn(message);
+      else if (env.nodeEnv !== "test") console.warn(message);
+    }
+  }
+
+  function securityLog(
+    request: FastifyRequest,
+    event: string,
+    result: "success" | "failure",
+    object?: { type: string; id?: string }
+  ): void {
+    app.log.info({
+      securityEvent: {
+        event,
+        result,
+        clientIp: request.ip || "unknown",
+        ...(object ? { objectType: object.type, objectId: object.id ?? null } : {})
+      }
+    }, "security event");
+  }
+
+  function requireRecentReauthentication(request: FastifyRequest, reply: FastifyReply): boolean {
+    if (isRecentlyReauthenticated(request, env)) return true;
+    reply.code(403).send({
+      error: "Recent password confirmation is required",
+      code: "REAUTH_REQUIRED"
+    });
+    return false;
+  }
+
+  function sensitiveMutationFor(request: FastifyRequest): { type: string; id?: string } | null {
+    if (!["POST", "PATCH", "DELETE"].includes(request.method)) return null;
+    const pathname = new URL(request.raw.url ?? "/", "http://localhost").pathname;
+    const collections: Array<{ prefix: string; type: string }> = [
+      { prefix: "/api/metrics/hosts", type: "host-monitor" },
+      { prefix: "/api/api-widgets", type: "api-widget" },
+      { prefix: "/api/resources", type: "resource" },
+      { prefix: "/api/health-checks", type: "health-check" },
+      { prefix: "/api/groups", type: "group" }
+    ];
+    for (const collection of collections) {
+      if (pathname !== collection.prefix && !pathname.startsWith(`${collection.prefix}/`)) continue;
+      const suffix = pathname.slice(collection.prefix.length + 1);
+      if (request.method === "POST" && (suffix === "reorder" || suffix.endsWith("/run"))) return null;
+      if (collection.type === "group" && request.method !== "DELETE") return null;
+      const body = request.body && typeof request.body === "object" && !Array.isArray(request.body)
+        ? request.body as Record<string, unknown>
+        : {};
+      if (
+        request.method === "PATCH" &&
+        collection.type === "resource" &&
+        !["url", "host", "icon", "monitoringMode"].some((key) => key in body)
+      ) {
+        return null;
+      }
+      if (
+        request.method === "PATCH" &&
+        collection.type === "host-monitor" &&
+        !["baseUrl", "enabled"].some((key) => key in body)
+      ) {
+        return null;
+      }
+      if (
+        request.method === "PATCH" &&
+        collection.type === "api-widget" &&
+        !["baseUrl", "authType", "authHeaderName", "authEnvVar", "authValuePrefix", "tlsVerify", "enabled"].some((key) => key in body)
+      ) {
+        return null;
+      }
+      if (
+        request.method === "PATCH" &&
+        collection.type === "health-check" &&
+        !["type", "target", "enabled"].some((key) => key in body)
+      ) {
+        return null;
+      }
+      return {
+        type: collection.type,
+        ...(suffix && !suffix.includes("/") ? { id: suffix } : {})
+      };
+    }
+    return null;
   }
 
   app.setErrorHandler((error, _request, reply) => {
@@ -574,15 +724,19 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.addHook("onSend", async (request, reply, payload) => {
     reply.header(
       "Content-Security-Policy",
-      "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; connect-src 'self'; font-src 'self'"
+      "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'"
     );
     reply.header("X-Frame-Options", "DENY");
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("Referrer-Policy", "no-referrer");
     reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
     reply.header("Cross-Origin-Opener-Policy", "same-origin");
-    if (env.cookieSecure) reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-    if (request.url.startsWith("/api") || request.url.startsWith("/status")) {
+    reply.header("Cross-Origin-Embedder-Policy", "require-corp");
+    reply.header("Cross-Origin-Resource-Policy", "same-origin");
+    if (env.cookieSecure) reply.header("Strict-Transport-Security", "max-age=31536000");
+    if (request.url.startsWith("/assets/")) {
+      reply.header("Cache-Control", "public, max-age=31536000, immutable");
+    } else if (!request.url.match(/^\/api\/resources\/[^/]+\/icon(?:\?|$)/)) {
       reply.header("Cache-Control", "no-store");
     }
     return payload;
@@ -591,8 +745,24 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.addHook("onRequest", async (request, reply) => {
     const url = new URL(request.raw.url ?? "/", "http://localhost");
 
+    if (
+      env.nodeEnv === "production" &&
+      env.appOrigin &&
+      !isLocalContainerHealthRequest(request, url.pathname) &&
+      (
+        request.headers.host !== new URL(env.appOrigin).host ||
+        request.protocol !== new URL(env.appOrigin).protocol.slice(0, -1)
+      )
+    ) {
+      return reply.code(421).send({ error: "Request origin transport does not match APP_ORIGIN" });
+    }
+
     if (!url.pathname.startsWith("/api")) {
       return;
+    }
+
+    if (env.publicStatusMode === "disabled" && url.pathname === "/api/status") {
+      return reply.code(404).send({ error: "Not found" });
     }
 
     if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
@@ -609,12 +779,12 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
         } catch {
           return reply.code(403).send({ error: "Invalid request origin" });
         }
-        const originHost = parsedOrigin.host;
         const requestHost = request.headers.host;
         const developmentOrigin =
-          env.nodeEnv !== "production" && ["localhost:5173", "127.0.0.1:5173"].includes(originHost);
-        const expectedProtocol = env.cookieSecure ? "https:" : "http:";
-        if (!requestHost || (!developmentOrigin && (originHost !== requestHost || parsedOrigin.protocol !== expectedProtocol))) {
+          env.nodeEnv !== "production" &&
+          ["http://localhost:5173", "http://127.0.0.1:5173"].includes(parsedOrigin.origin);
+        const expectedOrigin = env.appOrigin ?? `${env.cookieSecure ? "https" : "http"}://${requestHost}`;
+        if (!requestHost || (!developmentOrigin && parsedOrigin.origin !== expectedOrigin)) {
           return reply.code(403).send({ error: "Request origin does not match this server" });
         }
       } else if (fetchSite === "same-site") {
@@ -622,15 +792,15 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       }
     }
 
-    const publicRoutes = new Set([
+    const publicRoutes = new Set<string>([
       "/api/auth/login",
       "/api/auth/me",
       "/api/health",
       "/api/version",
       "/api/setup/status",
-      "/api/setup",
-      "/api/status"
+      "/api/setup"
     ]);
+    if (env.publicStatusMode !== "disabled") publicRoutes.add("/api/status");
     if (publicRoutes.has(url.pathname)) {
       return;
     }
@@ -638,16 +808,34 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     if (!(await isAuthenticated(request, env, prisma))) {
       return reply.code(401).send({ error: "Authentication required" });
     }
+
+  });
+
+  app.addHook("preHandler", async (request, reply) => {
+    const sensitiveMutation = sensitiveMutationFor(request);
+    if (sensitiveMutation && !requireRecentReauthentication(request, reply)) {
+      securityLog(request, "admin.mutation", "failure", sensitiveMutation);
+      return reply;
+    }
+  });
+
+  app.addHook("onResponse", async (request, reply) => {
+    const sensitiveMutation = sensitiveMutationFor(request);
+    if (sensitiveMutation && reply.statusCode !== 403) {
+      securityLog(
+        request,
+        "admin.mutation",
+        reply.statusCode < 400 ? "success" : "failure",
+        sensitiveMutation
+      );
+    }
   });
 
   app.get("/api/health", async () => {
-    return {
-      ok: true,
-      ...getBuildInfo()
-    };
+    return { ok: true };
   });
 
-  app.get("/api/version", async () => getBuildInfo());
+  app.get("/api/version", async () => ({ version: getBuildInfo().version }));
 
   app.get("/api/setup/status", async () => {
     const [resourceCount, layout, adminAccount] = await Promise.all([
@@ -674,6 +862,11 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
     if (hasAccount && !(await isAuthenticated(request, env, prisma))) {
       return reply.code(401).send({ error: "Authentication required" });
+    }
+
+    if (hasAccount && body.seedDemo && !requireRecentReauthentication(request, reply)) {
+      securityLog(request, "admin.seed_demo", "failure", { type: "system" });
+      return;
     }
 
     if (!hasAccount) {
@@ -704,6 +897,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
     if (body.seedDemo) {
       await seedDemo(prisma);
+      if (hasAccount) securityLog(request, "admin.seed_demo", "success", { type: "system" });
     }
 
     return { ok: true };
@@ -712,12 +906,14 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.post("/api/auth/login", async (request, reply) => {
     const clientIp = request.ip || "unknown";
     if (!loginLimiter.allow(clientIp)) {
+      securityLog(request, "auth.login", "failure");
       return reply.code(429).send({ error: "Too many login attempts. Try again shortly." });
     }
 
     const body = loginSchema.parse(request.body);
 
     if (!(await verifyAdminLogin(body.username, body.password, env, prisma))) {
+      securityLog(request, "auth.login", "failure");
       reply.code(401).send({ error: "Invalid password" });
       return;
     }
@@ -729,15 +925,41 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       sameSite: "lax",
       secure: env.cookieSecure,
       path: "/",
-      maxAge: SESSION_MAX_AGE_SECONDS
+      maxAge: env.sessionMaxAgeSeconds
     });
+    securityLog(request, "auth.login", "success");
 
     return { authenticated: true };
   });
 
-  app.post("/api/auth/logout", async (_request, reply) => {
+  app.post("/api/auth/reauth", async (request, reply) => {
+    const clientIp = request.ip || "unknown";
+    if (!reauthLimiter.allow(clientIp)) {
+      securityLog(request, "auth.reauthenticate", "failure");
+      return reply.code(429).send({ error: "Too many password confirmation attempts. Try again later." });
+    }
+    const body = z.object({ password: z.string().min(1).max(256) }).parse(request.body);
+    if (!(await verifyAdminPassword(body.password, env, prisma))) {
+      securityLog(request, "auth.reauthenticate", "failure");
+      return reply.code(401).send({ error: "Password is incorrect" });
+    }
+    reauthLimiter.reset(clientIp);
+    reply.setCookie(REAUTH_COOKIE, createReauthToken(request, env), {
+      httpOnly: true,
+      sameSite: "strict",
+      secure: env.cookieSecure,
+      path: "/",
+      maxAge: REAUTH_MAX_AGE_SECONDS
+    });
+    securityLog(request, "auth.reauthenticate", "success");
+    return reply.code(204).send();
+  });
+
+  app.post("/api/auth/logout", async (request, reply) => {
     await incrementSessionVersion(prisma);
     reply.clearCookie(SESSION_COOKIE, { path: "/", sameSite: "lax", secure: env.cookieSecure });
+    reply.clearCookie(REAUTH_COOKIE, { path: "/", sameSite: "strict", secure: env.cookieSecure });
+    securityLog(request, "auth.logout", "success");
     return { authenticated: false };
   });
 
@@ -768,6 +990,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     }
 
     if (env.adminPassword) {
+      securityLog(request, "auth.password_change", "failure", { type: "admin-account", id: "admin" });
       reply.code(400).send({
         error: "Password is managed by ADMIN_PASSWORD env var on the server. Update docker-compose and restart."
       });
@@ -775,6 +998,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     }
 
     if (!(await verifyAdminPassword(body.currentPassword, env, prisma))) {
+      securityLog(request, "auth.password_change", "failure", { type: "admin-account", id: "admin" });
       reply.code(401).send({ error: "Current password is incorrect" });
       return;
     }
@@ -786,6 +1010,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
     await incrementSessionVersion(prisma);
     reply.clearCookie(SESSION_COOKIE, { path: "/", sameSite: "lax", secure: env.cookieSecure });
+    reply.clearCookie(REAUTH_COOKIE, { path: "/", sameSite: "strict", secure: env.cookieSecure });
+    securityLog(request, "auth.password_change", "success", { type: "admin-account", id: "admin" });
 
     return { ok: true, authenticated: false };
   });
@@ -933,6 +1159,15 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       prisma.dashboardGroup.count()
     ]);
     const cachedAiBriefing = await getCachedAiBriefing(prisma, env.ai);
+    const outbound = outboundPolicySummary();
+    const readinessWarnings = [
+      ...(!env.appOrigin && env.nodeEnv === "production" ? ["APP_ORIGIN is not configured"] : []),
+      ...(env.nodeEnv === "production" && env.trustedProxyCidrs.length === 0 ? ["TRUST_PROXY_CIDRS is not configured"] : []),
+      ...(!env.cookieSecure ? ["Session cookies are not restricted to HTTPS"] : []),
+      ...(env.publicStatusMode !== "disabled" ? [`Public status is enabled in ${env.publicStatusMode} mode`] : []),
+      ...(!outbound.configured ? ["Outbound monitoring allowlists are not configured"] : []),
+      ...(outbound.allowInsecureIntegrations ? ["CRITICAL: Insecure integration transport override is enabled"] : [])
+    ];
 
     return {
       build: getBuildInfo(),
@@ -948,7 +1183,15 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       },
       auth: {
         source: env.adminPassword ? "env" : "database",
-        cookieSecure: env.cookieSecure
+        cookieSecure: env.cookieSecure,
+        sessionMaxAgeHours: Math.floor(env.sessionMaxAgeSeconds / 3600)
+      },
+      security: {
+        appOrigin: env.appOrigin,
+        publicStatusMode: env.publicStatusMode,
+        trustedProxyConfigured: env.trustedProxyCidrs.length > 0,
+        outboundPolicy: outbound,
+        readinessWarnings
       },
       database: {
         ok: true,
@@ -1008,6 +1251,11 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   app.post("/api/metrics/hosts", async (request, reply) => {
     const body = hostMonitorSchema.parse(request.body);
+    try {
+      await validateConfiguredOutboundTarget(new URL(body.baseUrl).hostname);
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : "Host target is not allowed" });
+    }
     const monitor = await prisma.hostMonitor.create({
       data: createHostMonitorData(body),
       include: hostMonitorInclude
@@ -1016,10 +1264,17 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return toHostMonitorDto(monitor);
   });
 
-  app.patch("/api/metrics/hosts/:id", async (request) => {
+  app.patch("/api/metrics/hosts/:id", async (request, reply) => {
     const id = routeId(request);
     const body = hostMonitorPatchSchema.parse(request.body);
     const data = patchHostMonitorData(body);
+    if (data.baseUrl) {
+      try {
+        await validateConfiguredOutboundTarget(new URL(data.baseUrl).hostname);
+      } catch (error) {
+        return reply.code(400).send({ error: error instanceof Error ? error.message : "Host target is not allowed" });
+      }
+    }
     const previousMonitor = await prisma.hostMonitor.findUniqueOrThrow({
       where: { id },
       select: {
@@ -1154,10 +1409,34 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     if (!isApiWidgetSecretAllowed(body.authEnvVar, env.apiWidgetSecretAllowlist)) {
       return reply.code(400).send({ error: "API widget secret environment variable is not allowlisted" });
     }
+    const data = createApiWidgetData(body);
+    const expectedOrigin = widgetSecretOrigin(data);
+    const confirmation = z.object({
+      confirmSecretOrigin: z.string().url().optional()
+    }).parse(request.body).confirmSecretOrigin;
+    if (expectedOrigin && confirmation !== expectedOrigin) {
+      return reply.code(400).send({
+        error: `Confirm the credential destination origin exactly: ${expectedOrigin}`
+      });
+    }
+    try {
+      assertIntegrationTransport(new URL(data.baseUrl), {
+        credentialed: data.authType !== "none",
+        tlsVerify: data.tlsVerify
+      });
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : "Unsafe integration transport" });
+    }
+    try {
+      await validateConfiguredOutboundTarget(new URL(data.baseUrl).hostname);
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : "Widget target is not allowed" });
+    }
     const widget = await prisma.apiWidget.create({
-      data: createApiWidgetData(body),
+      data,
       include: apiWidgetInclude
     });
+    await bindApiWidgetSecret(prisma, widget);
     reply.code(201);
     return toApiWidgetDto(widget);
   });
@@ -1184,6 +1463,35 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     if (!isApiWidgetSecretAllowed(nextSecretName, env.apiWidgetSecretAllowlist)) {
       return reply.code(400).send({ error: "API widget secret environment variable is not allowlisted" });
     }
+    const nextSecurityConfig = { id, ...previous, ...data };
+    const nextOrigin = widgetSecretOrigin(nextSecurityConfig);
+    const bindingChanged =
+      data.baseUrl !== undefined ||
+      data.authEnvVar !== undefined ||
+      data.authType !== undefined;
+    if (nextOrigin && bindingChanged) {
+      const confirmation = z.object({
+        confirmSecretOrigin: z.string().url().optional()
+      }).parse(request.body).confirmSecretOrigin;
+      if (confirmation !== nextOrigin) {
+        return reply.code(400).send({
+          error: `Confirm the credential destination origin exactly: ${nextOrigin}`
+        });
+      }
+    }
+    try {
+      assertIntegrationTransport(new URL(nextSecurityConfig.baseUrl), {
+        credentialed: nextSecurityConfig.authType !== "none",
+        tlsVerify: nextSecurityConfig.tlsVerify
+      });
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : "Unsafe integration transport" });
+    }
+    try {
+      await validateConfiguredOutboundTarget(new URL(nextSecurityConfig.baseUrl).hostname);
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : "Widget target is not allowed" });
+    }
     const resetState = shouldResetApiWidgetAfterPatch(previous, data);
     const widget = await prisma.$transaction(async (tx) => {
       const updated = await tx.apiWidget.update({
@@ -1199,12 +1507,14 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
       return updated;
     });
+    await bindApiWidgetSecret(prisma, widget);
     return toApiWidgetDto(widget);
   });
 
   app.delete("/api/api-widgets/:id", async (request) => {
     const id = routeId(request);
     await prisma.apiWidget.delete({ where: { id } });
+    await removeApiWidgetSecretBinding(prisma, id);
     return { ok: true };
   });
 
@@ -1252,8 +1562,65 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     })
   );
 
+  app.get("/api/resources/:id/icon", async (request, reply) => {
+    const id = routeId(request);
+    const resource = await prisma.resource.findUniqueOrThrow({
+      where: { id },
+      select: { name: true, icon: true, url: true }
+    });
+    const candidates: Array<{ url: URL; fixedProvider: boolean }> = [];
+    const icon = resource.icon?.trim();
+    if (icon && /^https?:\/\//i.test(icon)) {
+      candidates.push({ url: new URL(icon), fixedProvider: false });
+    } else if (icon) {
+      const slug = serverIconSlug(icon);
+      if (slug) {
+        candidates.push({
+          url: new URL(`https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/webp/${encodeURIComponent(slug)}.webp`),
+          fixedProvider: true
+        });
+      }
+    }
+    const nameSlug = serverIconSlug(resource.name);
+    if (nameSlug) {
+      candidates.push({
+        url: new URL(`https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/webp/${encodeURIComponent(nameSlug)}.webp`),
+        fixedProvider: true
+      });
+    }
+    if (resource.url) {
+      candidates.push({ url: new URL("/favicon.ico", resource.url), fixedProvider: false });
+    }
+
+    for (const candidate of candidates) {
+      try {
+        const proxied = await fetchProxiedIcon(candidate.url, { fixedProvider: candidate.fixedProvider });
+        return reply
+          .header("Cache-Control", "private, max-age=86400")
+          .header("Vary", "Cookie")
+          .type(proxied.contentType)
+          .send(proxied.body);
+      } catch {
+        // Try the next safe candidate and fall back to initials in the client.
+      }
+    }
+    return reply.code(404).send({ error: "Icon is unavailable" });
+  });
+
   app.post("/api/resources", async (request, reply) => {
     const body = resourceSchema.parse(request.body);
+    const proposedTarget = normalizedAutoPingTarget({
+      url: body.url ?? null,
+      host: body.host ?? null,
+      monitoringMode: body.monitoringMode
+    });
+    if (proposedTarget) {
+      try {
+        await validateConfiguredOutboundTarget(healthCheckHostname(proposedTarget.type, proposedTarget.target));
+      } catch (error) {
+        return reply.code(400).send({ error: error instanceof Error ? error.message : "Resource target is not allowed" });
+      }
+    }
     const resource = await prisma.resource.create({ data: { ...body } });
 
     const defaultCheck = normalizedAutoPingTarget(resource);
@@ -1265,7 +1632,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return resource;
   });
 
-  app.patch("/api/resources/:id", async (request) => {
+  app.patch("/api/resources/:id", async (request, reply) => {
     const id = routeId(request);
     const body = resourcePatchSchema.parse(request.body);
     const data = { ...body };
@@ -1275,6 +1642,20 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     }
 
     const previousResource = await prisma.resource.findUniqueOrThrow({ where: { id }, include: { healthChecks: true } });
+    const nextResourceAddress = { ...previousResource, ...body };
+    if (
+      nextResourceAddress.monitoringMode === "auto" &&
+      (body.monitoringMode !== undefined || body.url !== undefined || body.host !== undefined)
+    ) {
+      const proposedTarget = normalizedResourceTarget(nextResourceAddress);
+      if (proposedTarget) {
+        try {
+          await validateConfiguredOutboundTarget(healthCheckHostname(proposedTarget.type, proposedTarget.target));
+        } catch (error) {
+          return reply.code(400).send({ error: error instanceof Error ? error.message : "Resource target is not allowed" });
+        }
+      }
+    }
     const resource = await prisma.resource.update({ where: { id }, data, include: { healthChecks: true, group: true } });
 
     const transitionedToAuto = body.monitoringMode === "auto" && previousResource.monitoringMode !== "auto";
@@ -1336,6 +1717,11 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   app.post("/api/health-checks", async (request, reply) => {
     const body = healthCheckSchema.parse(request.body);
+    try {
+      await validateConfiguredOutboundTarget(healthCheckHostname(body.type, body.target));
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : "Health-check target is not allowed" });
+    }
     const check = await prisma.healthCheck.create({ data: body, include: { resource: true } });
     reply.code(201);
     return check;
@@ -1360,6 +1746,13 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     const nextTarget = body.target ?? previousCheck.target;
     const targetError = validateHealthCheckTarget(nextType, nextTarget);
     if (targetError) return reply.code(400).send({ error: targetError });
+    if (body.type !== undefined || body.target !== undefined || body.enabled === true) {
+      try {
+        await validateConfiguredOutboundTarget(healthCheckHostname(nextType, nextTarget));
+      } catch (error) {
+        return reply.code(400).send({ error: error instanceof Error ? error.message : "Health-check target is not allowed" });
+      }
+    }
     const resetState = shouldResetHealthCheckAfterPatch(previousCheck, body);
 
     return prisma.healthCheck.update({

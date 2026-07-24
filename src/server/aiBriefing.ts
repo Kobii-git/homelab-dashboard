@@ -651,6 +651,7 @@ async function requestAiBriefing(config: AiEnvConfig, evidence: AiBriefingEviden
         ]
       },
       tlsVerify: config.tlsVerify,
+      credentialed: Boolean(config.apiKey),
       timeoutMs: AI_REQUEST_TIMEOUT_MS,
       maxBytes: AI_MAX_RESPONSE_BYTES,
       label: "AI provider"

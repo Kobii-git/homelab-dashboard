@@ -3,9 +3,17 @@ export type AppEnv = {
   host: string;
   port: number;
   databaseUrl: string;
+  appOrigin: string | null;
+  trustedProxyCidrs: string[];
   adminPassword: string | null;
   cookieSecret: string;
   cookieSecure: boolean;
+  sessionMaxAgeSeconds: number;
+  setupCode: string | null;
+  publicStatusMode: "disabled" | "aggregate" | "services";
+  outboundAllowedCidrs: string[];
+  outboundAllowedHosts: string[];
+  allowInsecureIntegrations: boolean;
   apiWidgetSecretAllowlist: string[];
   opnsense: OpnsenseEnvConfig;
   ai: AiEnvConfig;
@@ -40,6 +48,9 @@ const OPNSENSE_POLL_INTERVAL_MAX = 86400;
 const AI_BRIEFING_INTERVAL_DEFAULT = 21600;
 const AI_BRIEFING_INTERVAL_MIN = 300;
 const AI_BRIEFING_INTERVAL_MAX = 86400;
+const SESSION_MAX_AGE_HOURS_DEFAULT = 24 * 7;
+const SESSION_MAX_AGE_HOURS_MIN = 1;
+const SESSION_MAX_AGE_HOURS_MAX = 24 * 30;
 
 function boolEnv(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) return fallback;
@@ -57,11 +68,64 @@ function textEnv(value: string | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function listEnv(value: string | undefined): string[] {
+  return [...new Set(
+    (value ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  )];
+}
+
+function allowedHostList(value: string | undefined): string[] {
+  return listEnv(value).map((entry) => {
+    const normalized = entry.toLowerCase().replace(/\.$/, "");
+    const valid = normalized.length <= 253 &&
+      normalized.split(".").every((label) =>
+        /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)
+      );
+    if (!valid || normalized.includes("*")) {
+      throw new Error(`OUTBOUND_ALLOWED_HOSTS contains an invalid exact hostname: ${entry}`);
+    }
+    return normalized;
+  });
+}
+
+function normalizedAppOrigin(value: string | null, production: boolean): string | null {
+  if (!value) {
+    if (production) throw new Error("APP_ORIGIN is required in production");
+    return null;
+  }
+  const url = new URL(value);
+  if (
+    (production && url.protocol !== "https:") ||
+    (!production && url.protocol !== "https:" && url.protocol !== "http:") ||
+    url.username ||
+    url.password ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error("APP_ORIGIN must be an exact HTTPS origin without credentials, path, query, or fragment");
+  }
+  return url.origin;
+}
+
+function publicStatusModeEnv(value: string | undefined): AppEnv["publicStatusMode"] {
+  if (!value) return "disabled";
+  if (value === "disabled" || value === "aggregate" || value === "services") return value;
+  throw new Error("PUBLIC_STATUS_MODE must be disabled, aggregate, or services");
+}
+
 function normalizedBaseUrl(value: string | null): string | null {
   if (!value) return null;
   try {
     const url = new URL(value);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username ||
+      url.password
+    ) return null;
     return value.replace(/\/+$/, "");
   } catch {
     return null;
@@ -117,17 +181,47 @@ export function getAiEnv(): AiEnvConfig {
 export function getEnv(): Omit<AppEnv, "cookieSecret"> & {
   cookieSecret: string | null;
 } {
+  const nodeEnv = process.env.NODE_ENV ?? "development";
+  const production = nodeEnv === "production";
+  const cookieSecret = textEnv(process.env.COOKIE_SECRET);
+  const adminPassword = textEnv(process.env.ADMIN_PASSWORD);
+  if (production && (!cookieSecret || cookieSecret.length < 32)) {
+    throw new Error("COOKIE_SECRET must be at least 32 characters in production");
+  }
+  if (production && adminPassword && adminPassword.length < 12) {
+    throw new Error("ADMIN_PASSWORD must be at least 12 characters in production");
+  }
+  const appOrigin = normalizedAppOrigin(textEnv(process.env.APP_ORIGIN), production);
+  const trustedProxyCidrs = listEnv(process.env.TRUST_PROXY_CIDRS);
+  if (production && trustedProxyCidrs.length === 0) {
+    throw new Error("TRUST_PROXY_CIDRS must identify the HTTPS reverse proxy in production");
+  }
+  const outboundAllowedCidrs = listEnv(process.env.OUTBOUND_ALLOWED_CIDRS);
+  if (production && outboundAllowedCidrs.length === 0) {
+    throw new Error("OUTBOUND_ALLOWED_CIDRS must define the monitored network boundary in production");
+  }
+
   return {
-    nodeEnv: process.env.NODE_ENV ?? "development",
+    nodeEnv,
     host: process.env.HOST ?? "0.0.0.0",
     port: Number(process.env.PORT ?? 4173),
     databaseUrl: process.env.DATABASE_URL ?? "file:../data/homelab.db",
-    adminPassword: process.env.ADMIN_PASSWORD ?? null,
-    cookieSecret: process.env.COOKIE_SECRET ?? null,
-    // Only require HTTPS for the session cookie when explicitly opted in.
-    // Homelab installs are typically plain HTTP on a LAN, where a secure
-    // cookie would be silently dropped by the browser and block login.
-    cookieSecure: process.env.COOKIE_SECURE === "true",
+    appOrigin,
+    trustedProxyCidrs,
+    adminPassword,
+    cookieSecret,
+    cookieSecure: production || process.env.COOKIE_SECURE === "true",
+    sessionMaxAgeSeconds: intEnv(
+      process.env.SESSION_MAX_AGE_HOURS,
+      SESSION_MAX_AGE_HOURS_DEFAULT,
+      SESSION_MAX_AGE_HOURS_MIN,
+      SESSION_MAX_AGE_HOURS_MAX
+    ) * 60 * 60,
+    setupCode: textEnv(process.env.SETUP_CODE),
+    publicStatusMode: publicStatusModeEnv(process.env.PUBLIC_STATUS_MODE),
+    outboundAllowedCidrs,
+    outboundAllowedHosts: allowedHostList(process.env.OUTBOUND_ALLOWED_HOSTS),
+    allowInsecureIntegrations: boolEnv(process.env.ALLOW_INSECURE_INTEGRATIONS, false),
     apiWidgetSecretAllowlist: (process.env.API_WIDGET_SECRET_ALLOWLIST ?? "")
       .split(",")
       .map((value) => value.trim())

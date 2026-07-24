@@ -4,7 +4,8 @@ import type { FastifyRequest } from "fastify";
 import type { AppEnv } from "./env.js";
 
 export const SESSION_COOKIE = "homelab_session";
-export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+export const REAUTH_COOKIE = "homelab_reauth";
+export const REAUTH_MAX_AGE_SECONDS = 5 * 60;
 
 const SESSION_VERSION_KEY = "auth_session_version";
 const SETUP_CODE_KEY = "setup_bootstrap_hash";
@@ -153,7 +154,7 @@ export async function createAuthToken(env: AppEnv, prisma: PrismaClient, now = n
   const iat = Math.floor(now.getTime() / 1000);
   const payload: SessionPayload = {
     iat,
-    exp: iat + SESSION_MAX_AGE_SECONDS,
+    exp: iat + env.sessionMaxAgeSeconds,
     nonce: crypto.randomBytes(16).toString("base64url"),
     version: await getSessionVersion(prisma),
     credentialTag: credentialFingerprint(material, env.cookieSecret)
@@ -202,12 +203,73 @@ export async function isAuthenticated(
   if (!payload) return false;
   const current = Math.floor(now.getTime() / 1000);
   if (payload.iat > current + 60 || payload.exp <= current || payload.exp <= payload.iat) return false;
-  if (payload.exp - payload.iat > SESSION_MAX_AGE_SECONDS) return false;
+  if (payload.exp - payload.iat > env.sessionMaxAgeSeconds) return false;
   if (payload.version !== (await getSessionVersion(prisma))) return false;
 
   const material = await getCredentialMaterial(env, prisma);
   if (!material) return false;
   return safeEqual(payload.credentialTag, credentialFingerprint(material, env.cookieSecret));
+}
+
+type ReauthPayload = {
+  iat: number;
+  exp: number;
+  nonce: string;
+  sessionTag: string;
+};
+
+function reauthSessionTag(sessionToken: string, secret: string): string {
+  return crypto.createHmac("sha256", secret).update(`reauth:${sessionToken}`).digest("base64url");
+}
+
+export function createReauthToken(request: FastifyRequest, env: AppEnv, now = new Date()): string {
+  const sessionToken = request.cookies?.[SESSION_COOKIE];
+  if (!sessionToken) throw new Error("Cannot reauthenticate without an active session");
+  const iat = Math.floor(now.getTime() / 1000);
+  const payload: ReauthPayload = {
+    iat,
+    exp: iat + REAUTH_MAX_AGE_SECONDS,
+    nonce: crypto.randomBytes(16).toString("base64url"),
+    sessionTag: reauthSessionTag(sessionToken, env.cookieSecret)
+  };
+  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = crypto.createHmac("sha256", env.cookieSecret).update(`reauth-token:${encoded}`).digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
+export function isRecentlyReauthenticated(request: FastifyRequest, env: AppEnv, now = new Date()): boolean {
+  const sessionToken = request.cookies?.[SESSION_COOKIE];
+  const token = request.cookies?.[REAUTH_COOKIE];
+  if (!sessionToken || !token) return false;
+  const separator = token.lastIndexOf(".");
+  if (separator <= 0) return false;
+  const encoded = token.slice(0, separator);
+  const signature = token.slice(separator + 1);
+  const expectedSignature = crypto
+    .createHmac("sha256", env.cookieSecret)
+    .update(`reauth-token:${encoded}`)
+    .digest("base64url");
+  if (!safeEqual(signature, expectedSignature)) return false;
+
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as Partial<ReauthPayload>;
+    const current = Math.floor(now.getTime() / 1000);
+    if (
+      !Number.isSafeInteger(payload.iat) ||
+      !Number.isSafeInteger(payload.exp) ||
+      typeof payload.nonce !== "string" ||
+      !/^[A-Za-z0-9_-]{20,30}$/.test(payload.nonce) ||
+      typeof payload.sessionTag !== "string" ||
+      payload.exp! <= current ||
+      payload.iat! > current + 60 ||
+      payload.exp! - payload.iat! > REAUTH_MAX_AGE_SECONDS
+    ) {
+      return false;
+    }
+    return safeEqual(payload.sessionTag, reauthSessionTag(sessionToken, env.cookieSecret));
+  } catch {
+    return false;
+  }
 }
 
 function setupCodeHmac(code: string, secret: string): string {
@@ -237,6 +299,9 @@ export async function initializeSetupCode(
     return null;
   }
 
+  if (env.nodeEnv === "production" && !requestedCode) {
+    throw new Error("SETUP_CODE is required on the first production boot when ADMIN_PASSWORD is not set");
+  }
   const code = requestedCode ?? generateSetupCode();
   if (!/^[A-Z2-9]{12}$/.test(code)) throw new Error("The configured setup code must be 12 base32 characters");
   await prisma.systemConfig.upsert({

@@ -8,7 +8,7 @@
 
 - Homelab Dashboard is a private, single-admin, LAN/VPN/self-hosted service dashboard.
 - Treat `package.json` as the source of truth for the app version; docs, badges, lockfiles, tags, and release notes should be checked against it when preparing releases.
-- Main scope: service launcher, grouped/favorited services, manual catalog, health checks, heartbeat history, optional Glances host metrics, optional read-only OPNsense integration, custom read-only JSON API widgets, and public read-only status page.
+- Main scope: adaptive Launchpad/Operations dashboard, grouped/favorited services, manual catalog, health checks, heartbeat history, optional Glances host metrics, optional read-only OPNsense integration, custom read-only JSON API widgets, optional Launchpad utilities, and deliberately enabled public status modes.
 - Explicitly out of scope: SSH/RDP/VNC, Guacamole, credential vaults, multi-user roles, incidents, alerts, script/plugin widgets, backup/restore, network/Docker/Hyper-V discovery, built-in HTTPS termination, mutating arbitrary integration API calls, and firewall-changing OPNsense actions.
 
 ## Stack
@@ -16,7 +16,7 @@
 - Frontend: React 19 + Vite + TypeScript in `src/client`.
 - Backend: Fastify 5 + Zod + TypeScript in `src/server`.
 - Database: SQLite through Prisma.
-- Deploy: Docker/GHCR, app listens on port `4173`.
+- Deploy: Docker through a trusted TLS registry, app listens on port `4173` behind an existing HTTPS reverse proxy.
 - Dev: backend `4173`, Vite `5173`, API proxied from Vite to backend.
 
 ## Data Model
@@ -44,8 +44,12 @@ Do not resurrect old pro-console models for widgets, vaults, sessions, alerts, i
 - `ADMIN_PASSWORD` can manage auth from env and skips DB account creation.
 - Otherwise first-run setup creates the `AdminAccount`.
 - Session cookie is `homelab_session`, signed from `COOKIE_SECRET`.
-- `COOKIE_SECURE` defaults false for plain HTTP LAN installs; only set true behind HTTPS.
-- Public routes are login/setup/version/health/status-style endpoints; normal API routes require session auth.
+- Production requires exact HTTPS `APP_ORIGIN`, `TRUST_PROXY_CIDRS`, a 32-character
+  `COOKIE_SECRET`, and explicit outbound CIDRs. Production cookies are always Secure.
+- Sessions default to seven days. Sensitive connector, target, secret-binding, and destructive
+  changes require a five-minute reauthentication cookie bound to the active session.
+- Public status defaults to disabled; aggregate and service-detail modes require deployment opt-in.
+- Public health/version/status responses omit Git SHA and build time; full build identity is authenticated.
 
 ## Monitoring
 
@@ -54,6 +58,8 @@ Do not resurrect old pro-console models for widgets, vaults, sessions, alerts, i
 - Glances host metrics are optional and stored in `HostMonitor`/`HostMetricSample`.
 - OPNsense polling is optional, read-only, env-backed, allowlisted, and stored in `IntegrationSource`/`IntegrationSample`.
 - API widgets are optional, read-only JSON GETs with env-var-backed secrets, stored in `ApiWidget`/`ApiWidgetSample`.
+- All admin-defined outbound targets pass the shared DNS-resolving, special-address-blocking,
+  allowlist, and pinned-connection policy. Credentialed integrations require verified HTTPS.
 - API widget suggestions match existing service catalog entries to built-in templates and create widgets only after admin action.
 - Resources support `monitoringMode`: `auto`, `manual`, `disabled`.
 - Manual/disabled resources use `manualStatus`; automatic resources derive status from checks.
@@ -72,6 +78,8 @@ Do not resurrect old pro-console models for widgets, vaults, sessions, alerts, i
 ## API Widgets
 
 - Widgets perform read-only JSON polling only; no arbitrary code, POST/PUT/DELETE actions, or secret storage in SQLite.
+- Credentialed widgets are bound to a confirmed normalized origin in versioned non-secret
+  `SystemConfig` JSON and fail closed if direct database changes break the binding.
 - Supported auth modes: none, bearer token, custom header, basic auth from `username:password`, and Pi-hole v6 session auth.
 - Built-in templates cover Home Assistant, Proxmox VE, Portainer, AdGuard Home, Pi-hole v6, Jellyfin, Grafana, Prometheus, Sonarr, and Radarr.
 - Apps with complex session/WebSocket protocols, such as TrueNAS SCALE and qBittorrent, should become dedicated connectors rather than generic widgets.
@@ -80,10 +88,13 @@ Do not resurrect old pro-console models for widgets, vaults, sessions, alerts, i
 
 - `App.tsx` owns auth/setup/data loading and derives app data from `/api/dashboard`.
 - Views are Dashboard, Services, Admin.
-- Dashboard is the primary screen: hero, clock, Lab Vitals, OPNsense cards, API widget cards, Daily Briefing, filters, search, favorites strip, attention strip, grid/list density, drag-and-drop card reorder, detail drawers.
+- Dashboard is the primary screen with device-local Launchpad and Operations presets.
+  Launchpad prioritizes universal search, favorites, grouped services, weather, and releases;
+  Operations preserves metrics, integrations, signal-only briefing, checks, and detail drawers.
 - Services is the catalog/editor for groups, resources, health checks, manual status, monitoring mode, and confirmed OPNsense imports.
 - Admin handles password, auto ping interval, host metrics, OPNsense integration state, API widgets/import suggestions, sync, runtime diagnostics, and public `/status`.
-- Icons use the `homarr-labs/dashboard-icons` CDN, favicon fallback, then initials avatar.
+- Icons are served through the authenticated same-origin bounded proxy using a fixed catalog
+  allowlist or the outbound policy, then fall back to initials.
 - Styling lives mainly in `src/client/styles/app.css`; dark/light token system, teal accent, compact operational UI.
 
 ## Important Commands

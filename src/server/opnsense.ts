@@ -292,6 +292,7 @@ async function requestJson(config: ConfiguredOpnsenseEnv, endpoint: OpnsenseEndp
       "User-Agent": "homelab-dashboard"
     },
     tlsVerify: config.tlsVerify,
+    credentialed: true,
     timeoutMs: REQUEST_TIMEOUT_MS,
     maxBytes: MAX_RESPONSE_BYTES,
     label: `OPNsense ${endpoint.key}`

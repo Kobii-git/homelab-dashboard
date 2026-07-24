@@ -9,5 +9,8 @@ data/*.db-shm
 coverage/
 playwright-report/
 test-results/
+blob-report/
+security-artifacts/
+backups/
 .claude/
 .gh-bin/

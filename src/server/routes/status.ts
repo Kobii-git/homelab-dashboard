@@ -1,5 +1,4 @@
 import type { RouteContext } from "./types.js";
-import { getBuildInfo } from "../../shared/version.js";
 
 const STATUS_CSS = `
 :root { color-scheme: dark; }
@@ -113,18 +112,11 @@ const STATUS_JS = `
 }());
 `;
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;"
-  })[character] ?? character);
-}
-
-export async function registerStatusRoutes({ app, prisma }: RouteContext): Promise<void> {
-  app.get("/api/status", async () => {
+export async function registerStatusRoutes({ app, prisma, env }: RouteContext): Promise<void> {
+  app.get("/api/status", async (_request, reply) => {
+    if (env.publicStatusMode === "disabled") {
+      return reply.code(404).send({ error: "Not found" });
+    }
     const resources = await prisma.resource.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: {
@@ -181,26 +173,33 @@ export async function registerStatusRoutes({ app, prisma }: RouteContext): Promi
     return {
       ok: overallStatus === "operational",
       overallStatus,
-      ...getBuildInfo(),
       summary: { resources: resources.length, online, offline, unknown },
-      resources: resources.map((resource) => ({
-        name: resource.name,
-        status: resourceStatus(resource),
-        uptimePercent: resourceUptime(resource),
-        ticks: resourceTicks(resource)
-      })),
+      resources: env.publicStatusMode === "services"
+        ? resources.map((resource) => ({
+          name: resource.name,
+          status: resourceStatus(resource),
+          uptimePercent: resourceUptime(resource),
+          ticks: resourceTicks(resource)
+        }))
+        : [],
       generatedAt: new Date().toISOString()
     };
   });
 
-  app.get("/status.css", async (_request, reply) => reply.type("text/css; charset=utf-8").send(STATUS_CSS));
-  app.get("/status.js", async (_request, reply) => reply.type("application/javascript; charset=utf-8").send(STATUS_JS));
+  app.get("/status.css", async (_request, reply) => env.publicStatusMode === "disabled"
+    ? reply.code(404).send("Not found")
+    : reply.type("text/css; charset=utf-8").send(STATUS_CSS));
+  app.get("/status.js", async (_request, reply) => env.publicStatusMode === "disabled"
+    ? reply.code(404).send("Not found")
+    : reply.type("application/javascript; charset=utf-8").send(STATUS_JS));
   app.get("/status", async (_request, reply) => {
-    const build = getBuildInfo();
+    if (env.publicStatusMode === "disabled") {
+      return reply.code(404).type("text/plain; charset=utf-8").send("Not found");
+    }
     reply.type("text/html; charset=utf-8").send(`<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Homelab Status</title><link rel="stylesheet" href="/status.css"></head>
-<body><main class="wrap"><header><div class="mark" aria-hidden="true"><span></span></div><div><h1>Homelab Status</h1><p class="meta">v${escapeHtml(build.version)} · ${escapeHtml(build.gitSha)} · read-only</p></div></header>
+<body><main class="wrap"><header><div class="mark" aria-hidden="true"><span></span></div><div><h1>Homelab Status</h1><p class="meta">Read-only service health</p></div></header>
 <div id="banner" class="banner unknown" role="status"><span class="dot" aria-hidden="true"></span><span id="banner-text">Loading status…</span><button id="retry" class="retry" type="button" hidden>Retry</button></div>
 <div id="chips" class="chips"></div><div id="list" class="grid"></div><footer id="updated">Loading…</footer></main><script src="/status.js" defer></script></body></html>`);
   });

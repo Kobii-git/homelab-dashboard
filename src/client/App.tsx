@@ -1,5 +1,5 @@
 import { Gauge, LayoutDashboard, Server, Settings, Shield } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppSidebar } from "./components/AppSidebar";
 import { BuildBadge } from "./components/BuildBadge";
@@ -9,7 +9,12 @@ import { DashboardConsole } from "./features/dashboard/DashboardConsole";
 import { ServicesView } from "./features/services/ServicesView";
 import { emptyAppData, type AppData, type AppView } from "./features/types";
 import { SettingsView } from "./features/settings/SettingsView";
-import { apiGet, apiSend, type SystemSettingsDto } from "./lib/api";
+import {
+  apiGet,
+  apiSend,
+  setReauthenticationHandler,
+  type SystemSettingsDto
+} from "./lib/api";
 import { useAppChrome } from "./lib/appChrome";
 import { statusFor } from "./lib/format";
 import type { DashboardResource } from "../shared/types";
@@ -301,6 +306,91 @@ export function App() {
   const [addServiceTemplateId, setAddServiceTemplateId] = useState<string | null>(null);
   const [editServiceId, setEditServiceId] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [reauthOpen, setReauthOpen] = useState(false);
+  const [reauthPassword, setReauthPassword] = useState("");
+  const [reauthError, setReauthError] = useState<string | null>(null);
+  const [reauthSubmitting, setReauthSubmitting] = useState(false);
+  const reauthPromiseRef = useRef<Promise<void> | null>(null);
+  const reauthResolveRef = useRef<(() => void) | null>(null);
+  const reauthRejectRef = useRef<((error: Error) => void) | null>(null);
+  const reauthFocusRef = useRef<HTMLElement | null>(null);
+
+  const requestReauthentication = useCallback((): Promise<void> => {
+    if (reauthPromiseRef.current) return reauthPromiseRef.current;
+    reauthFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setReauthPassword("");
+    setReauthError(null);
+    setReauthOpen(true);
+    const promise = new Promise<void>((resolve, reject) => {
+      reauthResolveRef.current = resolve;
+      reauthRejectRef.current = reject;
+    });
+    reauthPromiseRef.current = promise;
+    return promise;
+  }, []);
+
+  const finishReauthentication = useCallback((error?: Error) => {
+    if (error) reauthRejectRef.current?.(error);
+    else reauthResolveRef.current?.();
+    reauthPromiseRef.current = null;
+    reauthResolveRef.current = null;
+    reauthRejectRef.current = null;
+    setReauthOpen(false);
+    setReauthPassword("");
+    setReauthError(null);
+    window.setTimeout(() => reauthFocusRef.current?.focus(), 0);
+  }, []);
+
+  async function submitReauthentication(event: FormEvent) {
+    event.preventDefault();
+    setReauthSubmitting(true);
+    setReauthError(null);
+    try {
+      await apiSend("/api/auth/reauth", "POST", { password: reauthPassword });
+      finishReauthentication();
+    } catch (reauthFailure) {
+      setReauthError(reauthFailure instanceof Error ? reauthFailure.message : "Password confirmation failed");
+    } finally {
+      setReauthSubmitting(false);
+    }
+  }
+
+  useEffect(() => {
+    setReauthenticationHandler(requestReauthentication);
+    return () => {
+      setReauthenticationHandler(null);
+      reauthRejectRef.current?.(new Error("Password confirmation was cancelled"));
+      reauthPromiseRef.current = null;
+    };
+  }, [requestReauthentication]);
+
+  useEffect(() => {
+    if (!reauthOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !reauthSubmitting) {
+        finishReauthentication(new Error("Password confirmation was cancelled"));
+        return;
+      }
+      if (event.key === "Tab") {
+        const dialog = document.querySelector<HTMLElement>(".reauth-dialog");
+        const focusable = dialog
+          ? [...dialog.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex='-1'])")]
+          : [];
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [finishReauthentication, reauthOpen, reauthSubmitting]);
 
   async function loadData() {
     const initialLoad = !dataReadyRef.current;
@@ -576,11 +666,6 @@ export function App() {
       label: `Switch to ${theme === "dark" ? "light" : "dark"} mode`,
       run: toggleTheme
     },
-    {
-      id: "status-page",
-      label: "Open public status page",
-      run: () => window.open("/status", "_blank", "noopener,noreferrer")
-    }
   ];
 
   if ((authenticated === null || setupStatus === null) && bootstrapError) {
@@ -724,6 +809,52 @@ export function App() {
           }
         }}
       />
+
+      {reauthOpen ? (
+        <div className="reauth-backdrop" role="presentation">
+          <section
+            className="reauth-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reauth-title"
+            aria-describedby="reauth-description"
+          >
+            <form onSubmit={submitReauthentication}>
+              <span className="brand-mark"><Shield size={20} /></span>
+              <h2 id="reauth-title">Confirm it’s you</h2>
+              <p id="reauth-description">
+                Enter the administrator password to approve this sensitive change. Approval lasts five minutes.
+              </p>
+              <label>
+                Administrator password
+                <input
+                  autoFocus
+                  type="password"
+                  autoComplete="current-password"
+                  value={reauthPassword}
+                  onChange={(event) => setReauthPassword(event.target.value)}
+                  required
+                />
+              </label>
+              {reauthError ? <p className="form-error" role="alert">{reauthError}</p> : null}
+              <div className="reauth-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={reauthSubmitting}
+                  onClick={() => finishReauthentication(new Error("Password confirmation was cancelled"))}
+                >
+                  Cancel
+                </button>
+                <button className="primary-button" type="submit" disabled={reauthSubmitting}>
+                  {reauthSubmitting ? <InlineSpinner size={15} /> : <Shield size={15} />}
+                  {reauthSubmitting ? " Confirming…" : " Confirm"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

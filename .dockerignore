@@ -1,5 +1,6 @@
 .git
 .github
+.forgejo
 .gh-bin
 .claude
 
@@ -7,6 +8,11 @@ node_modules
 dist
 data
 coverage
+test-results
+playwright-report
+blob-report
+security-artifacts
+backups
 
 .env
 .env.*
