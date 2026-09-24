@@ -32,5 +32,5 @@ three deeper documents. Source and executable configuration remain authoritative
 - `REVIEW_CHECKLIST.md`: diff-triggered review prompts.
 
 Human-facing product and operator documentation remains authoritative for its audience: `README.md`,
-`CONTRIBUTING.md`, root `SECURITY.md`, `FORGEJO.md`, and `docs/`. Optional `.ai/local/` content is
+`CONTRIBUTING.md`, root `SECURITY.md`, `GITHUB.md`, and `docs/`. Optional `.ai/local/` content is
 private machine/user context; never copy it into repository artifacts.

@@ -41,14 +41,12 @@ scheduler is healthy. Authenticated Runtime Health provides the richer operation
 
 ## CI, publication, and channels
 
-`.forgejo/workflows/docker.yml` is the canonical private publication workflow; the GitHub workflow
-is a compatibility mirror. The stable and beta branches map to their documented image channels.
-Both workflows validate, scan, build, smoke-test, generate SBOM/provenance, scan the pushed digest,
-and sign/verify it before success.
+`.github/workflows/docker.yml` is the canonical publication workflow. The stable and beta branches map to their documented image channels.
+The workflow validates, scans, builds, smoke-tests, generates SBOM/provenance, scans the pushed digest,
+and signs/verifies it with its GitHub OIDC identity before success.
 
-Privileged actions and scanner images are pinned to immutable revisions/digests. Publishing requires
-repository variables/secrets and a trusted TLS registry. Workflow permission separation and mirror
-drift remain tracked risks. Local implementation work must not push images, sign releases, create
+Privileged actions and scanner images are pinned to immutable revisions/digests. Publishing uses GHCR, the job-scoped GitHub token, and OIDC; no legacy registry variable or
+long-lived signing secret is required. Workflow permission separation remains a tracked risk. Local implementation work must not push images, sign releases, create
 tags, or deploy without explicit separate authorization.
 
 The optional standalone `deploy/private-https/compose.yaml` supplies a pinned Caddy DNS-01 proxy.

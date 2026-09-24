@@ -63,7 +63,7 @@ and authenticated home context are fetched separately so provider failure does n
 - Session/password/setup code in `src/server/auth.ts` and `src/server/env.ts`.
 - Destination validation and connection pinning in the outbound boundary modules.
 - Prisma schema, startup backfills, `SystemConfig` formats, and retention deletion.
-- Docker/Compose security settings and both publishing workflows.
+- Docker/Compose security settings and the GitHub publishing workflow.
 - Shared DTO changes consumed by the SPA, tests, and public-status serialization.
 
 ## Product overlay

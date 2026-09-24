@@ -24,7 +24,7 @@
 | Backup/restore | runbook commands in `docs/BACKUP_AND_RESTORE.md` | operator runbook | DECLARED | Stop/start, copy, and restore real state; never run as routine validation. |
 | Formatting | none | repository | MISSING | Do not mass-format or claim formatting enforcement. |
 | Linting | none | repository | MISSING | Typecheck is not a linter; CI does not provide a primary-language lint gate. |
-| Packaging/release | publishing workflows | Forgejo/GitHub workflow files | DECLARED | Remote publication is forbidden during local standardisation. |
+| Packaging/release | publishing workflows | GitHub workflow file | DECLARED | Remote publication is forbidden during local standardisation. |
 
 CI additionally runs Gitleaks, Trivy filesystem/Docker/image/SBOM checks, startup and hardened
 container smokes, ZAP baselines, SBOM/provenance generation, and Cosign signing/verification. Those

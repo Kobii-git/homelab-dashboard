@@ -58,7 +58,7 @@ implementation summary or manufacture findings.
 ## CI, dependencies, or release metadata
 
 - Confirm lockfile/runtime alignment and run both audits for dependency changes.
-- Check least-privilege permissions, immutable action/image pins, gate ordering, workflow-mirror
-  parity, registry TLS, SBOM/provenance, pushed-digest scan, and signing verification.
+- Check least-privilege permissions, immutable action/image pins, gate ordering, canonical-workflow
+  coverage, registry TLS, SBOM/provenance, pushed-digest scan, and signing verification.
 - Confirm `package.json` remains the version source and no commit, tag, image push, release, or
   deployment occurred without explicit authorization.

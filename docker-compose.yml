@@ -1,6 +1,6 @@
 services:
   dashboard:
-    image: ${REGISTRY_HOST:?Set REGISTRY_HOST to the TLS-enabled registry hostname}/kobuslabs/homelabdashboard:${IMAGE_TAG:-latest}
+    image: ${HOMELAB_IMAGE:-ghcr.io/kobii-git/homelab-dashboard:latest}
     container_name: homelab-dashboard
     restart: unless-stopped
     init: true

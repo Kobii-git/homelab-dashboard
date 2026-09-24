@@ -22,7 +22,7 @@ DATABASE_URL=file:../data/homelab.db npm run seed:demo
 | Frontend | React 19, Vite, TypeScript, Lucide icons |
 | Backend | Fastify 5, Zod, TypeScript |
 | Database | SQLite via Prisma |
-| Deployment | Docker and Forgejo Container Registry |
+| Deployment | Docker and GitHub Container Registry |
 
 The active product is a single-admin service dashboard. Remote desktop protocols, credential vaults, multi-user roles, mutating integration calls, incidents, alerts, and executable widgets are out of scope.
 
@@ -49,12 +49,12 @@ tests/        Vitest routes and Playwright UI/accessibility tests
 
 This project uses [Semantic Versioning](https://semver.org). Tag releases as `vMAJOR.MINOR.PATCH` on `main`.
 
-The canonical repository is Forgejo and must be accessed over the operator-configured SSH remote. Keep both long-lived branches available:
+The canonical repository is [Kobii-git/homelab-dashboard on GitHub](https://github.com/Kobii-git/homelab-dashboard). Use authenticated HTTPS or SSH. Keep both long-lived branches available:
 
 - `main` is stable and publishes the `latest` and `main` images.
 - `beta` is pre-release and publishes the `beta` image.
 
-Forgejo Actions is defined in `.forgejo/workflows/`; `.github/workflows/` is retained as a compatible mirror for GitHub. Do not commit credentials, local databases, build output, dependency directories, Cosign private keys, or plaintext environment files. Manual image publishing must use the TLS registry in `REGISTRY_HOST`; plaintext registries are unsupported.
+GitHub Actions in `.github/workflows/` is the canonical pipeline. Do not commit credentials, local databases, build output, dependency directories, private keys, or plaintext environment files. Images use GHCR over trusted HTTPS; GitHub Actions signs image digests with its OIDC identity. See `GITHUB.md`.
 
 For the homepage browser matrix, install the Playwright Chromium/Firefox/WebKit binaries, then run
 `HOMEPAGE_CROSS_BROWSER=1 npm run test:e2e`. Files run serially against a disposable database because

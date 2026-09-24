@@ -16,15 +16,14 @@ or cross-cutting changes. Any skipped gate must be reported with the reason and 
 | Integration | Targeted integration tests using local fakes; failure/redaction tests; full route suite. Never contact a production integration. |
 | Dependency/toolchain | `npm ci` in a disposable/clean environment, typecheck, tests, build, Playwright where affected, and both audits. |
 | Docker/Compose | Build image; production startup and health smoke; verify non-root/read-only/capability settings. CI-equivalent scans are required before publication. |
-| Workflow/release | Syntax/action review, workflow-mirror comparison, least-privilege and immutable-pin review, plus all gates the changed workflow claims. Never publish while validating. |
+| Workflow/release | Syntax/action review, canonical workflow gate review, least-privilege and immutable-pin review, plus all gates the changed workflow claims. Never publish while validating. |
 | Security header/public status | Route tests in enabled and disabled modes; inspect unauthenticated output; relevant ZAP baseline before release. |
 
 ## Aggregate gates
 
 - `npm run validate` is the canonical full local gate: stale-copy check, all TypeScript projects,
   Vitest, production build, Playwright/axe, and both npm audits.
-- The Forgejo workflow is the canonical publication pipeline. Its GitHub-compatible mirror must
-  retain equivalent controls. CI adds scanners, startup/container smokes, ZAP, SBOM/provenance, and
+- The GitHub workflow is the canonical publication pipeline. CI adds scanners, startup/container smokes, ZAP, SBOM/provenance, and
   signature verification that the npm gate does not reproduce.
 
 ## Accessibility and manual review

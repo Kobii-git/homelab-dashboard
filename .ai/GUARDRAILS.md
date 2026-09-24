@@ -101,7 +101,7 @@ actions/images, scans, SBOM/provenance, and signed digest publication. Run local
 when available; do not publish or deploy.
 
 Controls: **Automated** in CI for container/security checks; **manual review** for permission scope,
-workflow-mirror parity, upgrade, and rollback.
+workflow gate preservation, upgrade, and rollback.
 
 ### Version and release documentation
 

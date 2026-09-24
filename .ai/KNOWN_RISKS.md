@@ -38,16 +38,7 @@ changes. Priority reflects potential impact, not an instruction to expand the cu
   digests, private repository/registry boundaries, and no pull-request publication trigger.
 - **Reconsider when:** outside contributions are accepted, more maintainers/runners are added, or a
   workflow begins handling untrusted input.
-- **Review point:** either publishing workflow or repository permission model changes.
-
-## P2 — Forgejo and GitHub workflows are manually mirrored
-
-- **Risk:** equivalent security/quality steps can drift between two large workflow files.
-- **Rationale:** Forgejo is canonical while a GitHub-compatible mirror is intentionally retained.
-- **Compensating controls:** contribution and deployment docs identify the canonical file; reviewers
-  compare both on workflow changes.
-- **Reconsider when:** drift recurs or the hosting strategy permits one generated/shared workflow.
-- **Review point:** every `.forgejo/workflows/` or `.github/workflows/` change.
+- **Review point:** the publishing workflow or repository permission model changes.
 
 ## P2 — No primary-language lint or formatting gate
 

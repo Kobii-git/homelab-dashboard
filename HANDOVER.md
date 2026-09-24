@@ -2,8 +2,8 @@
 
 This document captures the current state of the project so the next session can continue without rediscovering the shape of the app.
 
-- **Repo:** operator-configured Forgejo SSH remote
-- **Images:** `${REGISTRY_HOST}/kobuslabs/homelabdashboard:latest` and `:beta`
+- **Repo:** https://github.com/Kobii-git/homelab-dashboard
+- **Images:** `ghcr.io/kobii-git/homelab-dashboard:latest` and `:beta`
 - **Current version:** `0.8.0`
 - **Port:** `4173`
 - **Branch channels:** `main` (stable) and `beta` (pre-release)
@@ -23,7 +23,7 @@ The current product is deliberately not a remote-management platform. SSH, RDP, 
 | Frontend | React 19 + Vite + TypeScript (`src/client/`) |
 | Backend | Fastify 5 + Zod + TypeScript (`src/server/`) |
 | Database | SQLite via Prisma (`prisma/schema.prisma`) |
-| Deploy | Docker Compose / Forgejo Container Registry |
+| Deploy | Docker Compose / GitHub Container Registry |
 
 ---
 
@@ -268,9 +268,9 @@ The test script creates a timestamped SQLite database under `data/` and runs Vit
 
 - Version lives in `package.json`.
 - `src/shared/version.ts` reads the package version and exposes it through the UI and `/api/version`.
-- `.forgejo/workflows/docker.yml` typechecks, tests, builds, runs a production startup smoke test, then publishes images to the Forgejo Container Registry on pushes to `main`, `beta`, and `v*` tags. `.github/workflows/docker.yml` mirrors the same branch/tag policy for GitHub compatibility.
+- `.github/workflows/docker.yml` validates, scans, builds, smoke-tests, and publishes signed images to GitHub Container Registry on pushes to `main`, `beta`, and `v*` tags.
 - `main` publishes `latest` and `main`; `beta` publishes `beta`; all builds publish an immutable `sha-*` tag and release tags publish semver tags.
-- Forgejo Actions must have a Docker-capable runner. The workflow uses the repository token for package publishing.
+- GitHub Actions uses an Ubuntu-hosted runner, its job-scoped token for package publishing, and OIDC for signing. See `GITHUB.md`.
 
 Release checklist:
 
@@ -282,14 +282,14 @@ git push origin main
 git push origin beta
 ```
 
-### Forgejo Branch And Image Policy
+### GitHub Branch And Image Policy
 
-`main` is the stable channel and must always exist. `beta` is the pre-release channel and must always exist. Keep both branches synchronized with intentional changes: merge or cherry-pick the tested change into `beta` for early validation, then promote the validated change into `main`. Do not delete either branch. The Compose deployment defaults to `latest`; set `IMAGE_TAG=beta` to deploy the beta image.
+`main` is the stable channel and must always exist. `beta` is the pre-release channel and must always exist. Keep both branches synchronized with intentional changes: merge or cherry-pick the tested change into `beta` for early validation, then promote the validated change into `main`. Do not delete either branch. The Compose deployment defaults to `latest`; set `HOMELAB_IMAGE=ghcr.io/kobii-git/homelab-dashboard:beta` to deploy a successfully published beta image.
 
 ---
 
 ## Outstanding
 
-- Browser/end-to-end tests are still thin.
+- Browser checks cover Chromium, Firefox, WebKit, and installed Edge; actual Safari and Brave smoke checks remain operator validation.
 - CSS still contains some unused selectors from older UI eras; they are not imported by deleted components, but can be trimmed in a dedicated style cleanup.
 - Hyper-V, Docker, and network discovery remain future ideas, not current features.

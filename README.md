@@ -73,7 +73,7 @@ using real integration credentials. Backups follow the external
 | `ALLOW_INSECURE_INTEGRATIONS` | No | Emergency-only opt-in for HTTP credentials or disabled TLS verification |
 | `DATABASE_URL` | No | Prisma SQLite path; default `file:/data/homelab.db` in Docker |
 | `NODE_EXTRA_CA_CERTS` | No | In-container path to an operator-mounted private CA PEM bundle |
-| `REGISTRY_HOST` | Compose/workflow | Trusted TLS registry hostname without a URL scheme |
+| `HOMELAB_IMAGE` | Compose | GHCR image reference; use a verified digest in production |
 | `PORT` | No | HTTP port; default `4173` |
 | `OPNSENSE_ENABLED` | No | Set to `true` to enable the read-only OPNsense integration |
 | `OPNSENSE_NAME` | No | Display name for the firewall; default `OPNsense` |
@@ -173,7 +173,7 @@ docker compose pull
 docker compose up -d --force-recreate
 ```
 
-Use `IMAGE_TAG=beta docker compose pull` and `IMAGE_TAG=beta docker compose up -d --force-recreate` to run the beta channel. The default channel is `latest`, published from `main`.
+Set `HOMELAB_IMAGE=ghcr.io/kobii-git/homelab-dashboard:beta` before pulling and recreating the service to run the beta channel; only use it after a successful beta publication. The default channel is `latest`, published from `main`.
 
 The SQLite database is stored in the named Docker volume `homelab-dashboard-data` and survives updates.
 
@@ -191,7 +191,7 @@ docker compose ps && docker compose logs --tail=200 dashboard
 ## Local Development
 
 ```sh
-git clone ssh://git@forgejo.home.arpa/kobuslabs/homelabdashboard.git
+git clone https://github.com/Kobii-git/homelab-dashboard.git
 cd homelab-dashboard
 npm ci
 npm run db:push
@@ -226,21 +226,21 @@ DATABASE_URL=file:../data/homelab.db npm run seed:demo
 docker compose -f docker-compose.build.yml up -d --build
 ```
 
-To publish multi-architecture images to the Forgejo container registry from a workstation:
+To publish multi-architecture images to the GitHub Container Registry from a workstation:
 
 ```sh
 VERSION=$(node -p "require('./package.json').version")
-test -n "${REGISTRY_HOST}"
+docker login ghcr.io
 docker buildx create --name homelab-builder --driver docker-container --use --bootstrap
 docker buildx build --builder homelab-builder --platform linux/amd64,linux/arm64 \
   --build-arg APP_GIT_SHA="$(git rev-parse --short=12 HEAD)" \
   --build-arg APP_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -t "${REGISTRY_HOST}/kobuslabs/homelabdashboard:${VERSION}" \
-  -t "${REGISTRY_HOST}/kobuslabs/homelabdashboard:latest" \
+  -t "ghcr.io/kobii-git/homelab-dashboard:${VERSION}" \
+  -t "ghcr.io/kobii-git/homelab-dashboard:latest" \
   --push .
 ```
 
-Log in only to a trusted TLS registry with `docker login "${REGISTRY_HOST}"`. The
+See [GitHub operations](GITHUB.md) for private image access and signature verification. The
 `beta` branch publishes the `beta` image; `main` publishes `latest` and `main`.
 Every branch build also publishes a short immutable `sha-*` tag and signs the digest.
 
@@ -253,7 +253,7 @@ Every branch build also publishes a short immutable `sha-*` tag and signs the di
 | Frontend | React 19, Vite, TypeScript |
 | Backend | Fastify 5, Zod, TypeScript |
 | Database | SQLite via Prisma ORM |
-| Container | Docker / Forgejo Container Registry |
+| Container | Docker / GitHub Container Registry |
 
 ---
 

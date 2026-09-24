@@ -27,7 +27,7 @@ TRUST_PROXY_CIDRS=172.17.0.1/32
 OUTBOUND_ALLOWED_CIDRS=10.0.21.0/24
 COOKIE_SECRET=<at-least-32-random-characters>
 SETUP_CODE=<12-base32-characters-for-first-boot>
-REGISTRY_HOST=registry.home.arpa
+HOMELAB_IMAGE=ghcr.io/kobii-git/homelab-dashboard@sha256:<verified-digest>
 ```
 
 The proxy CIDR shown above is only an example. Determine the exact source address that the
@@ -56,24 +56,17 @@ For a private CA, mount its PEM bundle into the container with a Compose overrid
 `NODE_EXTRA_CA_CERTS` to that in-container path. The base Compose file passes the variable
 through but does not assume an operator-specific certificate location.
 
-## Forgejo, Registry, and Image Trust
+## GitHub, Registry, and Image Trust
 
-Configure Forgejo Git access over SSH and the registry over trusted HTTPS. Set the repository
-variable `REGISTRY_HOST` to the registry hostname without a URL scheme. Install a private CA
-on Forgejo runners and Docker hosts when required, then rotate the token previously used over
-HTTP.
+GitHub is the canonical repository and GHCR is the image registry. Use authenticated GitHub
+HTTPS/SSH and `docker login ghcr.io` with a token limited to reading packages on deployment hosts.
+Keep the repository and container package private. See [GitHub operations](../GITHUB.md).
 
-Generate a Cosign key pair outside the repository:
-
-```sh
-cosign generate-key-pair
-```
-
-Store the private key and password as `COSIGN_PRIVATE_KEY` and `COSIGN_PASSWORD` secrets.
-Store the public key as `COSIGN_PUBLIC_KEY`. Publish that public key as a repository download
-or other authenticated, stable operator URL and record the URL in the deployment inventory.
-The workflows sign the pushed digest and verify it before succeeding. Never commit the
-private key.
+The publishing workflow uses its short-lived GitHub token for GHCR and OIDC identity for Cosign.
+It signs the pushed digest and verifies the exact workflow identity and GitHub issuer before
+succeeding; there is no stored signing private key to migrate. Verify both identity and issuer on
+operator machines, then deploy the digest. Sigstore's transparency log records signing metadata
+(including the repository/workflow identity and image digest); application configuration is excluded.
 
 The workflows also run npm audits, stale-copy checks, Gitleaks, Trivy filesystem/image
 scans, SBOM generation, provenance attestation, browser tests, and unauthenticated plus
@@ -87,7 +80,7 @@ authenticated ZAP baselines.
 - Monitoring CIDRs and any exact public hosts are minimal and correct.
 - All private CAs are trusted; insecure integration overrides are off.
 - Personal-context and media modules show only expected safe fields; TrueNAS uses a read-only role.
-- Forgejo Git uses SSH and the registry passes its HTTPS `/v2/` preflight.
-- The Forgejo workflow is green and the Cosign signature verifies by digest.
+- GitHub access and private GHCR pulls work over authenticated, trusted transports.
+- The GitHub workflow is green and the Cosign signature verifies by digest and exact workflow identity.
 - npm audit and the final Trivy image scan report zero vulnerabilities at the configured gate.
 - The backup and restore drill in `BACKUP_AND_RESTORE.md` has succeeded.
