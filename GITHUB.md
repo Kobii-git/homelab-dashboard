@@ -27,7 +27,8 @@ data volume as part of changing Git hosting.
 images remain pinned. The workflow uses `GITHUB_TOKEN` with package-write permission; no old registry
 password or signing private key is needed. OIDC requires `id-token: write`.
 
-Images are published to `ghcr.io/kobii-git/homelab-dashboard`:
+Images support Linux AMD64 and ARM64 and are published to `ghcr.io/kobii-git/homelab-dashboard`.
+Both published platform variants are scanned before signing the image index:
 
 - `main` publishes `latest` and `main`.
 - `beta` publishes `beta` after its workflow is updated and passes.
