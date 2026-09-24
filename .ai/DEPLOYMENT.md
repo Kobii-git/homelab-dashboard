@@ -18,11 +18,11 @@ The runtime image:
 - exposes an HTTP liveness health check at `/api/health`;
 - applies the Prisma schema before starting the compiled server.
 
-Compose runs a short-lived, network-isolated data initializer before the dashboard. It grants root
-only the ownership and permission capabilities needed to make the dedicated `/data` volume writable
-by the runtime `node` user, including after a checkout is replaced but its named volume survives.
-The initializer does not receive application secrets; the dashboard remains non-root with all
-capabilities dropped. Back up existing database state before an upgrade as described below.
+Compose runs only the dashboard container. The image creates `/data` owned by `node`; Docker copies
+that directory into a new named volume on first use. Existing volumes prepared by earlier releases
+retain their ownership. The dashboard remains non-root with all capabilities dropped. The installer
+removes orphaned containers from earlier Compose versions, including the old data initializer, without
+removing the named volume. Back up existing database state before an upgrade as described below.
 
 `.dockerignore` must continue excluding Git metadata, dependencies/build output, databases,
 environment files, reports, backups, logs, and private tooling context from the build context.
@@ -34,8 +34,10 @@ startup requirements. `docker-compose.yml` owns the deployed environment mapping
 `docs/SECURE_DEPLOYMENT.md` owns the operator launch checklist, reverse-proxy requirements, private
 CA guidance, and image-trust procedure.
 `scripts/install-docker.sh` configures a local source build, generating missing first-boot secrets
-without replacing existing nonempty values. The default first-run path asks for a private bind IP;
-`--https-proxy` switches to an HTTPS origin and trusted proxy CIDR. The Compose build override
+without replacing existing nonempty secrets. On Linux, it defaults the private bind IP and outbound
+monitoring boundary to the host's routed IPv4 address and connected subnet, preserving existing
+valid operator network settings; detection failure falls back to prompts. `--https-proxy` switches
+to an HTTPS origin and trusted proxy CIDR. The Compose build override
 retains the production hardening.
 
 Configuration changes must be reconciled across those sources. Never bake secret values or a real

@@ -56,7 +56,7 @@ Schema cleanup in `0.5.0` removes old pro-console models: widgets, layout, tags,
 
 ```sh
 docker compose pull
-docker compose up -d --force-recreate
+docker compose up -d --force-recreate --remove-orphans
 ```
 
 ### Build From Source On The Docker Host
@@ -64,7 +64,7 @@ docker compose up -d --force-recreate
 ```sh
 cd ~/homelab-dashboard
 git pull --ff-only origin main
-docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --force-recreate
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --force-recreate --remove-orphans
 ```
 
 Data lives in the named Docker volume `homelab-dashboard-data`. It survives container removal, image updates, and rebuilds. It is only destroyed by `docker compose down -v` or deleting the volume.

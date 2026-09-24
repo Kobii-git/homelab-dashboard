@@ -1,34 +1,9 @@
 services:
-  dashboard-data-init:
-    image: ${HOMELAB_IMAGE:-ghcr.io/kobii-git/homelab-dashboard:latest}
-    user: "0:0"
-    entrypoint: ["/bin/sh", "-eu", "-c"]
-    command:
-      - |
-        find /data \( -type d -o -type f \) \( ! -user node -o ! -group node \) -exec chown node:node {} +
-        find /data -type d ! -perm 700 -exec chmod 700 {} +
-        find /data -type f ! -perm 600 -exec chmod 600 {} +
-    network_mode: none
-    volumes:
-      - homelab-dashboard-data:/data
-    read_only: true
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - DAC_OVERRIDE
-      - FOWNER
-    security_opt:
-      - no-new-privileges:true
-    restart: "no"
   dashboard:
     image: ${HOMELAB_IMAGE:-ghcr.io/kobii-git/homelab-dashboard:latest}
     container_name: homelab-dashboard
     restart: unless-stopped
     init: true
-    depends_on:
-      dashboard-data-init:
-        condition: service_completed_successfully
     environment:
       DATABASE_URL: file:/data/homelab.db
       APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN to the exact URL used in the browser}

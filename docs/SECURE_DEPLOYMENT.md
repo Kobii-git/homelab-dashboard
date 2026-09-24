@@ -21,10 +21,13 @@ through `NODE_EXTRA_CA_CERTS`; install the CA rather than disabling verification
 
 ## Required Configuration
 
-From a fresh clone, run `./scripts/install-docker.sh`. With the example `.env`, it prompts for
-the Docker host's private IPv4 address and monitoring boundary, then generates secrets and builds
-the image locally. Compose prepares the named data volume for the non-root dashboard before it
-starts, including when a previous checkout left the volume behind. Back up an existing database
+From a fresh clone, run `./scripts/install-docker.sh`. On Linux, it detects the Docker host's
+private IPv4 address and connected subnet for the initial bind and monitoring boundary. If detection
+fails, it prompts for those values. Edit `DASHBOARD_BIND_IP` and `OUTBOUND_ALLOWED_CIDRS` in `.env`
+and rerun the installer to change them later. It then generates secrets and builds
+the image locally. The image seeds a new named data volume with a directory owned by the non-root
+dashboard user. Existing volumes prepared by previous releases remain usable; if a manually created
+volume has incompatible ownership, correct it after backing up the data. Back up an existing database
 before reinstalling or upgrading; see [Backup and Restore](BACKUP_AND_RESTORE.md). Run
 `./scripts/install-docker.sh --https-proxy` when the proxy is ready; it asks
 for the exact HTTPS origin and proxy CIDR, switches the bind back to loopback, and keeps the data
@@ -51,8 +54,9 @@ Direct HTTP mode requires `DIRECT_HTTP_LAN=true`, `APP_ORIGIN=http://<private-ho
 `DASHBOARD_BIND_IP=<same-private-host-IP>`, and an empty `TRUST_PROXY_CIDRS`. The server rejects
 public bind addresses and mismatched origins.
 
-`OUTBOUND_ALLOWED_CIDRS` is deliberately required. Use the smallest real network boundary;
-`192.168.50.0/24` is an example, not an application default. Exact approved public monitoring
+`OUTBOUND_ALLOWED_CIDRS` remains required. The installer uses the host's connected subnet only as
+an initial boundary; review it if monitored services live on another network. Use the smallest real
+network boundary. `192.168.50.0/24` is an example, not an application default. Exact approved public monitoring
 names may be listed in `OUTBOUND_ALLOWED_HOSTS`.
 
 `SETUP_CODE` is required only until a database-backed administrator exists. Clear it in
