@@ -2,7 +2,7 @@ import { enableHomeWidgets } from "./homepage-fixtures";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-test("bookmarks save without checks, survive reload, filter, and work with keyboard search", async ({ page }, testInfo) => {
+test("bookmarks save without checks, survive reload, filter, and open in a keyboard menu", async ({ page }, testInfo) => {
   const bookmarkName = `Reading shelf ${testInfo.project.name}`;
   await page.goto("/");
   await page.getByLabel("Username").fill("admin");
@@ -47,16 +47,10 @@ test("bookmarks save without checks, survive reload, filter, and work with keybo
   await library.getByRole("button", { name: `Unpin ${bookmarkName}` }).click();
   await expect(library.getByRole("button", { name: `Pin ${bookmarkName}` })).toHaveAttribute("aria-pressed", "false");
   await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Dashboard", exact: true }).click();
-  await page.getByRole("button", { name: "My bookmarks", exact: true }).click();
-  const search = page.getByRole("combobox", { name: "Search my bookmarks" });
+  const search = page.getByRole("searchbox", { name: "Search Google" });
+  await expect(page.getByRole("button", { name: "My bookmarks", exact: true })).toHaveCount(0);
   await search.fill(bookmarkName);
-  await expect(search).toHaveAttribute("aria-expanded", "true");
-  await expect(search).not.toHaveAttribute("aria-activedescendant");
-  await expect(page.getByRole("listbox", { name: "Saved bookmark suggestions" }).getByRole("option").first()).toContainText(bookmarkName);
-  await search.press("ArrowDown");
-  await expect(search).toHaveAttribute("aria-activedescendant", "hp-result-0");
-  await search.press("Escape");
-  await expect(search).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("listbox", { name: "Saved bookmark suggestions" })).toHaveCount(0);
   await bookmarksButton.click();
   const menu = page.getByRole("menu", { name: "Home bookmarks" });
   await expect(page.locator("#root")).not.toHaveAttribute("inert");

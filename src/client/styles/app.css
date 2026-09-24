@@ -5124,20 +5124,10 @@ label textarea {
 .hp-actions label { min-width:0; }
 .browser-home button, .hp-modal button, .hp-backups button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:34px; }
 .browser-home button:focus-visible, .browser-home a:focus-visible, .hp-modal :focus-visible { outline:2px solid var(--hp-accent, #78acff); outline-offset:3px; }
-.hp-search { width:100%; margin:0 0 28px; position:relative; }
-.hp-search > .hp-actions { justify-content:space-between; margin-bottom:12px; }
-.hp-search > .hp-actions label { display:flex; align-items:center; gap:8px; font-size:12px; }
-.hp-search form { display:flex; align-items:center; gap:12px; padding:8px 12px; border:1px solid var(--border); border-radius:18px; background:var(--surface); box-shadow:0 6px 24px #00000018; }
-.hp-search form > svg { color:var(--hp-accent); flex-shrink:0; }
-.hp-search form input { flex:1; min-width:0; border:0; box-shadow:none; background:transparent; font-size:17px; }
-.hp-search .primary-button { white-space:nowrap; }
+
 .hp-chatgpt { display:flex; align-items:center; justify-content:center; gap:9px; margin:16px auto; color:var(--text); font-weight:600; text-decoration:none; }
 .hp-chatgpt small { font-weight:400; color:var(--text-muted); }
-.hp-suggestions { position:absolute; top:100%; left:0; right:0; z-index:12; background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:10px; box-shadow:0 14px 40px #0005; }
-.hp-suggestions a { display:block; padding:10px; color:var(--text); border-radius:8px; }
-.hp-suggestions [aria-selected="true"] { background:#78acff20; }
-.hp-suggestions small { display:block; overflow-wrap:anywhere; color:var(--text-muted); font-size:11px; }
-.hp-suggestions p { margin:10px; font-size:12px; color:var(--text-muted); }
+
 .hp-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:24px 0 16px; }
 .hp-toolbar > span { color:var(--text-muted); font-size:12px; }
 .hp-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:18px; }
@@ -5206,7 +5196,7 @@ label textarea {
 [data-theme="light"] .hp-accent-violet { --hp-accent:#7440ba; }
 [data-theme="light"] .hp-accent-amber { --hp-accent:#87601c; }
 @media(max-width:850px) { .hp-header { align-items:start; flex-direction:column; } .hp-header-tools { width:100%; display:flex; justify-content:space-between; flex-wrap:wrap; } .hp-grid { grid-template-columns:minmax(0,1fr); } .hp-widget-options { grid-template-columns:minmax(0,1fr); } }
-@media(max-width:520px) { .browser-home { padding:12px 4px; } .hp-card { padding:14px; } .hp-search form { flex-wrap:wrap; padding:10px; } .hp-search form input { width:calc(100% - 45px); } .hp-search form > button { width:100%; } .hp-search > .hp-actions { align-items:start; gap:12px; } .hp-search .segmented-control { flex-wrap:wrap; } .hp-search > .hp-actions label { width:100%; } .hp-toolbar { flex-direction:column; align-items:start; } .hp-chatgpt { flex-wrap:wrap; } .hp-link-row { flex-wrap:wrap; gap:5px; } .hp-link-row > a { flex-basis:calc(100% - 30px); } .hp-link-row > button:first-of-type { margin-left:24px; } .hp-actions { align-items:stretch; } .hp-bookmarks > .hp-actions > label { flex-basis:100%; } }
+@media(max-width:520px) { .browser-home { padding:12px 4px; } .hp-card { padding:14px; } .hp-toolbar { flex-direction:column; align-items:start; } .hp-chatgpt { flex-wrap:wrap; } .hp-link-row { flex-wrap:wrap; gap:5px; } .hp-link-row > a { flex-basis:calc(100% - 30px); } .hp-link-row > button:first-of-type { margin-left:24px; } .hp-actions { align-items:stretch; } .hp-bookmarks > .hp-actions > label { flex-basis:100%; } }
 
 .modal-backdrop { position:fixed; inset:0; z-index:100; background:#0008; backdrop-filter:blur(3px); }
 .hp-reauth { position:fixed; z-index:103; left:50%; top:50%; transform:translate(-50%,-50%); max-height:90vh; overflow:auto; }
@@ -5214,11 +5204,9 @@ label textarea {
 .browser-home button:hover:not(:disabled), .hp-modal button:hover:not(:disabled), .hp-backups button:hover:not(:disabled) { border-color:var(--hp-accent,var(--accent)); }
 .browser-home button:disabled, .hp-modal button:disabled, .hp-backups button:disabled { opacity:.5; cursor:not-allowed; }
 .browser-home input:not([type="checkbox"]):not([type="file"]), .browser-home textarea, .browser-home select, .hp-modal input:not([type="checkbox"]), .hp-modal textarea, .hp-modal select { font:inherit; color:var(--text); background:var(--surface-3); border:1px solid var(--border); border-radius:8px; padding:9px 10px; }
-.hp-search form input:not([type="checkbox"]):not([type="file"]) { border:0; background:transparent; font-size:17px; flex:1 1 auto; width:0; }
-.hp-search form .primary-button { flex:0 0 auto; width:auto; padding:10px 18px; }
+
 .hp-card textarea, .hp-modal textarea { resize:vertical; }
 .hp-actions .primary-button { width:auto; }
-@media(max-width:520px) { .hp-search form input:not([type="checkbox"]):not([type="file"]) { flex-basis:calc(100% - 45px); } .hp-search form .primary-button { width:100%; } }
 
 .weather-attribution { grid-column: 1 / -1; margin: 0; font-size: 0.75rem; color: var(--text-muted); overflow-wrap: anywhere; }
 .weather-attribution a { color: inherit; text-decoration: underline; }
@@ -5261,9 +5249,7 @@ label textarea {
 .hp-bookmark-link small { display:block; color:var(--text-muted); font-size:11px; overflow-wrap:anywhere; }
 .hp-bookmark-link > button { opacity:.4; }
 .hp-bookmark-link:hover > button, .hp-bookmark-link:focus-within > button { opacity:1; }
-.hp-service-options { margin-bottom:16px; }
-.hp-service-options > summary { cursor:pointer; color:var(--text-muted); font-size:12px; width:fit-content; padding:8px 0; }
-.hp-service-options[open] > summary { color:var(--accent); }
+
 .hp-note-list { display:grid; grid-template-columns:minmax(0,1fr); align-content:start; gap:8px; max-height:340px; overflow:auto; overscroll-behavior:contain; padding:3px; }
 .hp-notes button.hp-note { display:flex; flex-direction:column; align-items:stretch; justify-content:start; text-align:left; position:relative; padding:12px 32px 12px 14px; min-height:78px; border:0; border-left:3px solid var(--info); background:var(--info-bg); gap:8px; }
 .hp-notes button.hp-note.note-color-1 { background:var(--violet-bg); border-color:var(--violet); }
@@ -5295,7 +5281,6 @@ summary:focus-visible, .settings-hub button:focus-visible, .service-launcher a:f
 }
 
 .browser-home .launchpad-services { display:block; }
-.browser-home .launchpad-status-line { margin:0 0 8px; }
 
 /* Homepage content sits directly on the canvas; only opened tools need a panel. */
 .browser-home .hp-grid { gap:24px 32px; }
@@ -5337,8 +5322,7 @@ summary:focus-visible, .settings-hub button:focus-visible, .service-launcher a:f
   border:0;
   background:none;
 }
-.hp-search-tools { margin-left:auto; justify-content:flex-end; }
-.hp-search-tools label { display:flex; align-items:center; gap:8px; font-size:12px; }
+
 .nav-list .hp-bookmark-trigger { color:var(--text); }
 .hp-bookmark-trigger > svg:first-child { color:var(--accent); }
 .bookmark-nav-chevron { margin-left:auto; }
@@ -5411,8 +5395,7 @@ summary:focus-visible, .settings-hub button:focus-visible, .service-launcher a:f
 .hp-widget-options select.hp-presentation { width:120px; }
 @media(max-width:620px) {
   .browser-home .hp-grid { gap:28px; }
-  .hp-search-tools { flex:1; }
-  .hp-search-tools label { order:1; flex-basis:100%; justify-content:flex-end; }
+
 }
 
 /* Everyday tools share the same controls in pages, widgets, and dialogs. */
@@ -5519,4 +5502,58 @@ input::file-selector-button {
   .hp-header p { font-size:13px; line-height:1.5; }
   .settings-sections button { padding:8px; }
   .notes-workspace { margin-bottom:18px; }
+}
+
+/* Independent homepage shortcuts use the existing neutral surfaces. */
+.hp-start { margin:0 0 28px; }
+.hp-google-search { display:flex; align-items:center; gap:14px; padding:8px 10px 8px 18px; border:1px solid var(--border-strong); border-radius:14px; background:var(--surface-3); }
+.hp-google-mark { flex-shrink:0; font-size:25px; font-weight:750; color:var(--text-muted); }
+.browser-home .hp-google-search input[type="search"] { flex:1; min-width:0; width:0; border:0; background:transparent; font-size:16px; padding:12px 0; }
+.hp-google-search .primary-button { width:auto; min-height:42px; padding:10px 18px; background:var(--surface-2); border:1px solid var(--border); color:var(--text); }
+[data-theme="light"] .hp-google-search .primary-button { color:var(--text); }
+.hp-shortcut-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin:24px 0 18px; }
+.hp-shortcut-heading h3 { font-size:18px; letter-spacing:-.02em; margin:5px 0 0; }
+.hp-shortcut-heading .hp-eyebrow { font-size:10px; color:var(--text-muted); }
+.hp-center-shortcuts { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(148px,100%),1fr)); gap:12px; }
+.hp-center-shortcuts > a, .browser-home .hp-center-shortcuts > button { display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:14px; position:relative; min-width:0; min-height:114px; padding:18px; border:1px solid var(--border); border-radius:14px; background:var(--surface); color:var(--text); text-decoration:none; text-align:left; font-size:13px; font-weight:600; }
+.hp-center-shortcuts > a:hover, .browser-home .hp-center-shortcuts > button:hover { background:var(--surface-2); border-color:var(--border-strong); }
+.hp-shortcut-icon, .hp-center-shortcuts > button > svg:first-child { display:grid; place-items:center; width:34px; height:34px; padding:7px; border-radius:10px; color:var(--text-muted); background:var(--surface-2); font-size:20px; font-weight:750; }
+.hp-center-shortcuts > a > span:nth-child(2), .hp-center-shortcuts .nav-label { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.hp-center-shortcuts > a > svg, .hp-center-shortcuts .bookmark-nav-chevron { position:absolute; top:20px; right:16px; color:var(--text-muted); }
+.browser-home .hp-center-shortcuts .hp-shortcut-empty { grid-column:1/-1; flex-direction:row; justify-content:flex-start; align-items:center; border-style:dashed; min-height:94px; }
+.hp-shortcut-empty strong, .hp-shortcut-empty small { display:block; }
+.hp-shortcut-empty small { color:var(--text); font-weight:400; margin-top:7px; line-height:1.5; }
+.hp-shortcuts-compact .hp-center-shortcuts { display:flex; flex-wrap:wrap; }
+.hp-shortcuts-compact .hp-center-shortcuts > a, .browser-home .hp-shortcuts-compact .hp-center-shortcuts > button { flex-direction:row; align-items:center; min-height:48px; padding:10px 14px; gap:10px; max-width:100%; }
+.hp-shortcuts-compact .hp-shortcut-icon, .hp-shortcuts-compact .hp-center-shortcuts > button > svg:first-child { width:28px; height:28px; padding:5px; font-size:16px; }
+.hp-shortcuts-compact .hp-center-shortcuts > a > svg, .hp-shortcuts-compact .bookmark-nav-chevron { position:static; flex-shrink:0; }
+.browser-home .hp-service-groups { display:flex; flex-direction:column; gap:18px; margin-top:8px; }
+.browser-home .hp-grid { gap:20px; }
+.browser-home.hp-spacing-compact .hp-grid { gap:12px; }
+.hp-spacing-compact .hp-start { margin-bottom:18px; }
+.hp-shortcut-picker { margin:26px 0; padding:24px 0; border-block:1px solid var(--border); }
+.hp-shortcut-picker > p { line-height:1.6; }
+.hp-shortcut-picker > label { display:grid; gap:8px; max-width:420px; font-size:13px; }
+.hp-placement-columns { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin-top:20px; }
+.hp-placement-columns fieldset { min-width:0; margin:0; padding:16px; border:1px solid var(--border); border-radius:12px; }
+.hp-placement-columns legend { font-weight:650; padding:0 6px; font-size:14px; }
+.hp-placement-columns .muted-copy { font-size:12px; line-height:1.5; }
+.hp-placement-list { max-height:260px; overflow:auto; overscroll-behavior:contain; margin-top:14px; padding:3px; }
+.hp-card .hp-placement-option { display:flex; align-items:center; gap:9px; padding:10px 6px; border-radius:8px; font-size:13px; }
+.hp-placement-option:hover, .hp-placement-option:has(:checked) { background:var(--surface-2); }
+.hp-placement-option input { width:16px; height:16px; min-height:0; margin:0; flex-shrink:0; }
+.hp-placement-option > svg { flex-shrink:0; color:var(--hp-accent); }
+.hp-placement-option span { overflow-wrap:anywhere; min-width:0; }
+.hp-placement-option small { display:block; color:var(--text-muted); font-size:11px; margin-top:4px; }
+.homepage-preferences :focus-visible { outline:2px solid var(--hp-accent); outline-offset:2px; }
+@media(max-width:620px) {
+  .hp-google-search { gap:10px; padding-left:12px; }
+  .browser-home .hp-google-search input[type="search"] { font-size:14px; }
+  .hp-google-search .primary-button { padding:10px; }
+  .hp-google-search .primary-button > span { display:none; }
+  .hp-center-shortcuts { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+  .hp-center-shortcuts > a, .browser-home .hp-center-shortcuts > button { padding:14px; min-height:102px; }
+  .hp-shortcut-heading { margin-top:20px; }
+  .hp-shortcut-heading .hp-actions { gap:6px; }
+  .hp-placement-columns { grid-template-columns:minmax(0,1fr); }
 }

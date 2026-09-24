@@ -9,7 +9,7 @@ A private, self-hosted browser homepage and command center for your bookmarks, w
 
 ## Features
 
-- **Home, Work, and Operations** - shared personal/work layouts, Google-first search, favorites, expandable bookmark folders, saved notes and scratchpads, reading lists, prompt templates, and a browser-local focus timer; Operations retains the monitoring command center
+- **Home, Work, and Operations** - shared personal/work layouts, Google search, independently selected homepage and sidebar bookmark shortcuts, folder dropdowns, favorites, saved notes and scratchpads, reading lists, prompt templates, and a browser-local focus timer; Operations retains the monitoring command center
 - **Personal context** - optional read-only Google Calendar agenda, Gmail unread Inbox count, and Todoist overdue/today links with isolated provider failures and stale-cache fallback
 - **Calendar dates** - the Launchpad uses the device’s local time for timed events, keeps all-day dates on their intended day, and includes ongoing multi-day events; mail and storage cards flag cached data when providers are unavailable
 - **Media and storage** - optional Plex recently-added, Radarr upcoming, TMDB discovery, and TrueNAS capacity/health modules; TrueNAS health also appears in Operations
@@ -174,7 +174,9 @@ API widgets are configured in **Settings > Integrations & system > API widgets**
 
 ### Optional Launchpad Utilities
 
-Configure Launchpad utilities in **Settings > Integrations & system > Launchpad utilities**. Web search defaults to DuckDuckGo and can be changed to Google, Brave, Kagi, or Startpage. Weather uses a normalized Open-Meteo location and can display metric or imperial temperatures. Release tracking accepts up to 12 public GitHub repositories in `owner/repository` format; known service templates can suggest repositories, but additions are not persisted until you confirm with **Save utilities**.
+Home and Work search always opens Google. In **Settings > Appearance & widgets**, choose homepage shortcuts and sidebar shortcuts independently: select individual links or entire folders, which open as dropdowns. You can also choose accent colors, backgrounds, spacing, and shortcut tiles or compact buttons. The homepage Services section displays ungrouped services directly and adds headings only for named groups.
+
+Configure weather and release tracking in **Settings > Integrations & system > Launchpad utilities**. Weather uses a normalized Open-Meteo location and can display metric or imperial temperatures. Release tracking accepts up to 12 public GitHub repositories in `owner/repository` format; known service templates can suggest repositories, but additions are not persisted until you confirm with **Save utilities**.
 
 Weather and release data are fetched separately from `/api/dashboard`, so provider outages never block service access. Requests use fixed provider hosts, concurrency limits, wall-clock timeouts, and response-size bounds. Location results are cached for 24 hours, forecasts for 15 minutes, and GitHub releases—including repository-level failures—for six hours. Stale cached data is returned when a refresh fails. Utility configuration is non-secret `SystemConfig` JSON and is never included on the public `/status` page.
 

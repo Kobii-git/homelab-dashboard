@@ -128,14 +128,14 @@ test("service setup makes TCP reachability and exact web endpoints primary", asy
   await expect(page.getByRole("button", { name: "Review check" }).first()).toBeVisible();
 });
 
-test("Launchpad is the device default, ranks local search, and remembers the selected preset", async ({ page }) => {
+test("Launchpad is the device default, searches Google, and remembers the selected preset", async ({ page }) => {
   await login(page);
   const viewSwitch = page.getByRole("navigation", { name: "Dashboard view" });
   const launchpad = viewSwitch.getByRole("button", { name: "Home", exact: true });
   const operations = viewSwitch.getByRole("button", { name: "Operations" });
   await expect(launchpad).toHaveClass(/active/);
 
-  const search = page.getByRole("combobox", { name: "Search Google" });
+  const search = page.getByRole("searchbox", { name: "Search Google" });
   await expect(page.getByRole("link", { name: /^ChatGPT$/ })).toHaveAttribute("href", "https://chatgpt.com/");
 
   await page.evaluate(() => {
@@ -164,7 +164,7 @@ test("an empty Launchpad shows focused onboarding and Operations stays signal-on
   await expect(page.getByRole("button", { name: "Bookmarks", exact: true })).toBeVisible();
   await expect(page.getByText("Lab Vitals")).toHaveCount(0);
   await expect(page.getByText("Daily Briefing")).toHaveCount(0);
-  await expect(page.getByRole("combobox", { name: "Search Google" })).toBeVisible();
+  await expect(page.getByRole("searchbox", { name: "Search Google" })).toBeVisible();
 
   await page.getByRole("navigation", { name: "Dashboard view" }).getByRole("button", { name: "Operations" }).click();
   await expect(page.getByRole("button", { name: /Connect operations data/ })).toBeVisible();

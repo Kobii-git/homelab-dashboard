@@ -7,13 +7,14 @@ import type { HomepageController } from "./useHomepage";
 type OpenFolder = { id: string; name: string; anchor: HTMLElement; focus: boolean };
 const menuItems = '[role="menuitem"]:not([disabled])';
 
-export function BookmarkMenu({ home, workspace, onWorkspace, onManage, folder, label = "Bookmarks" }: {
+export function BookmarkMenu({ home, workspace, onWorkspace, onManage, folder, label = "Bookmarks", placement = "side" }: {
   home: HomepageController;
   workspace: WorkspaceId;
   onWorkspace: (workspace: WorkspaceId) => void;
   onManage: () => void;
   folder?: { id: string; name: string };
   label?: string;
+  placement?: "side" | "below";
 }) {
   const [open, setOpen] = useState(false);
   const [path, setPath] = useState<OpenFolder[]>([]);
@@ -88,7 +89,7 @@ export function BookmarkMenu({ home, workspace, onWorkspace, onManage, folder, l
       owner={id}
       label={parent?.name ?? folder?.name ?? `${workspace === "work" ? "Work" : "Home"} bookmarks`}
       anchor={narrow ? trigger.current! : parent?.anchor ?? trigger.current!}
-      nested={!narrow}
+      nested={!narrow && (level > 0 || placement === "side")}
       focus={narrow || !parent || parent.focus}
       onPointerEnter={cancelHover}
       onBack={level ? () => back(level) : () => close()}

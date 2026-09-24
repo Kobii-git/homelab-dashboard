@@ -8,7 +8,6 @@ import {
 import {
   ExternalLink,
   ChevronRight,
-  Search,
   Settings2,
 } from "lucide-react";
 import {
@@ -21,7 +20,7 @@ import type {
   DashboardResource,
   DashboardUtilitiesSummaryDto,
 } from "../../../shared/types";
-import { statusFor } from "../../lib/format";
+import { HomepageStart } from "./HomepageStart";
 import { ModalSurface } from "../../components/ModalSurface";
 import {
   CalendarCard,
@@ -148,24 +147,6 @@ export function BrowserHomepage({
     services: (
       <section className="hp-card launchpad-services" aria-label="Services">
         <div className="hp-card-title"><h3>Services</h3><button aria-label="Manage services" title="Manage services" onClick={() => onSettings("services")}><Settings2 size={16} /></button></div>
-        <div
-          className="launchpad-status-line"
-          aria-label="Service health summary"
-        >
-          <span>
-            {services.filter((r) => statusFor(r) === "online").length} online
-          </span>
-          <span>
-            {services.filter((r) => statusFor(r) === "unknown").length} unknown
-          </span>
-          <span>
-            {services.filter((r) => statusFor(r) === "offline").length} offline
-          </span>
-          {services.length > 0 &&
-            services.every((r) => statusFor(r) === "online") && (
-              <strong>Everything looks reachable</strong>
-            )}
-        </div>
         {serviceDirectory}
       </section>
     ),
@@ -313,7 +294,7 @@ export function BrowserHomepage({
   };
   return (
     <div
-      className={`browser-home hp-accent-${layout.accent} hp-bg-${layout.background.split(":")[0]}`}
+      className={`browser-home hp-accent-${layout.accent} hp-bg-${layout.background.split(":")[0]} hp-spacing-${layout.spacing}`}
       style={{ backgroundImage: background } as CSSProperties}
     >
       <header className="hp-header">
@@ -335,6 +316,7 @@ export function BrowserHomepage({
           </p>
         </div>
         <div className="hp-header-tools">
+          <button className="hp-customize-button" onClick={() => onSettings("homepage")}><Settings2 size={15} /> Customize {workspace}</button>
           {layout.clock !== "hidden" && (
             <time>
               {now.toLocaleTimeString([], {
@@ -366,7 +348,7 @@ export function BrowserHomepage({
           </nav>
         </div>
       </header>
-      <HomepageSearch home={home} workspace={workspace} />
+      <HomepageStart home={home} workspace={workspace} onWorkspace={setWorkspace} onCustomize={() => onSettings("homepage")} onManage={() => onSettings("bookmarks")} />
       {home.busy && <p className="hp-sync" role="status">Saving…</p>}
       {home.error && (
         <div className="hp-notice" role="alert">
@@ -381,7 +363,7 @@ export function BrowserHomepage({
         {layout.widgets
           .filter((w) => w.enabled && w.id !== "bookmarks")
           .map((w) => (
-            <div key={`${workspace}-${w.id}`} className={w.size === "wide" ? "hp-wide" : ""}>
+            <div key={`${workspace}-${w.id}`} className={`hp-widget hp-widget-${w.id} ${w.size === "wide" ? "hp-wide" : ""}`}>
               {w.presentation === "dropdown" ? <details className="hp-widget-dropdown">
                 <summary><ChevronRight size={16} /><span>{widgetTitles[w.id]}</span></summary>
                 <div className="hp-dropdown-content">{blocks[w.id]}</div>
@@ -390,177 +372,6 @@ export function BrowserHomepage({
           ))}
       </div>
     </div>
-  );
-}
-function HomepageSearch({
-  home,
-  workspace,
-}: {
-  home: HomepageController;
-  workspace: WorkspaceId;
-}) {
-  const [query, setQuery] = useState("");
-  const [mode, setMode] = useState("google");
-  const [scope, setScope] = useState("workspace");
-  const [active, setActive] = useState(-1);
-  const [open, setOpen] = useState(false);
-  const matches = (home.snapshot?.bookmarks ?? [])
-    .filter(
-      (b) =>
-        !b.deletedAt &&
-        (scope === "all" || b.workspaceId === workspace) &&
-        query.trim() &&
-        [b.name, b.url, b.notes]
-          .join(" ")
-          .toLowerCase()
-          .includes(query.toLowerCase().trim()),
-    )
-    .slice(0, 8);
-  function submit() {
-    if (!query.trim()) return;
-    if (mode === "google")
-      window.open(
-        `https://www.google.com/search?q=${encodeURIComponent(query.trim())}`,
-        "_blank",
-        "noopener,noreferrer",
-      );
-    else if (active >= 0 && matches[active])
-      window.open(matches[active].url, "_blank", "noopener,noreferrer");
-    setOpen(mode !== "google");
-  }
-  return (
-    <section className="hp-search" aria-label="Search" onBlur={event => {
-      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
-    }}>
-      <div className="hp-actions">
-        <div
-          className="segmented-control"
-          role="group"
-          aria-label="Search mode"
-        >
-          <button
-            aria-pressed={mode === "google"}
-            onClick={() => {
-              setMode("google");
-              setActive(-1);
-            }}
-          >
-            Google
-          </button>
-          <button
-            aria-pressed={mode === "bookmarks"}
-            onClick={() => {
-              setMode("bookmarks");
-              setOpen(true);
-              setActive(-1);
-            }}
-          >
-            My bookmarks
-          </button>
-        </div>
-        <div className="hp-actions hp-search-tools">
-        {mode === "bookmarks" && <label>
-          Search scope
-          <select
-            value={scope}
-            onChange={(e) => {
-              setScope(e.target.value);
-              setActive(-1);
-            }}
-          >
-            <option value="workspace">This workspace</option>
-            <option value="all">All workspaces</option>
-          </select>
-        </label>}
-        </div>
-      </div>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit();
-        }}
-      >
-        <Search size={23} />
-        <input
-          aria-label={
-            mode === "google" ? "Search Google" : "Search my bookmarks"
-          }
-          role="combobox"
-          aria-autocomplete="list"
-          aria-expanded={open && Boolean(query)}
-          aria-controls={open && query ? "hp-search-results" : undefined}
-          aria-activedescendant={
-            open && active >= 0 && matches[active]
-              ? `hp-result-${active}`
-              : undefined
-          }
-          placeholder={
-            mode === "google"
-              ? "Search Google, or find a saved place…"
-              : "Search your bookmarks…"
-          }
-          value={query}
-          onFocus={() => setOpen(true)}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setActive(-1);
-            setOpen(true);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setOpen(false);
-            if (e.key === "ArrowDown") {
-              e.preventDefault();
-              setOpen(true);
-              setActive((i) => Math.min(i + 1, matches.length - 1));
-            }
-            if (e.key === "ArrowUp") {
-              e.preventDefault();
-              setActive((i) => Math.max(-1, i - 1));
-            }
-          }}
-        />
-        <button type="submit" className="primary-button">
-          {mode === "google" ? "Search Google" : "Find bookmarks"}
-        </button>
-      </form>
-      {open && query && (
-        <div
-          className="hp-suggestions"
-          role="listbox"
-          id="hp-search-results"
-          aria-label="Saved bookmark suggestions"
-        >
-          {matches.map((b, i) => (
-            <a
-              role="option"
-              aria-selected={active === i}
-              id={`hp-result-${i}`}
-              key={b.id}
-              tabIndex={-1}
-              href={b.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => setOpen(false)}
-            >
-                {b.name}
-                <small>
-                  {b.workspaceId} · {b.url}
-                </small>
-            </a>
-          ))}
-          {!matches.length && (
-            <div role="option" aria-selected="false">
-              No matching bookmarks
-            </div>
-          )}
-          <p>
-            {mode === "google"
-              ? "Enter searches Google. Click a saved link to open it."
-              : "Use the arrow keys and Enter to open a saved link."}
-          </p>
-        </div>
-      )}
-    </section>
   );
 }
 function PromptLibrary({

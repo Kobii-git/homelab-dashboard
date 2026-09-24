@@ -3,6 +3,10 @@ import { z } from "zod";
 export const workspaceIdSchema = z.enum(["home", "work"]);
 export type WorkspaceId = z.infer<typeof workspaceIdSchema>;
 export const homepageId = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
+const shortcutSelectionSchema = z.object({
+  bookmarkIds: z.array(homepageId).max(10_000),
+  collectionIds: z.array(homepageId).max(1000),
+}).strict().nullable().default(null);
 export const widgetIds = [
   "favorites",
   "bookmarks",
@@ -21,8 +25,16 @@ export const widgetIds = [
 ] as const;
 export const layoutSchema = z
   .object({
-    accent: z.enum(["blue", "green", "violet", "amber"]),
-    background: z.string().regex(/^(none|dawn|ocean|asset:[a-f0-9]{64})$/),
+    // Accept retired theme choices so existing saves and archives remain readable.
+    accent: z.enum(["blue", "green", "violet", "amber", "rose", "cyan"])
+      .transform(value => value === "rose" || value === "cyan" ? "blue" : value),
+    background: z.string().regex(/^(none|dawn|ocean|aurora|sunset|asset:[a-f0-9]{64})$/)
+      .transform(value => value === "aurora" || value === "sunset" ? "none" : value),
+    colorStyle: z.enum(["vivid", "soft", "minimal"]).transform(() => "minimal" as const).default("minimal"),
+    spacing: z.enum(["comfortable", "compact"]).default("comfortable"),
+    shortcutStyle: z.enum(["tiles", "compact"]).default("tiles"),
+    centerShortcuts: shortcutSelectionSchema,
+    sidebarShortcuts: shortcutSelectionSchema,
     clock: z.enum(["digital", "hidden"]),
     widgets: z
       .array(
@@ -47,6 +59,11 @@ export function defaultLayout(work: boolean): HomeLayout {
   return {
     accent: "blue",
     background: "none",
+    colorStyle: "minimal",
+    spacing: "comfortable",
+    shortcutStyle: "tiles",
+    centerShortcuts: null,
+    sidebarShortcuts: null,
     clock: "digital",
     widgets: widgetIds.map((id) => ({
       id,

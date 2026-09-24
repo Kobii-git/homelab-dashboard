@@ -2,14 +2,16 @@ import { BookmarkMenu } from "./BookmarkMenu";
 import { useHomepage } from "./useHomepage";
 import { useHomepageWorkspace } from "./useHomepageWorkspace";
 import { Globe } from "lucide-react";
+import { workspaceShortcuts } from "./shortcuts";
 
 export function SidebarBookmarks({ onManage }: { onManage: () => void }) {
   const home = useHomepage();
   const [workspace, setWorkspace] = useHomepageWorkspace();
   const enabled = home.snapshot?.data.workspaces[workspace].layout.widgets.some(w => w.id === "bookmarks" && w.enabled) ?? true;
   if (!enabled) return null;
-  const folders = home.snapshot?.data.collections.filter(c => c.workspaceId === workspace && c.parentId === null).sort((a, b) => a.sortOrder - b.sortOrder) ?? [];
-  const links = home.snapshot?.bookmarks.filter(b => b.workspaceId === workspace && !b.deletedAt && b.collectionId === null) ?? [];
+  const { folders, links } = home.snapshot
+    ? workspaceShortcuts(home.snapshot, workspace, home.snapshot.data.workspaces[workspace].layout.sidebarShortcuts, "sidebar")
+    : { folders: [], links: [] };
   const shortcuts = [
     ...folders.map(folder => ({ kind: "folder" as const, value: folder })),
     ...links.map(link => ({ kind: "link" as const, value: link })),

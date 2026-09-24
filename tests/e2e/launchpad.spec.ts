@@ -81,7 +81,7 @@ test.describe("Launchpad in the device time zone", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   });
 
-  test("only reports every service reachable when all statuses are online", async ({ page }) => {
+  test("services stay free of summary totals and ungrouped headings", async ({ page }) => {
     let status: "unknown" | "online" = "unknown";
     await page.route("**/api/dashboard", async (route) => {
       const response = await route.fetch();
@@ -94,10 +94,13 @@ test.describe("Launchpad in the device time zone", () => {
       await route.fulfill({ json: data });
     });
     await openLaunchpad(page);
-    await expect(page.getByLabel("Service health summary")).toContainText("unknown");
+    await expect(page.getByLabel("Service health summary")).toHaveCount(0);
+    await expect(page.getByText("Service options", { exact: true })).toHaveCount(0);
+    await expect(page.locator(".launchpad-services").getByRole("heading", { name: "Ungrouped", exact: true })).toHaveCount(0);
     await expect(page.getByText("Everything looks reachable")).toHaveCount(0);
     status = "online";
     await page.reload();
-    await expect(page.getByText("Everything looks reachable")).toBeVisible();
+    await expect(page.getByText("Everything looks reachable")).toHaveCount(0);
+    await expect(page.locator(".launchpad-services .svc-card").first()).toBeVisible();
   });
 });

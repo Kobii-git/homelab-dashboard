@@ -15,7 +15,7 @@ export function ServiceLauncher({ data, onManage }: { data: AppData; onManage: (
     {groups.map(group => {
       const items = matches.filter(r => (r.groupId ?? "ungrouped") === group.id);
       if (!items.length) return null;
-      return <section className="launcher-group" key={group.id}><h3>{group.name}</h3><div className="launcher-grid">
+      return <section className="launcher-group" key={group.id}>{group.id !== "ungrouped" && <h3>{group.name}</h3>}<div className="launcher-grid">
         {items.map(r => <article key={r.id} className="launcher-service">
           {r.url ? <a className="launcher-open" href={r.url} target="_blank" rel="noopener noreferrer"><ServiceIcon resource={r} size={34} /><span><strong>{r.name}</strong><small>{r.description || r.kind}</small></span><ArrowUpRight size={15} aria-hidden="true" /></a> : <div className="launcher-open"><ServiceIcon resource={r} size={34} /><span><strong>{r.name}</strong><small>{r.description || r.kind}</small></span></div>}
           <span className={`svc-dot dot-${statusFor(r)}`} role="img" aria-label={`${r.name}: ${statusFor(r)}`} />

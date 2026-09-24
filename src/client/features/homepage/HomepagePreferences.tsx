@@ -4,6 +4,7 @@ import { defaultLayout, type HomeLayout, type HomepageData, type HomepageSnapsho
 import { apiSend } from "../../lib/api";
 import { fileBase64, type HomepageController } from "./useHomepage";
 import { widgetTitles as titles } from "./widgetTitles";
+import { ShortcutPicker } from "./ShortcutPicker";
 export function HomepagePreferences({ home, workspace }: { home: HomepageController; workspace: WorkspaceId }) {
   const [customize, setCustomize] = useState<{ data: HomepageData; revision: number } | null>(null);
   const [customError, setCustomError] = useState("");
@@ -46,7 +47,7 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
         >
           <h3>Make it yours</h3>
           <p>Choose what appears in this workspace. Your changes apply when you save.</p>
-          <p className="muted-copy">Keep a section always open, or make it a dropdown. Bookmark groups open from the left sidebar.</p>
+          <p className="muted-copy">Choose your shortcuts and keep each section open or tucked into a dropdown.</p>
           <div className="hp-actions">
             <label>
               Accent
@@ -100,6 +101,12 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
                 <option value="hidden">Hidden</option>
               </select>
             </label>
+            <label>Spacing<select aria-label="Spacing" value={layout.spacing} onChange={e => updateLayout({ ...layout, spacing: e.target.value as HomeLayout["spacing"] })}>
+              <option value="comfortable">Comfortable</option><option value="compact">Compact</option>
+            </select></label>
+            <label>Shortcut style<select aria-label="Shortcut style" value={layout.shortcutStyle} onChange={e => updateLayout({ ...layout, shortcutStyle: e.target.value as HomeLayout["shortcutStyle"] })}>
+              <option value="tiles">Tiles</option><option value="compact">Compact buttons</option>
+            </select></label>
           </div>
           <label className="hp-file">
             Upload PNG background (up to 4 MiB / 4 megapixels)
@@ -146,6 +153,8 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
               }}
             />
           </label>
+          <ShortcutPicker snapshot={snapshot} workspace={workspace} layout={layout} onChange={updateLayout} />
+          <h3>Arrange your widgets</h3>
           <div className="hp-widget-options">
             {layout.widgets.map((w, i) => (
               <div key={w.id}>

@@ -603,34 +603,53 @@ describe("private homepage", () => {
     expect((await snapshot()).data.workspaces.home.savedNotes).toEqual([note]);
   });
 
-  it("upgrades old layouts and preserves section/dropdown choices through saves and backup restore", async () => {
+  it("upgrades old layouts and preserves presentation and independent shortcuts through saves and backup restore", async () => {
     const before = await snapshot();
     const legacy = JSON.parse(JSON.stringify(before.data));
-    for (const workspace of Object.values(legacy.workspaces) as { layout: { widgets: Record<string, unknown>[] } }[]) {
+    for (const workspace of Object.values(legacy.workspaces) as { layout: { widgets: Record<string, unknown>[] } & Record<string, unknown> }[]) {
       for (const widget of workspace.layout.widgets) delete widget.presentation;
+      for (const key of ["colorStyle", "spacing", "shortcutStyle", "centerShortcuts", "sidebarShortcuts"]) delete workspace.layout[key];
     }
     await prisma.homepageState.update({ where: { id: "main" }, data: { data: legacy } });
     let state = await snapshot();
     expect(state.data.workspaces.home.layout.widgets.every(w => w.presentation === "section")).toBe(true);
+    expect(state.data.workspaces.home.layout).toMatchObject({ colorStyle: "minimal", spacing: "comfortable", shortcutStyle: "tiles", centerShortcuts: null, sidebarShortcuts: null });
+    Object.assign(state.data.workspaces.home.layout, {
+      accent: "rose", background: "aurora", colorStyle: "soft", spacing: "compact", shortcutStyle: "compact",
+      centerShortcuts: { bookmarkIds: ["center-link"], collectionIds: ["center-folder"] },
+      sidebarShortcuts: { bookmarkIds: ["sidebar-link"], collectionIds: [] },
+    });
     state.data.workspaces.work.layout.widgets.find(w => w.id === "notes")!.presentation = "dropdown";
     expect((await send("/api/homepage/state", { data: state.data, revision: state.revision })).statusCode).toBe(200);
     expect((await send("/api/homepage/state", { data: state.data, revision: state.revision })).statusCode).toBe(409);
     state = await snapshot();
     expect(state.data.workspaces.work.layout.widgets.find(w => w.id === "notes")!.presentation).toBe("dropdown");
+    const savedLayout = structuredClone(state.data.workspaces.home.layout);
+    expect(savedLayout).toMatchObject({ accent: "blue", background: "none", colorStyle: "minimal" });
+    expect(savedLayout.centerShortcuts?.bookmarkIds).toEqual(["center-link"]);
+    expect(savedLayout.sidebarShortcuts?.bookmarkIds).toEqual(["sidebar-link"]);
     const invalid = JSON.parse(JSON.stringify(state.data));
     invalid.workspaces.home.layout.widgets[0].presentation = "unknown";
     expect((await send("/api/homepage/state", { data: invalid, revision: state.revision })).statusCode).toBe(400);
+    for (const [key, value] of Object.entries({ colorStyle: "rainbow", spacing: "huge", shortcutStyle: "script", centerShortcuts: { bookmarkIds: ["<script>"], collectionIds: [] }, sidebarShortcuts: { bookmarkIds: [], collectionIds: [], url: "https://example.com" } })) {
+      const badLayout = structuredClone(state.data);
+      Object.assign(badLayout.workspaces.home.layout, { [key]: value });
+      expect((await send("/api/homepage/state", { data: badLayout, revision: state.revision })).statusCode).toBe(400);
+    }
     const archive = await prisma.$transaction(tx => exportConfiguration(tx));
     const decoded = decodeBackup(encodeBackup(archive.manifest, archive.assets).toString("base64"));
     state.data.workspaces.work.layout.widgets.find(w => w.id === "notes")!.presentation = "section";
+    state.data.workspaces.home.layout = defaultHomepage().workspaces.home.layout;
     expect((await send("/api/homepage/state", { data: state.data, revision: state.revision })).statusCode).toBe(200);
     const latest = await snapshot();
     await prisma.$transaction(tx => restoreConfiguration(tx, decoded.manifest, decoded.assets, latest.revision));
     expect((await snapshot()).data.workspaces.work.layout.widgets.find(w => w.id === "notes")!.presentation).toBe("dropdown");
+    expect((await snapshot()).data.workspaces.home.layout).toEqual(savedLayout);
     const oldManifest = JSON.parse(JSON.stringify(archive.manifest));
     oldManifest.homepage = legacy;
     const oldArchive = decodeBackup(encodeBackup(oldManifest, archive.assets).toString("base64"));
     expect(oldArchive.manifest.homepage.workspaces.work.layout.widgets.every(w => w.presentation === "section")).toBe(true);
+    expect(oldArchive.manifest.homepage.workspaces.home.layout.centerShortcuts).toBeNull();
   });
 
 });

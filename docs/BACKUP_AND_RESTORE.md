@@ -39,6 +39,12 @@ Layouts also include each section's always-open/dropdown choice. Older archives 
 open. Versions without this layout field reject new archives, so use a pre-upgrade backup when
 rolling back to an older application version.
 
+Independent homepage/sidebar shortcut selections and appearance choices are included in layouts.
+Older archives without these fields use automatic favorites in the center, top-level sidebar
+items, comfortable spacing, and shortcut tiles. Retired colorful theme choices are accepted and
+normalized to the original defaults without changing shortcut selections. Versions without these fields
+reject new layouts and archives; retain a pre-upgrade backup for downgrade.
+
 ## Full disaster recovery
 
 Full database backups remain an operator responsibility. Keep them on encrypted storage separate

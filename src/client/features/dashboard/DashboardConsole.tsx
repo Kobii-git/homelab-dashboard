@@ -930,7 +930,7 @@ export function DashboardConsole({
   const visibleCount =
     filteredGroups.reduce((sum, group) => sum + group.resources.length, 0) + filteredUngrouped.length;
 
-  const reorderEnabled = query === "" && statusFilter === "all";
+  const reorderEnabled = mode === "launchpad" || (query === "" && statusFilter === "all");
 
   useEffect(() => {
     if (!inspectedHostId) {
@@ -1137,94 +1137,23 @@ export function DashboardConsole({
 
   const serviceDirectory = (
     <>
-      <details className="hp-service-options"><summary>Service options{query || statusFilter !== "all" ? " · Filtered" : ""}</summary><div className="dash-toolbar launchpad-service-toolbar">
-        <label className="search-box service-search">
-          <Search size={16} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter services" />
-        </label>
-
-        <div className="filter-chips" aria-label="Service filters">
-          {filters.map((filter) => (
-            <button
-              key={filter.id}
-              className={statusFilter === filter.id ? "active" : ""}
-              type="button"
-              onClick={() => setStatusFilter(filter.id)}
-            >
-              {filter.label}
-              <i>{filter.count}</i>
-            </button>
-          ))}
-        </div>
-
-        <div className="dash-toolbar-end">
-          <div className="segmented-control density-toggle" role="group" aria-label="Layout density">
-            <button
-              className={density === "grid" ? "active" : ""}
-              type="button"
-              title="Grid view"
-              onClick={() => setDensity("grid")}
-            >
-              <LayoutGrid size={15} />
-            </button>
-            <button
-              className={density === "list" ? "active" : ""}
-              type="button"
-              title="List view"
-              onClick={() => setDensity("list")}
-            >
-              <Rows3 size={15} />
-            </button>
-          </div>
-          <button className="icon-button" type="button" title="Refresh" onClick={() => void onRefresh()}>
-            <RefreshCw size={16} />
-          </button>
-          <button className="primary-button header-primary-action" type="button" onClick={onOpenServices}>
-            <Plus size={16} /> Add service
-          </button>
-        </div>
-      </div>
-
-      </details>
       {checkError ? <div className="app-error">{checkError}</div> : null}
-
       <div className="hp-service-groups">
-      {filteredGroups.map((group) => {
-        const groupTotals = summarizeResourceStatus(group.resources);
-        return (
-          <section className="service-group" key={group.id}>
+        {data.dashboard.ungroupedResources.some(r => !isBookmark(r)) && renderCards("ungrouped", data.dashboard.ungroupedResources.filter(r => !isBookmark(r)))}
+        {data.dashboard.groups.map(group => {
+          const items = group.resources.filter(r => !isBookmark(r));
+          if (!items.length) return null;
+          return <section className="service-group" key={group.id}>
             <div className="service-group-header">
-              <button
-                className="group-toggle"
-                type="button"
-                onClick={() => onPatchGroup(group.id, { collapsed: !group.collapsed })}
-              >
-                {group.collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-                <h3>{group.name}</h3>
+              <button className="group-toggle" type="button" aria-expanded={!group.collapsed} onClick={() => onPatchGroup(group.id, { collapsed: !group.collapsed })}>
+                {group.collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}<h3>{group.name}</h3>
               </button>
-              <span className="group-meta">{groupTotals.online}/{group.resources.length} online</span>
             </div>
-            {!group.collapsed ? renderCards(group.id, group.resources) : null}
-          </section>
-        );
-      })}
-
-      {filteredUngrouped.length > 0 ? (
-        <section className="service-group">
-          <div className="service-group-header">
-            <h3>Ungrouped</h3>
-            <span className="group-meta">
-              {summarizeResourceStatus(filteredUngrouped).online}/{filteredUngrouped.length} online
-            </span>
-          </div>
-          {renderCards("ungrouped", filteredUngrouped)}
-        </section>
-      ) : null}
+            {!group.collapsed && renderCards(group.id, items)}
+          </section>;
+        })}
+        {!directoryResources.length && <p className="muted-copy">Add your first service with Manage services.</p>}
       </div>
-
-      {directoryResources.length > 0 && visibleCount === 0 ? (
-        <EmptyPanel icon={<Search size={36} />} title="No services match" body="Clear search or change the status filter." />
-      ) : null}
     </>
   );
 

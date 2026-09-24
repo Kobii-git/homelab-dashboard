@@ -85,3 +85,14 @@ requires a pre-upgrade backup rather than dropping notes from the stored documen
 Each layout widget also stores `presentation` (`section` or `dropdown`). Older layouts and archives
 without the field read as `section`, preserving their existing display. New saves/exports include
 the field; older strict parsers reject it. No database table change is required.
+
+Layouts also store spacing, shortcut presentation, and separate `centerShortcuts` and
+`sidebarShortcuts` selections of bookmark/collection IDs. Missing selections default to `null`:
+the center follows favorites and the sidebar follows top-level items. Explicit empty arrays mean
+no shortcuts. Rendering omits deleted, missing, or other-workspace IDs. Older layouts receive
+defaults on read; new exports retain selections. Older strict parsers require a pre-upgrade backup
+for downgrade. No Prisma schema change is needed.
+
+Retired rose/cyan accents and aurora/sunset backgrounds normalize to blue/plain on read.
+The retired `colorStyle` field remains accepted for compatibility and normalizes to `minimal`;
+it no longer controls the UI. Shortcut selections and existing accent/background choices are preserved.

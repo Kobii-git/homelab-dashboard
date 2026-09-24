@@ -7,7 +7,7 @@ async function login(page: Page) {
   await page.getByLabel("Password").fill("e2e-admin-password");
   await page.getByRole("button", { name: "Unlock" }).click();
   await expect(
-    page.getByRole("combobox", { name: "Search Google" }),
+    page.getByRole("searchbox", { name: "Search Google" }),
   ).toBeVisible();
 }
 
@@ -328,10 +328,9 @@ test("nested folders are managed in Settings and expand with the keyboard on Hom
   for (const name of [root, "Web", "Design"]) {
     const folder = page.getByRole("menuitem", { name, exact: true });
     await folder.focus();
-    const folderBox = (await folder.boundingBox())!;
     await folder.press("ArrowRight");
     await expect(page.getByRole("menu", { name, exact: true })).toBeVisible();
-    await expect.poll(async () => Math.abs((await page.getByRole("menu", { name, exact: true }).boundingBox())!.y - folderBox.y)).toBeLessThanOrEqual(8);
+    await expect.poll(async () => Math.abs((await page.getByRole("menu", { name, exact: true }).boundingBox())!.y - (await folder.boundingBox())!.y)).toBeLessThanOrEqual(8);
   }
   const reference = page.getByRole("menuitem", { name: "Design reference", exact: true });
   await expect(reference).toHaveAttribute("href", "https://example.com/design");
@@ -353,7 +352,7 @@ test("nested folders are managed in Settings and expand with the keyboard on Hom
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations.filter(v => ["serious", "critical"].includes(v.impact ?? ""))).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("folders-wide.png"), fullPage: true });
-  await page.getByRole("combobox", { name: "Search Google" }).click();
+  await page.getByRole("searchbox", { name: "Search Google" }).click();
   await expect(page.getByRole("menu")).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(async () => (await rail.boundingBox())!.height).toBeLessThanOrEqual(64);
