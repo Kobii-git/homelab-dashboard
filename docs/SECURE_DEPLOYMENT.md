@@ -23,7 +23,10 @@ through `NODE_EXTRA_CA_CERTS`; install the CA rather than disabling verification
 
 From a fresh clone, run `./scripts/install-docker.sh`. With the example `.env`, it prompts for
 the Docker host's private IPv4 address and monitoring boundary, then generates secrets and builds
-the image locally. Run `./scripts/install-docker.sh --https-proxy` when the proxy is ready; it asks
+the image locally. Compose prepares the named data volume for the non-root dashboard before it
+starts, including when a previous checkout left the volume behind. Back up an existing database
+before reinstalling or upgrading; see [Backup and Restore](BACKUP_AND_RESTORE.md). Run
+`./scripts/install-docker.sh --https-proxy` when the proxy is ready; it asks
 for the exact HTTPS origin and proxy CIDR, switches the bind back to loopback, and keeps the data
 volume.
 Run it with `--configure-only` to write configuration and check Compose without starting a

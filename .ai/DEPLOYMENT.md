@@ -18,6 +18,12 @@ The runtime image:
 - exposes an HTTP liveness health check at `/api/health`;
 - applies the Prisma schema before starting the compiled server.
 
+Compose runs a short-lived, network-isolated data initializer before the dashboard. It grants root
+only the ownership and permission capabilities needed to make the dedicated `/data` volume writable
+by the runtime `node` user, including after a checkout is replaced but its named volume survives.
+The initializer does not receive application secrets; the dashboard remains non-root with all
+capabilities dropped. Back up existing database state before an upgrade as described below.
+
 `.dockerignore` must continue excluding Git metadata, dependencies/build output, databases,
 environment files, reports, backups, logs, and private tooling context from the build context.
 

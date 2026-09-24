@@ -1,6 +1,9 @@
 # Apply after docker-compose.yml; inherits all production security settings and storage.
 # docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 services:
+  dashboard-data-init:
+    image: homelab-dashboard:local
+    pull_policy: never
   dashboard:
     image: homelab-dashboard:local
     pull_policy: build
