@@ -93,6 +93,7 @@ type AiEvidenceResource = {
     type: string;
     target: string | null;
     enabled: boolean;
+    primary: boolean;
     status: string;
     latencyMs: number | null;
     checkedAt: string | null;
@@ -395,7 +396,7 @@ function sanitizeDailyBriefing(briefing: DailyBriefingDto, includeTargets: boole
 }
 
 function integrationEvidence(source: IntegrationSourceDto, includeTargets: boolean): AiBriefingEvidence["integrations"][number] {
-  const snapshot = source.latestSnapshot;
+  const snapshot = source.latestSnapshot?.provider === "opnsense" ? source.latestSnapshot : null;
   const gatewayStatuses = snapshot?.gateways ?? [];
   const interfaceStatuses = snapshot?.interfaces ?? [];
   const traffic = interfaceStatuses.reduce(
@@ -498,7 +499,8 @@ export async function buildAiBriefingEvidence(prisma: PrismaClient, config: AiEn
       }
     }),
     prisma.integrationSource.findMany({
-      where: { enabled: true },
+      // Personal-context and TrueNAS storage evidence is deliberately excluded from AI input.
+      where: { enabled: true, provider: "opnsense" },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: {
         samples: {
@@ -545,12 +547,16 @@ export async function buildAiBriefingEvidence(prisma: PrismaClient, config: AiEn
       monitoringMode: resource.monitoringMode,
       manualStatus: resource.manualStatus,
       address: includeTargets ? sanitizeAiText(resource.url ?? resource.host, true) : null,
-      checks: resource.healthChecks.slice(0, 8).map((check) => ({
+      checks: resource.healthChecks
+        .filter((check) => check.enabled && check.primary)
+        .slice(0, 1)
+        .map((check) => ({
         id: check.id,
         evidenceId: `check:${check.id}`,
         type: check.type,
         target: includeTargets ? sanitizeAiText(check.target, true) : null,
         enabled: check.enabled,
+        primary: check.primary,
         status: check.latestStatus,
         latencyMs: check.latestLatencyMs,
         checkedAt: check.latestCheckedAt?.toISOString() ?? null,

@@ -1,7 +1,37 @@
-# SQLite Backup and Restore Runbook
+# Configuration and full database backups
 
-Backups are an operator responsibility and are intentionally outside the application API.
-Keep them on encrypted storage separate from the Docker host.
+## Portable configuration in the app
+
+**Admin → Data & backups** exports a versioned ZIP with workspaces, bookmarks, collections, reading
+states, notes, prompt templates, layouts, PNG backgrounds, service/check definitions, host/API widget
+definitions, and allowlisted utility/home preferences. Environment-variable names may be listed as
+requirements; values, credential bindings, authentication, operational history, and deployment/network
+security settings are excluded. Environment-managed integrations remain configured on the destination
+server; recreate their environment configuration separately when moving to a new server.
+
+To restore, upload the ZIP, review counts and warnings, download the current configuration, verify the
+saved file, and confirm replacement. Export and restore require recent password verification. Previews
+and safety-download tokens expire after ten minutes, are tied to the login session and configuration
+revision, and do not survive restart. Any intervening configuration change requires a new preview and
+backup. Upload and validation do not contact imported destinations.
+
+Replacement removes prior portable definitions and their derived monitoring history. Administrator
+credentials, sessions, server security settings, and environment-managed integrations remain intact.
+Restored services/checks/hosts/API widgets start disabled; API-widget credential bindings are cleared.
+Review destinations against the existing outbound policy and explicitly re-enable/rebind connections.
+The archive is limited to 32 MiB expanded with an 8 MiB manifest; each PNG is limited to 4 MiB.
+Datastore and asset changes share one SQLite transaction, including rollback on failure. Assets are
+stored inside SQLite, so there are no filesystem asset moves that could partially commit.
+
+This archive contains private content and is not a full disaster-recovery backup. It is not encrypted
+by the app. Save it on protected/encrypted storage outside the server. There is no scheduled-backup
+service or full-database restore API. An application configuration export cannot recover passwords,
+monitoring history, certificates, environment files, or VPN/DNS settings.
+
+## Full disaster recovery
+
+Full database backups remain an operator responsibility. Keep them on encrypted storage separate
+from the Docker host. The SQLite backup now also includes uploaded homepage assets.
 
 ## Backup
 

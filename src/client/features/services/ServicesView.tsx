@@ -1,4 +1,4 @@
-import { Activity, ChevronDown, ChevronUp, Copy, Plus, Pencil, Save, Server, ShieldCheck, Trash2, Wifi } from "lucide-react";
+import { Activity, AlertTriangle, ChevronDown, ChevronUp, Copy, Plus, Pencil, Save, Server, ShieldCheck, Trash2, Wifi } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { HEALTH_CHECK_TYPES, HEALTH_STATUSES, MONITORING_MODES, RESOURCE_KINDS } from "../../../shared/types";
 import { MetricCard, PageHeader, StatusBadge } from "../../components/Primitives";
@@ -15,15 +15,41 @@ import type { AppData } from "../types";
 import type { DashboardResource, OpnsenseImportSuggestionDto } from "../../../shared/types";
 import type { HealthCheckDto } from "../../lib/api";
 
-export type ServiceTab = "resource" | "check";
+export type ServiceTab = "resource" | "check" | "review";
 
 const serviceTabs: Array<{ id: ServiceTab; label: string }> = [
   { id: "resource", label: "Services" },
-  { id: "check", label: "Checks" }
+  { id: "check", label: "Checks" },
+  { id: "review", label: "Needs review" }
 ];
 
 type EditMode = "resource" | "check" | null;
 type FormMode = "group" | "resource" | "check" | null;
+type CheckType = HealthCheckDto["type"];
+type CheckDraft = Pick<HealthCheckDto, "resourceId" | "type" | "target" | "primary">;
+type CheckTestResult = {
+  status: "online" | "offline";
+  latencyMs?: number;
+  error?: string;
+  reason?: string;
+};
+
+const checkTypeLabels: Record<CheckType, string> = {
+  http: "Web endpoint (HTTP/HTTPS)",
+  tcp: "TCP port",
+  ping: "Ping (ICMP)",
+  ssl: "SSL certificate"
+};
+
+function tcpPort(target: string | undefined): string {
+  if (!target) return "";
+  try {
+    const parsed = new URL(target.includes("://") ? target : `tcp://${target}`);
+    return parsed.port;
+  } catch {
+    return "";
+  }
+}
 
 function Field({
   label,
@@ -69,13 +95,22 @@ export function ServicesView({
   editServiceId?: string | null;
   onEditServiceHandled?: () => void;
 }) {
+  const serviceResources = useMemo(() => data.resources.filter(resource => resource.purpose !== "bookmark"), [data.resources]);
   const [activeTab, setActiveTab] = useState<ServiceTab>("resource");
   const [editMode, setEditMode] = useState<EditMode>(null);
   const [formMode, setFormMode] = useState<FormMode>(null);
   const [editResource, setEditResource] = useState<DashboardResource | null>(null);
   const [resourceDraft, setResourceDraft] = useState<Partial<DashboardResource> | null>(null);
   const [resourceFormKey, setResourceFormKey] = useState(0);
+  const [resourceCheckType, setResourceCheckType] = useState<"http" | "tcp" | "ping">("http");
+  const [resourceTcpPort, setResourceTcpPort] = useState("");
   const [editCheck, setEditCheck] = useState<HealthCheckDto | null>(null);
+  const [checkDraft, setCheckDraft] = useState<CheckDraft | null>(null);
+  const [checkType, setCheckType] = useState<CheckType>("http");
+  const [checkPrimary, setCheckPrimary] = useState(true);
+  const [checkFormKey, setCheckFormKey] = useState(0);
+  const [checkTestResult, setCheckTestResult] = useState<CheckTestResult | null>(null);
+  const [testingCheck, setTestingCheck] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -98,12 +133,12 @@ export function ServicesView({
     if (!editServiceId) {
       return;
     }
-    const resource = data.resources.find((item) => item.id === editServiceId);
+    const resource = serviceResources.find((item) => item.id === editServiceId);
     if (resource) {
       startEditResource(resource);
     }
     onEditServiceHandled?.();
-  }, [editServiceId, data.resources, onEditServiceHandled]);
+  }, [editServiceId, serviceResources, onEditServiceHandled]);
 
   useEffect(() => {
     if (!addServiceTemplateId) return;
@@ -113,15 +148,26 @@ export function ServicesView({
   }, [addServiceTemplateId, onAddServiceTemplateHandled]);
 
   function startEditResource(resource: DashboardResource) {
+    const primary = resource.healthChecks?.find((check) => check.primary);
     setEditResource(resource);
     setResourceDraft(null);
+    setResourceCheckType(
+      primary?.type === "tcp" || primary?.type === "ping" ? primary.type : "http"
+    );
+    setResourceTcpPort(primary?.type === "tcp" ? tcpPort(primary.target) : "");
     setEditMode("resource");
     setEditCheck(null);
+    setCheckDraft(null);
     setFormMode("resource");
   }
 
   function startEditCheck(check: HealthCheckDto) {
     setEditCheck(check);
+    setCheckDraft(null);
+    setCheckType(check.type);
+    setCheckPrimary(check.primary);
+    setCheckTestResult(null);
+    setCheckFormKey((key) => key + 1);
     setEditMode("check");
     setEditResource(null);
     setFormMode("check");
@@ -133,6 +179,8 @@ export function ServicesView({
     setEditResource(null);
     setResourceDraft(null);
     setEditCheck(null);
+    setCheckDraft(null);
+    setCheckTestResult(null);
   }
 
   function groupIdForHint(groupHint: string): string | null {
@@ -143,9 +191,12 @@ export function ServicesView({
   function applyTemplate(template: ServiceTemplate) {
     setEditResource(null);
     setEditCheck(null);
+    setCheckDraft(null);
     setEditMode(null);
     setActiveTab("resource");
     setFormMode("resource");
+    setResourceCheckType("http");
+    setResourceTcpPort("");
     setResourceDraft({
       name: template.name,
       kind: template.kind,
@@ -161,6 +212,21 @@ export function ServicesView({
     setResourceFormKey((key) => key + 1);
   }
 
+  function beginSuggestedCheck(resource: DashboardResource) {
+    const type: CheckType = resource.url ? "http" : "tcp";
+    const target = resource.url ?? (resource.host ? `${resource.host}:` : "");
+    setEditCheck(null);
+    setEditResource(null);
+    setCheckDraft({ resourceId: resource.id, type, target, primary: true });
+    setCheckType(type);
+    setCheckPrimary(true);
+    setCheckTestResult(null);
+    setCheckFormKey((key) => key + 1);
+    setEditMode("check");
+    setFormMode("check");
+    setActiveTab("check");
+  }
+
   async function submitGroup(event: FormEvent<HTMLFormElement>) {
     await runFormSubmit(event, async (form) => {
       await apiSend("/api/groups", "POST", { name: emptyToNull(form.get("name")) });
@@ -171,18 +237,52 @@ export function ServicesView({
 
   async function submitResource(event: FormEvent<HTMLFormElement>) {
     await runFormSubmit(event, async (form) => {
+      const url = emptyToNull(form.get("url"));
+      const host = emptyToNull(form.get("host"));
+      const monitoringMode = form.get("monitoringMode");
+      let primaryCheck: {
+        type: "tcp" | "ping";
+        target: string;
+      } | undefined;
+      if (
+        monitoringMode === "auto" &&
+        (resourceCheckType === "tcp" || resourceCheckType === "ping") &&
+        !host
+      ) {
+        throw new Error(`${resourceCheckType === "tcp" ? "TCP" : "Ping"} monitoring requires a Host`);
+      }
+      if (monitoringMode === "auto" && resourceCheckType === "tcp" && host) {
+        const port = Number(resourceTcpPort);
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+          throw new Error("Choose a valid TCP port between 1 and 65535");
+        }
+        const formattedHost = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+        primaryCheck = { type: "tcp", target: `${formattedHost}:${port}` };
+      } else if (monitoringMode === "auto" && resourceCheckType === "ping" && host) {
+        primaryCheck = { type: "ping", target: host };
+      } else if (monitoringMode === "auto" && !url && host) {
+        throw new Error("Choose a TCP port or explicitly select Ping for this host-only service");
+      }
+
+      const currentPrimary = editResource?.healthChecks?.find((check) => check.primary);
+      const primaryChanged = primaryCheck && (
+        !currentPrimary ||
+        currentPrimary.type !== primaryCheck.type ||
+        currentPrimary.target !== primaryCheck.target
+      );
       const body = {
         name: emptyToNull(form.get("name")),
         kind: form.get("kind"),
-        url: emptyToNull(form.get("url")),
-        host: emptyToNull(form.get("host")),
+        url,
+        host,
         icon: emptyToNull(form.get("icon")),
         color: emptyToNull(form.get("color")),
         description: emptyToNull(form.get("description")),
         groupId: emptyToNull(form.get("groupId")),
-        monitoringMode: form.get("monitoringMode"),
+        monitoringMode,
         manualStatus: emptyToNull(form.get("manualStatus")),
-        favorite: form.get("favorite") === "on"
+        favorite: form.get("favorite") === "on",
+        ...(primaryChanged || (!editResource && primaryCheck) ? { primaryCheck } : {})
       };
 
       if (editResource) {
@@ -203,7 +303,7 @@ export function ServicesView({
     await runFormSubmit(event, async (form) => {
       const body = {
         resourceId: form.get("resourceId"),
-        type: form.get("type"),
+        type: checkType,
         target: emptyToNull(form.get("target")),
         intervalSeconds: Number.isInteger(Number(form.get("intervalSeconds")))
           ? Number(form.get("intervalSeconds"))
@@ -211,7 +311,8 @@ export function ServicesView({
         timeoutMs: Number(form.get("timeoutMs") || 3000),
         failureThreshold: Number(form.get("failureThreshold") || 1),
         successThreshold: Number(form.get("successThreshold") || 1),
-        enabled: true
+        enabled: true,
+        primary: editCheck?.primary ? true : checkPrimary
       };
 
       if (editCheck) {
@@ -225,6 +326,32 @@ export function ServicesView({
       await onRefresh();
       setFormMode(null);
     }, setActionError, setSubmitting, editCheck ? "Health check updated" : "Health check added");
+  }
+
+  async function testCheck(form: HTMLFormElement) {
+    const data = new FormData(form);
+    const target = emptyToNull(data.get("target"));
+    if (!target) {
+      setCheckTestResult({ status: "offline", error: "Enter a target before testing", reason: "invalid_target" });
+      return;
+    }
+    setTestingCheck(true);
+    setCheckTestResult(null);
+    try {
+      const result = await apiSend<CheckTestResult>("/api/health-checks/test", "POST", {
+        type: checkType,
+        target,
+        timeoutMs: Number(data.get("timeoutMs") || 3000)
+      });
+      setCheckTestResult(result);
+    } catch (error) {
+      setCheckTestResult({
+        status: "offline",
+        error: error instanceof Error ? error.message : "Check test failed"
+      });
+    } finally {
+      setTestingCheck(false);
+    }
   }
 
   async function remove(path: string, label: string) {
@@ -242,6 +369,13 @@ export function ServicesView({
     }, setActionError, setSubmitting, check.enabled ? "Health check paused" : "Health check resumed");
   }
 
+  async function makePrimary(check: HealthCheckDto) {
+    await runFormAction(async () => {
+      await apiSend(`/api/health-checks/${check.id}`, "PATCH", { primary: true });
+      await onRefresh();
+    }, setActionError, setSubmitting, `${check.type.toUpperCase()} is now the primary check`);
+  }
+
   async function patchResource(resource: DashboardResource, body: Record<string, unknown>) {
     await runFormAction(async () => {
       await apiSend(`/api/resources/${resource.id}`, "PATCH", body);
@@ -250,6 +384,19 @@ export function ServicesView({
   }
 
   async function duplicateResource(resource: DashboardResource) {
+    const primary = resource.healthChecks?.find((check) => check.primary);
+    const primaryCheck = resource.monitoringMode === "auto" && primary && (
+      primary.type !== "http" || primary.target !== resource.url
+    )
+      ? {
+          type: primary.type,
+          target: primary.target,
+          intervalSeconds: primary.intervalSeconds,
+          timeoutMs: primary.timeoutMs,
+          failureThreshold: primary.failureThreshold,
+          successThreshold: primary.successThreshold
+        }
+      : undefined;
     await runFormAction(async () => {
       await apiSend("/api/resources", "POST", {
         name: `${resource.name} Copy`,
@@ -263,7 +410,8 @@ export function ServicesView({
         monitoringMode: resource.monitoringMode,
         manualStatus: resource.manualStatus,
         favorite: false,
-        sortOrder: resource.sortOrder + 1
+        sortOrder: resource.sortOrder + 1,
+        ...(primaryCheck ? { primaryCheck } : {})
       });
       await onRefresh();
     }, setActionError, setSubmitting, "Service duplicated");
@@ -287,7 +435,7 @@ export function ServicesView({
       color: suggestion.color,
       description: suggestion.description,
       groupId: groupIdForHint("Network"),
-      monitoringMode: "auto",
+      monitoringMode: suggestion.url ? "auto" : "disabled",
       manualStatus: null,
       favorite: false
     });
@@ -313,6 +461,15 @@ export function ServicesView({
   function beginCreate(mode: FormMode, tab: ServiceTab) {
     cancelEdit();
     setResourceFormKey((key) => key + 1);
+    if (mode === "resource") {
+      setResourceCheckType("http");
+      setResourceTcpPort("");
+    }
+    if (mode === "check") {
+      setCheckType("http");
+      setCheckPrimary(true);
+      setCheckFormKey((key) => key + 1);
+    }
     setActiveTab(tab);
     setFormMode(mode);
   }
@@ -323,7 +480,7 @@ export function ServicesView({
   }
 
   async function moveResource(resource: DashboardResource, direction: -1 | 1) {
-    const ordered = [...data.resources].sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name));
+    const ordered = [...serviceResources].sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name));
     const index = ordered.findIndex((item) => item.id === resource.id);
     const swap = ordered[index + direction];
     if (!swap) return;
@@ -336,21 +493,27 @@ export function ServicesView({
 
   const opnsenseSuggestions = useMemo(() => {
     const suggestions = data.dashboard.integrations.flatMap((source) =>
-      source.latestSnapshot?.importSuggestions ?? []
+      source.latestSnapshot?.provider === "opnsense" ? source.latestSnapshot.importSuggestions : []
     );
     return suggestions.filter((suggestion, index, list) =>
       list.findIndex((item) => item.id === suggestion.id) === index &&
-      !data.resources.some((resource) => resourceMatchesSuggestion(resource, suggestion))
+      !serviceResources.some((resource) => resourceMatchesSuggestion(resource, suggestion))
     );
-  }, [data.dashboard.integrations, data.resources]);
+  }, [data.dashboard.integrations, serviceResources]);
 
   const resourceDefaults = editResource ?? resourceDraft;
+  const reviewResources = useMemo(() => serviceResources.filter((resource) => {
+    if (resource.monitoringMode !== "auto") return false;
+    const primary = resource.healthChecks?.find((check) => check.primary && check.enabled);
+    return !primary || primary.type === "ping";
+  }), [serviceResources]);
+  const checkDefaults = editCheck ?? checkDraft;
 
   return (
     <main className="view-shell services-view">
       <PageHeader
         title="Services"
-        subtitle={`${data.resources.length} services · ${data.checks.length} checks`}
+        subtitle={`${serviceResources.length} services · ${data.checks.length} checks`}
         actions={
           <>
             <button className="icon-text-button" type="button" onClick={() => void onRefresh()}>
@@ -366,8 +529,9 @@ export function ServicesView({
       <FormErrorBanner message={actionError} />
 
       <section className="dashboard-overview dashboard-compact-metrics">
-        <MetricCard icon={<Server size={18} />} label="Services" value={data.resources.length} tone="accent" />
+        <MetricCard icon={<Server size={18} />} label="Services" value={serviceResources.length} tone="accent" />
         <MetricCard icon={<Activity size={18} />} label="Checks" value={data.checks.length} />
+        <MetricCard icon={<AlertTriangle size={18} />} label="Needs review" value={reviewResources.length} />
       </section>
 
       <div className="service-tabs">
@@ -378,7 +542,7 @@ export function ServicesView({
             type="button"
             onClick={() => switchTab(tab.id)}
           >
-            {tab.label}
+            {tab.label}{tab.id === "review" && reviewResources.length > 0 ? ` (${reviewResources.length})` : ""}
           </button>
         ))}
       </div>
@@ -487,6 +651,40 @@ export function ServicesView({
                 </select>
               </label>
               <label>
+                Primary availability check
+                <select
+                  name="resourceCheckType"
+                  aria-label="Primary availability check"
+                  value={resourceCheckType}
+                  onChange={(event) => setResourceCheckType(event.target.value as "http" | "tcp" | "ping")}
+                >
+                  <option value="http">Use service URL (HTTP/HTTPS)</option>
+                  <option value="tcp">Connect to a TCP port</option>
+                  <option value="ping">Ping host (ICMP)</option>
+                </select>
+                <small className="field-help">Used when monitoring is Automatic. HTTP uses the exact URL and port above.</small>
+              </label>
+              {resourceCheckType === "tcp" ? (
+                <label>
+                  TCP port
+                  <input
+                    type="number"
+                    aria-label="TCP port"
+                    min="1"
+                    max="65535"
+                    value={resourceTcpPort}
+                    onChange={(event) => setResourceTcpPort(event.target.value)}
+                    placeholder="443"
+                  />
+                  <small className="field-help">Checks whether the dashboard container can open this port on the Host.</small>
+                </label>
+              ) : null}
+              {resourceCheckType === "ping" ? (
+                <p className="monitoring-warning">
+                  <AlertTriangle size={14} /> Ping is opt-in because firewalls and containers may block ICMP even while the service is available.
+                </p>
+              ) : null}
+              <label>
                 Manual status
                 <select name="manualStatus" defaultValue={resourceDefaults?.manualStatus ?? ""}>
                   <option value="">Unknown</option>
@@ -511,7 +709,7 @@ export function ServicesView({
           ) : null}
 
           <div className="row-list service-catalog-list">
-            {data.resources.map((resource, index, list) => (
+            {serviceResources.map((resource, index, list) => (
               <div className="data-row data-row-wide service-data-row" key={resource.id}>
                 <ServiceIcon resource={resource} size={28} />
                 <span>
@@ -566,7 +764,7 @@ export function ServicesView({
                 </span>
               </div>
             ))}
-            {data.resources.length === 0 ? <p className="muted-copy">No services yet.</p> : null}
+            {serviceResources.length === 0 ? <p className="muted-copy">No services yet.</p> : null}
           </div>
         </section>
       ) : null}
@@ -581,22 +779,58 @@ export function ServicesView({
           </div>
 
           {(formMode === "check" || editCheck) ? (
-            <form key={editCheck?.id ?? "new-check"} className="tool-panel service-form-panel service-form-grid" onSubmit={submitCheck}>
+            <form
+              key={editCheck?.id ?? `new-check-${checkFormKey}`}
+              className="tool-panel service-form-panel service-form-grid"
+              onSubmit={submitCheck}
+            >
               <h3>{editCheck ? <><Pencil size={15} /> Edit check</> : "New health check"}</h3>
               <label>
                 Service
-                <select name="resourceId" required defaultValue={editCheck?.resourceId ?? ""}>
+                <select name="resourceId" required defaultValue={checkDefaults?.resourceId ?? ""}>
                   <option value="">Select service</option>
-                  {data.resources.map((resource) => <option key={resource.id} value={resource.id}>{resource.name}</option>)}
+                  {serviceResources.map((resource) => <option key={resource.id} value={resource.id}>{resource.name}</option>)}
                 </select>
               </label>
               <label>
                 Type
-                <select name="type" defaultValue={editCheck?.type ?? "http"}>
-                  {HEALTH_CHECK_TYPES.map((type) => <option key={type} value={type}>{type === "ssl" ? "SSL certificate" : type}</option>)}
+                <select
+                  name="type"
+                  value={checkType}
+                  onChange={(event) => {
+                    const nextType = event.target.value as CheckType;
+                    setCheckType(nextType);
+                    setCheckTestResult(null);
+                    if (!editCheck && nextType === "ssl") setCheckPrimary(false);
+                  }}
+                >
+                  {HEALTH_CHECK_TYPES.map((type) => <option key={type} value={type}>{checkTypeLabels[type]}</option>)}
                 </select>
               </label>
-              <Field label="Target" name="target" placeholder="https://service.local or host:443" defaultValue={editCheck?.target} required />
+              <Field
+                label={checkType === "tcp" ? "Host and port" : checkType === "ping" ? "Hostname or IP" : "Target"}
+                name="target"
+                placeholder={
+                  checkType === "http"
+                    ? "https://service.local:8443/health"
+                    : checkType === "tcp"
+                      ? "service.local:443"
+                      : checkType === "ping"
+                        ? "service.local"
+                        : "service.local:443"
+                }
+                defaultValue={checkDefaults?.target}
+                required
+              />
+              <p className="monitoring-guidance">
+                {checkType === "http"
+                  ? "Any HTTP response below 500 counts as reachable. TLS certificates must be trusted."
+                  : checkType === "tcp"
+                    ? "TCP verifies that a port accepts connections without requiring ping or trusting the service certificate."
+                    : checkType === "ping"
+                      ? "ICMP may be blocked by the target or unavailable inside the dashboard container."
+                      : "Certificate expiry or trust failures are reported; SSL checks are diagnostic by default."}
+              </p>
               <Field
                 label="Interval (seconds)"
                 name="intervalSeconds"
@@ -615,7 +849,38 @@ export function ServicesView({
               />
               <Field label="Failure threshold" name="failureThreshold" type="number" placeholder="1" defaultValue={editCheck?.failureThreshold?.toString()} />
               <Field label="Recovery threshold" name="successThreshold" type="number" placeholder="1" defaultValue={editCheck?.successThreshold?.toString()} />
+              <label className="checkbox-row">
+                <input
+                  name="primary"
+                  type="checkbox"
+                  checked={checkPrimary}
+                  disabled={Boolean(editCheck?.primary)}
+                  onChange={(event) => setCheckPrimary(event.target.checked)}
+                />
+                Primary availability check
+              </label>
+              {editCheck?.primary ? (
+                <p className="monitoring-guidance">Promote another check to replace this primary check.</p>
+              ) : null}
+              {checkTestResult ? (
+                <div className={`check-test-result check-test-${checkTestResult.status}`} role="status">
+                  <strong>{checkTestResult.status === "online" ? "Reachable" : "Not reachable"}</strong>
+                  <span>
+                    {checkTestResult.latencyMs != null ? `${checkTestResult.latencyMs} ms` : ""}
+                    {checkTestResult.reason ? ` · ${checkTestResult.reason.replaceAll("_", " ")}` : ""}
+                    {checkTestResult.error ? ` · ${checkTestResult.error}` : ""}
+                  </span>
+                </div>
+              ) : null}
               <div className="form-actions">
+                <button
+                  className="icon-text-button"
+                  type="button"
+                  disabled={testingCheck}
+                  onClick={(event) => void testCheck(event.currentTarget.form as HTMLFormElement)}
+                >
+                  <Activity size={16} /> {testingCheck ? "Testing…" : "Test from dashboard"}
+                </button>
                 <button className="primary-button" type="submit" disabled={submitting}><Activity size={16} /> {editCheck ? "Update check" : "Add check"}</button>
                 <button className="icon-text-button" type="button" onClick={cancelEdit}>Cancel</button>
               </div>
@@ -627,9 +892,18 @@ export function ServicesView({
               <div className="data-row data-row-wide service-data-row" key={check.id}>
                 <span>
                   <strong>{check.resource?.name ?? check.target}</strong>
-                  <small>{check.type} · {check.target} · every {check.intervalSeconds}s · {check.enabled ? "enabled" : "disabled"} · {check.latestCheckedAt ? `last ${formatDateTime(check.latestCheckedAt)}` : "never"}</small>
+                  <small>
+                    {checkTypeLabels[check.type]} · {check.primary ? "Primary" : "Diagnostic"} · {check.target} · every {check.intervalSeconds}s · {check.enabled ? "enabled" : "disabled"} · {check.latestCheckedAt ? `last ${formatDateTime(check.latestCheckedAt)}` : "never"}
+                  </small>
                 </span>
                 <StatusBadge status={check.latestStatus} />
+                {!check.primary ? (
+                  <button className="icon-text-button compact-button" type="button" disabled={submitting || !check.enabled} onClick={() => void makePrimary(check)}>
+                    Make primary
+                  </button>
+                ) : (
+                  <span className="primary-check-badge"><ShieldCheck size={13} /> Primary</span>
+                )}
                 <button className="icon-button" type="button" aria-label={`${check.enabled ? "Pause" : "Resume"} ${check.type} check for ${check.resource?.name ?? check.target}`} onClick={() => void toggleCheckEnabled(check)}>
                   {check.enabled ? <Activity size={14} /> : <Activity size={14} style={{ opacity: 0.4 }} />}
                 </button>
@@ -642,6 +916,54 @@ export function ServicesView({
               </div>
             ))}
             {data.checks.length === 0 ? <p className="muted-copy">No checks configured.</p> : null}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === "review" ? (
+        <section className="table-panel services-panel">
+          <div className="section-heading service-list-heading">
+            <div>
+              <h3>Monitoring checks to review</h3>
+              <p className="muted-copy">Nothing is changed automatically. Test a replacement from the dashboard container before saving it as primary.</p>
+            </div>
+          </div>
+          <div className="row-list monitoring-review-list">
+            {reviewResources.map((resource) => {
+              const primary = resource.healthChecks?.find((check) => check.primary && check.enabled);
+              return (
+                <div className="data-row data-row-wide service-data-row monitoring-review-row" key={resource.id}>
+                  <ServiceIcon resource={resource} size={28} />
+                  <span>
+                    <strong>{resource.name}</strong>
+                    <small>
+                      {primary?.type === "ping"
+                        ? `Primary check uses ping (${primary.target}); blocked ICMP can produce a false outage.`
+                        : "Automatic monitoring has no enabled primary check."}
+                    </small>
+                    <small>
+                      {resource.url
+                        ? `Suggested: test the web endpoint ${resource.url}.`
+                        : resource.host
+                          ? `Suggested: enter the service's TCP port on ${resource.host}.`
+                          : "Add a reachable endpoint or change the monitoring mode."}
+                    </small>
+                  </span>
+                  <StatusBadge status={statusFor(resource)} />
+                  <button
+                    className="primary-button"
+                    type="button"
+                    disabled={!resource.url && !resource.host}
+                    onClick={() => beginSuggestedCheck(resource)}
+                  >
+                    Review check
+                  </button>
+                </div>
+              );
+            })}
+            {reviewResources.length === 0 ? (
+              <p className="muted-copy">Every automatically monitored service has a non-ping primary availability check.</p>
+            ) : null}
           </div>
         </section>
       ) : null}

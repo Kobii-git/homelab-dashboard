@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.server.json",
+  "compilerOptions": {
+    "allowSyntheticDefaultImports": true,
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "outDir": "dist-test",
+    "rootDir": "."
+  },
+  "include": [
+    "tests/**/*.ts",
+    "scripts/**/*.ts",
+    "playwright.config.ts",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ]
+}

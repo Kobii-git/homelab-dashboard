@@ -117,7 +117,8 @@ async function findOrCreateCheck(
     intervalSeconds: 86400,
     timeoutMs: 3000,
     enabled: input.enabled ?? true,
-    managed: true
+    managed: true,
+    primary: true
   };
 
   if (existing) {

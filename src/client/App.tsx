@@ -1,3 +1,4 @@
+import { ModalSurface } from "./components/ModalSurface";
 import { Gauge, LayoutDashboard, Server, Settings, Shield } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -23,9 +24,21 @@ import type { DashboardDto } from "./lib/api";
 const defaultSystemSettings: SystemSettingsDto = {
   autoPingIntervalSeconds: 60,
   dashboardUtilities: {
-    searchEngine: "duckduckgo",
+    searchEngine: "google",
     weather: { enabled: false, units: "metric", location: null },
     releases: { enabled: false, repositories: [] }
+  },
+  dashboardHome: {
+    agendaEnabled: false,
+    tasksEnabled: false,
+    mailEnabled: false,
+    mediaEnabled: false,
+    storageEnabled: false,
+    plexWidgetId: null,
+    radarrWidgetId: null,
+    mediaRegion: "ZA",
+    mediaLanguage: "en-US",
+    mediaLimit: 6
   }
 };
 
@@ -364,33 +377,6 @@ export function App() {
     };
   }, [requestReauthentication]);
 
-  useEffect(() => {
-    if (!reauthOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !reauthSubmitting) {
-        finishReauthentication(new Error("Password confirmation was cancelled"));
-        return;
-      }
-      if (event.key === "Tab") {
-        const dialog = document.querySelector<HTMLElement>(".reauth-dialog");
-        const focusable = dialog
-          ? [...dialog.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex='-1'])")]
-          : [];
-        if (focusable.length === 0) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [finishReauthentication, reauthOpen, reauthSubmitting]);
 
   async function loadData() {
     const initialLoad = !dataReadyRef.current;
@@ -495,24 +481,38 @@ export function App() {
       return;
     }
 
-    const timer = setInterval(() => {
-      void loadData();
-    }, 30000);
-
-    function onFocus() {
-      void loadData();
+    let refreshing = false;
+    let lastRevision: number | null = null;
+    async function onFocus() {
+      if (document.hidden || refreshing) return;
+      refreshing = true;
+      try {
+        const current = await apiGet<{ revision: number }>("/api/config/revision");
+        await loadData();
+        if (lastRevision !== current.revision) {
+          // Admin forms own drafts; refresh shared settings only outside the editor.
+          if (view !== "settings") await loadSystemSettings();
+          lastRevision = current.revision;
+        }
+      } finally { refreshing = false; }
     }
-
-    window.addEventListener("focus", onFocus);
-
+    const update = () => { void onFocus().catch(() => undefined); };
+    const timer = setInterval(update, 30000);
+    window.addEventListener("focus", update);
+    window.addEventListener("online", update);
+    window.addEventListener("homepage:changed", update);
+    document.addEventListener("visibilitychange", update);
     return () => {
       clearInterval(timer);
-      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("focus", update);
+      window.removeEventListener("online", update);
+      window.removeEventListener("homepage:changed", update);
+      document.removeEventListener("visibilitychange", update);
     };
-  }, [authenticated]);
+  }, [authenticated, view]);
 
   const offlineCount = useMemo(
-    () => data.resources.filter((resource) => statusFor(resource) === "offline").length,
+    () => data.resources.filter((resource) => resource.purpose !== "bookmark" && statusFor(resource) === "offline").length,
     [data.resources]
   );
 
@@ -610,7 +610,7 @@ export function App() {
   }
 
   async function patchSystemSettings(next: Partial<SystemSettingsDto>) {
-    setSystemSettings(await apiSend<SystemSettingsDto>("/api/settings", "PATCH", next));
+    setSystemSettings(await apiSend<SystemSettingsDto>("/api/settings", "PATCH", { ...next, revision: systemSettings.revision }));
   }
 
   function openServicesForCreate() {
@@ -791,6 +791,7 @@ export function App() {
               onRefresh={loadData}
               systemSettings={systemSettings}
               onSaveSettings={patchSystemSettings}
+              onReloadSettings={loadSystemSettings}
             />
           ) : null}
         </div>
@@ -811,14 +812,8 @@ export function App() {
       />
 
       {reauthOpen ? (
-        <div className="reauth-backdrop" role="presentation">
-          <section
-            className="reauth-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="reauth-title"
-            aria-describedby="reauth-description"
-          >
+        <ModalSurface ariaLabel="Confirm it’s you" backdropClassName="reauth-backdrop" className="reauth-dialog hp-reauth"
+          onClose={() => { if (!reauthSubmitting) finishReauthentication(new Error("Password confirmation was cancelled")); }}>
             <form onSubmit={submitReauthentication}>
               <span className="brand-mark"><Shield size={20} /></span>
               <h2 id="reauth-title">Confirm it’s you</h2>
@@ -852,8 +847,7 @@ export function App() {
                 </button>
               </div>
             </form>
-          </section>
-        </div>
+        </ModalSurface>
       ) : null}
     </div>
   );

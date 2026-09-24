@@ -1,6 +1,19 @@
 import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
+const modalStack: HTMLElement[] = [];
+let rootWasInert = false;
+let rootAriaHidden: string | null = null;
+function updateModalStack() {
+  modalStack.forEach((panel, index) => {
+    const covered = index !== modalStack.length - 1;
+    panel.toggleAttribute("inert", covered);
+    if (covered) panel.setAttribute("aria-hidden", "true"); else panel.removeAttribute("aria-hidden");
+    panel.style.zIndex = String(101 + index * 2);
+    const backdrop = panel.previousElementSibling as HTMLElement | null;
+    if (backdrop) backdrop.style.zIndex = String(100 + index * 2);
+  });
+}
 const FOCUSABLE = [
   "a[href]",
   "button:not([disabled])",
@@ -35,8 +48,13 @@ export function ModalSurface({
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const appRoot = document.getElementById("root");
-    const hadInert = appRoot?.hasAttribute("inert") ?? false;
-    const previousAriaHidden = appRoot?.getAttribute("aria-hidden") ?? null;
+    if (modalStack.length === 0) {
+      rootWasInert = appRoot?.hasAttribute("inert") ?? false;
+      rootAriaHidden = appRoot?.getAttribute("aria-hidden") ?? null;
+    }
+    const panel = panelRef.current!;
+    modalStack.push(panel);
+    updateModalStack();
     appRoot?.setAttribute("inert", "");
     appRoot?.setAttribute("aria-hidden", "true");
 
@@ -47,6 +65,7 @@ export function ModalSurface({
     }, 0);
 
     function onKeyDown(event: KeyboardEvent) {
+      if (modalStack.at(-1) !== panel) return;
       if (event.key === "Escape") {
         event.preventDefault();
         onCloseRef.current();
@@ -75,12 +94,15 @@ export function ModalSurface({
     return () => {
       window.clearTimeout(focusTimer);
       document.removeEventListener("keydown", onKeyDown);
-      if (appRoot) {
-        if (!hadInert) appRoot.removeAttribute("inert");
-        if (previousAriaHidden === null) appRoot.removeAttribute("aria-hidden");
-        else appRoot.setAttribute("aria-hidden", previousAriaHidden);
+      const index = modalStack.indexOf(panel);
+      if (index >= 0) modalStack.splice(index, 1);
+      updateModalStack();
+      if (appRoot && modalStack.length === 0) {
+        if (!rootWasInert) appRoot.removeAttribute("inert");
+        if (rootAriaHidden === null) appRoot.removeAttribute("aria-hidden");
+        else appRoot.setAttribute("aria-hidden", rootAriaHidden);
       }
-      previousFocus?.focus();
+      if (previousFocus?.isConnected) previousFocus.focus();
     };
   }, [initialFocusRef]);
 

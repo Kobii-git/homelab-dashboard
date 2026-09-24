@@ -26,22 +26,16 @@ function activeHealthChecks(resource: DashboardResource) {
   return (resource.healthChecks ?? []).filter((check) => check.enabled);
 }
 
+export function primaryHealthCheck(resource: DashboardResource) {
+  return activeHealthChecks(resource).find((check) => check.primary) ?? null;
+}
+
 export function statusFor(resource: DashboardResource): "unknown" | "online" | "offline" {
   if (resource.monitoringMode === "manual" || resource.monitoringMode === "disabled") {
     return resource.manualStatus ?? "unknown";
   }
 
-  const checks = activeHealthChecks(resource);
-
-  if (checks.length === 0) {
-    return "unknown";
-  }
-
-  if (checks.some((check) => check.latestStatus === "offline")) {
-    return "offline";
-  }
-
-  return checks.some((check) => check.latestStatus === "online") ? "online" : "unknown";
+  return primaryHealthCheck(resource)?.latestStatus ?? "unknown";
 }
 
 export function dashboardResources(groups: Array<{ resources: DashboardResource[] }>, ungrouped: DashboardResource[]) {
@@ -62,14 +56,13 @@ export function summarizeResourceStatus(resources: DashboardResource[]) {
   );
 }
 
-/** Recent results of the primary (first enabled, non-empty) check, oldest → newest. */
+/** Recent results of the enabled primary check, oldest → newest. */
 export function resourceTicks(resource: DashboardResource, limit = 30): HealthTick[] {
   if (resource.monitoringMode !== "auto") {
     return [];
   }
 
-  const checks = activeHealthChecks(resource);
-  const primary = checks.find((check) => (check.results?.length ?? 0) > 0);
+  const primary = primaryHealthCheck(resource);
   const results = primary?.results ?? [];
 
   return [...results]
@@ -77,13 +70,13 @@ export function resourceTicks(resource: DashboardResource, limit = 30): HealthTi
     .slice(-limit);
 }
 
-/** Percentage of stored recent results that were online, across all checks. Null when unmonitored. */
+/** Percentage of stored recent primary-check results that were online. Null when unmonitored. */
 export function uptimePercent(resource: DashboardResource): number | null {
   if (resource.monitoringMode !== "auto") {
     return null;
   }
 
-  const results = activeHealthChecks(resource).flatMap((check) => check.results ?? []);
+  const results = primaryHealthCheck(resource)?.results ?? [];
   const counted = results.filter((result) => result.status === "online" || result.status === "offline");
 
   if (counted.length === 0) {
@@ -131,28 +124,16 @@ export function formatByteRate(value: number | null | undefined): string {
 }
 
 export function latestLatency(resource: DashboardResource): number | null {
-  const latencies = activeHealthChecks(resource)
-    .map((check) => check.latestLatencyMs)
-    .filter((value): value is number => typeof value === "number");
-
-  if (latencies.length === 0) {
-    return null;
-  }
-
-  return Math.round(latencies.reduce((sum, value) => sum + value, 0) / latencies.length);
+  return primaryHealthCheck(resource)?.latestLatencyMs ?? null;
 }
 
 export function latestCheckedAt(resource: DashboardResource): string | null {
-  return activeHealthChecks(resource)
-    .map((check) => check.latestCheckedAt)
-    .filter((value): value is string => Boolean(value))
-    .sort((left, right) => right.localeCompare(left))[0] ?? null;
+  return primaryHealthCheck(resource)?.latestCheckedAt ?? null;
 }
 
 export function latestErrors(resource: DashboardResource): string[] {
-  return activeHealthChecks(resource)
-    .filter((check) => check.latestStatus === "offline" && check.latestError)
-    .map((check) => check.latestError as string);
+  const check = primaryHealthCheck(resource);
+  return check?.latestStatus === "offline" && check.latestError ? [check.latestError] : [];
 }
 
 export function relativeTime(value: string | null | undefined): string {

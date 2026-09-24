@@ -16,7 +16,42 @@ export type AppEnv = {
   allowInsecureIntegrations: boolean;
   apiWidgetSecretAllowlist: string[];
   opnsense: OpnsenseEnvConfig;
+  google: GoogleEnvConfig;
+  todoist: TodoistEnvConfig;
+  tmdb: TmdbEnvConfig;
+  truenas: TrueNasEnvConfig;
   ai: AiEnvConfig;
+};
+
+export type GoogleEnvConfig = {
+  configured: boolean;
+  clientId: string | null;
+  clientSecret: string | null;
+  refreshToken: string | null;
+  calendarIds: string[];
+};
+
+export type TodoistEnvConfig = {
+  configured: boolean;
+  apiToken: string | null;
+};
+
+export type TmdbEnvConfig = {
+  configured: boolean;
+  bearerToken: string | null;
+};
+
+export type TrueNasEnvConfig = {
+  enabled: boolean;
+  configured: boolean;
+  name: string;
+  baseUrl: string | null;
+  username: string | null;
+  apiKey: string | null;
+  poolName: string | null;
+  datasetName: string | null;
+  tlsVerify: boolean;
+  pollIntervalSeconds: number;
 };
 
 export type OpnsenseEnvConfig = {
@@ -178,6 +213,51 @@ export function getAiEnv(): AiEnvConfig {
   };
 }
 
+export function getGoogleEnv(): GoogleEnvConfig {
+  const clientId = textEnv(process.env.GOOGLE_CLIENT_ID);
+  const clientSecret = textEnv(process.env.GOOGLE_CLIENT_SECRET);
+  const refreshToken = textEnv(process.env.GOOGLE_REFRESH_TOKEN);
+  return {
+    configured: Boolean(clientId && clientSecret && refreshToken),
+    clientId,
+    clientSecret,
+    refreshToken,
+    calendarIds: listEnv(process.env.GOOGLE_CALENDAR_IDS).length > 0
+      ? listEnv(process.env.GOOGLE_CALENDAR_IDS)
+      : ["primary"]
+  };
+}
+
+export function getTodoistEnv(): TodoistEnvConfig {
+  const apiToken = textEnv(process.env.TODOIST_API_TOKEN);
+  return { configured: Boolean(apiToken), apiToken };
+}
+
+export function getTmdbEnv(): TmdbEnvConfig {
+  const bearerToken = textEnv(process.env.TMDB_BEARER_TOKEN);
+  return { configured: Boolean(bearerToken), bearerToken };
+}
+
+export function getTrueNasEnv(): TrueNasEnvConfig {
+  const enabled = boolEnv(process.env.TRUENAS_ENABLED, false);
+  const baseUrl = normalizedBaseUrl(textEnv(process.env.TRUENAS_BASE_URL));
+  const username = textEnv(process.env.TRUENAS_USERNAME);
+  const apiKey = textEnv(process.env.TRUENAS_API_KEY);
+  const poolName = textEnv(process.env.TRUENAS_POOL);
+  return {
+    enabled,
+    configured: Boolean(enabled && baseUrl && username && apiKey && poolName),
+    name: textEnv(process.env.TRUENAS_NAME) ?? "TrueNAS",
+    baseUrl,
+    username,
+    apiKey,
+    poolName,
+    datasetName: textEnv(process.env.TRUENAS_MEDIA_DATASET),
+    tlsVerify: boolEnv(process.env.TRUENAS_TLS_VERIFY, true),
+    pollIntervalSeconds: intEnv(process.env.TRUENAS_POLL_INTERVAL_SECONDS, 60, 15, 86400)
+  };
+}
+
 export function getEnv(): Omit<AppEnv, "cookieSecret"> & {
   cookieSecret: string | null;
 } {
@@ -227,6 +307,10 @@ export function getEnv(): Omit<AppEnv, "cookieSecret"> & {
       .map((value) => value.trim())
       .filter((value) => /^[A-Z_][A-Z0-9_]*$/.test(value)),
     opnsense: getOpnsenseEnv(),
+    google: getGoogleEnv(),
+    todoist: getTodoistEnv(),
+    tmdb: getTmdbEnv(),
+    truenas: getTrueNasEnv(),
     ai: getAiEnv()
   };
 }

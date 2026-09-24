@@ -1,6 +1,6 @@
 # Homelab Dashboard
 
-A private, self-hosted command center for the services you run at home. It is a LAN/VPN app for launching hosted web services, monitoring lab health, and summarizing useful read-only signals without turning the project into a remote desktop manager.
+A private, self-hosted browser homepage and command center for your bookmarks, work, and home services. Home and Work organize everyday browsing and planning; Operations monitors lab health and useful read-only signals over LAN/VPN.
 
 ![Version](https://img.shields.io/badge/version-0.8.0-2dd4bf)
 ![License](https://img.shields.io/badge/license-MIT-blue)
@@ -9,8 +9,14 @@ A private, self-hosted command center for the services you run at home. It is a 
 
 ## Features
 
-- **Adaptive Dashboard** - device-local Launchpad and Operations presets: Launchpad prioritizes universal search, favorites, and grouped services; Operations keeps the monitoring command center, signal-only briefing, heartbeats, and detail drill-downs
-- **Launchpad utilities** - optional Open-Meteo weather and cached GitHub release summaries configured from Admin, plus an explicit web-search fallback with a selectable search provider
+- **Home, Work, and Operations** - shared personal/work layouts, Google-first search, favorites, bookmark collections, scratchpads, reading lists, prompt templates, and a browser-local focus timer; Operations retains the monitoring command center
+- **Personal context** - optional read-only Google Calendar agenda, Gmail unread Inbox count, and Todoist overdue/today links with isolated provider failures and stale-cache fallback
+- **Calendar dates** - the Launchpad uses the device’s local time for timed events, keeps all-day dates on their intended day, and includes ongoing multi-day events; mail and storage cards flag cached data when providers are unavailable
+- **Media and storage** - optional Plex recently-added, Radarr upcoming, TMDB discovery, and TrueNAS capacity/health modules; TrueNAS health also appears in Operations
+- **Browser home and bookmarks** - dedicated bookmark management, nested collections, browser HTML import with preview, HTML/JSON export, bulk moves, trash/restore, and cross-device conflict protection; see [Browser home](docs/BROWSER_HOME.md)
+- **Homepage utilities** - optional three-day Open-Meteo weather, cached releases, configurable widgets/backgrounds, and normal ChatGPT links using your existing account without new AI API usage
+- **Portable configuration** - validated ZIP export/restore with uploaded assets, safety-download confirmation, authentication exclusion, and disabled restored monitoring; see [Backups](docs/BACKUP_AND_RESTORE.md)
+- **Private HTTPS option** - pinned Caddy/Cloudflare DNS-01 deployment for LAN/VPN use without public app exposure; see [Private HTTPS](docs/PRIVATE_HTTPS.md)
 - **Heartbeat monitoring** - Uptime-Kuma-style heartbeat bars, uptime %, and latency on every card, plus a detail drawer with a latency sparkline, per-check errors, and threshold-gated stable status
 - **Host metrics** - optional Glances endpoints for CPU, RAM, disk, network, temperature, container counts, and recent 24-hour trends
 - **OPNsense integration** - optional read-only API polling for firewall status, system pressure, gateways, interfaces, traffic, firmware state, and service import suggestions
@@ -19,11 +25,11 @@ A private, self-hosted command center for the services you run at home. It is a 
 - **Private service icons** - fetched through a bounded same-origin proxy from the [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) catalog or approved service favicon, with letter-avatar fallback
 - **Command palette** - `⌘K` (or `/`) to search and launch any service or action from anywhere
 - **Services** - manual catalog for apps, websites, Docker services, VMs, servers, and other devices, with common homelab templates, duplicate actions, and confirmed OPNsense imports
-- **Health checks** - HTTP, TCP, ping, and SSL checks with latest status, latency, failure reason, thresholds, and check history
+- **Health checks** - one primary HTTP, TCP, ping, or SSL availability check per service, optional non-disruptive diagnostics, in-container testing, latency, failure reasons, thresholds, and history
 - **Admin** - password change, Launchpad search/weather/release settings, Glances host monitors, OPNsense integration status, AI briefing runtime state, API widgets, runtime health diagnostics, public status page, build info, and demo-data controls
 - **Optional status page** - disabled by default, with aggregate-only or service-detail modes when deliberately enabled
 
-Remote SSH/RDP/VNC access, Guacamole, saved credentials, vaults, alert channels, incidents, script/plugin widgets, backup/restore, tags, notes, AI control agents, and mutating integration actions are intentionally out of the current app scope.
+Remote SSH/RDP/VNC access, Guacamole, saved credentials, vaults, alert channels, incidents, script/plugin widgets, scheduled backups or full-database restore through the UI, tags, AI control agents, and mutating integration actions are intentionally out of the current app scope.
 
 ---
 
@@ -76,6 +82,16 @@ using real integration credentials. Backups follow the external
 | `OPNSENSE_API_SECRET` | No | OPNsense API secret; stored only in environment |
 | `OPNSENSE_TLS_VERIFY` | No | Defaults true; install a private CA with `NODE_EXTRA_CA_CERTS` |
 | `OPNSENSE_POLL_INTERVAL_SECONDS` | No | OPNsense polling interval, 15-86400 seconds; default `60` |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` | No | Manually provisioned Google OAuth credentials for Calendar events and Gmail label counts; environment-only |
+| `GOOGLE_CALENDAR_IDS` | No | Comma-separated calendar IDs; default `primary` |
+| `TODOIST_API_TOKEN` | No | Todoist personal API token; environment-only |
+| `TMDB_BEARER_TOKEN` | No | TMDB API read access token; environment-only |
+| `TRUENAS_ENABLED` | No | Set to `true` to enable TrueNAS SCALE 25.04+ read-only polling |
+| `TRUENAS_BASE_URL`, `TRUENAS_USERNAME`, `TRUENAS_API_KEY` | When TrueNAS is enabled | Credentialed HTTPS origin and read-only JSON-RPC service account |
+| `TRUENAS_POOL` | When TrueNAS is enabled | Pool used for operational health |
+| `TRUENAS_MEDIA_DATASET` | No | Preferred dataset for Launchpad capacity; pool capacity is used when omitted |
+| `TRUENAS_TLS_VERIFY` | No | Defaults true; TrueNAS requires HTTPS/WSS and a trusted certificate |
+| `TRUENAS_POLL_INTERVAL_SECONDS` | No | Polling interval, 15-86400 seconds; default `60` |
 | `AI_ENABLED` | No | Set to `true` to enable the authenticated AI Command Briefing |
 | `AI_PROVIDER_NAME` | No | Display name for the provider; default `AI` |
 | `AI_BASE_URL` | No | OpenAI-compatible API root; default `https://api.openai.com/v1` |
@@ -84,7 +100,7 @@ using real integration credentials. Backups follow the external
 | `AI_TLS_VERIFY` | No | Defaults true; install a private CA with `NODE_EXTRA_CA_CERTS` |
 | `AI_BRIEFING_INTERVAL_SECONDS` | No | AI briefing cache refresh interval, 300-86400 seconds; default `21600` |
 | `AI_INCLUDE_TARGETS` | No | Set to `true` to include service URLs, hosts, and check targets in AI evidence; default redacts them |
-| API widget secret vars | No | Optional env vars referenced by widget config, such as `HOME_ASSISTANT_TOKEN` or `SONARR_API_KEY` |
+| API widget secret vars | No | Optional env vars referenced by widget config, such as `HOME_ASSISTANT_TOKEN`, `PLEX_TOKEN`, or `RADARR_API_KEY` |
 | `API_WIDGET_SECRET_ALLOWLIST` | No | Comma-separated custom widget secret names. Built-in template secret names are allowed automatically |
 
 Direct internet exposure is unsupported. Keep administration behind the LAN/VPN boundary.
@@ -103,15 +119,42 @@ The dashboard expects unauthenticated LAN/VPN Glances endpoints in v1 and does n
 
 Create an OPNsense API key for a least-privileged user with read access to diagnostics, interfaces, routing/gateways, and firmware status. Then set the `OPNSENSE_*` environment variables and restart the dashboard. The integration is read-only in v1: it polls allowlisted API endpoints, stores normalized snapshots/history, shows built-in OPNsense cards, and can suggest service catalog imports that still require admin confirmation.
 
+### Optional Daily Cockpit
+
+Set the relevant environment variables, restart, and then enable modules in **Admin > Personal context**. Google access is manually provisioned—there is no in-app OAuth or token vault. Calendar requests use `calendar.events.readonly`; Gmail reads only the Inbox label count and never fetches subjects, senders, snippets, or bodies. Todoist returns at most six overdue/today tasks and only links to the service.
+
+For media, add a Plex API widget using the built-in Plex template and `PLEX_TOKEN`, and optionally a Radarr widget using `RADARR_API_KEY`; select those widgets in the daily cockpit settings. TMDB supplies upcoming/trending discovery for the configured region and language. Each provider is cached independently, and provider failure does not block `/api/dashboard` or service launch.
+
+For storage, configure a least-privileged TrueNAS SCALE 25.04+ service account with `pool.query` and `pool.dataset.query` access. The dashboard uses bounded WSS JSON-RPC, retains 1,440 normalized samples, warns at 80%, marks 90% critical, and never exposes the API key. Only TrueNAS operational samples are persisted; calendar, tasks, mail, and media results stay in memory.
+
+### Service Health Monitoring
+
+Each automatically monitored service has one **Primary** check that controls its badge, uptime,
+heartbeat, latency, Daily Briefing entry, and public status. Additional **Diagnostic** checks retain
+their own results but cannot mark the service offline. Promote a different enabled check from
+**Services > Checks**; disabling or deleting the primary intentionally leaves the service Unknown.
+
+A saved service URL creates a managed HTTP check using its exact scheme, port, path, and query.
+Host-only services require an explicit TCP port or an explicit Ping choice—ICMP is never assumed.
+Use **Test from dashboard** to test DNS, outbound policy, transport, TLS, and response handling from
+inside the deployed container before saving a check. HTTP redirects and authentication responses
+below 500 count as reachable; 5xx responses and connection failures do not.
+
+TLS verification is always strict for health checks. For private/self-signed web interfaces such as
+OPNsense, either install the private CA with `NODE_EXTRA_CA_CERTS` or use a primary TCP check for the
+HTTPS port and keep certificate inspection diagnostic. **Services > Needs review** identifies
+existing Ping primaries and automatic services without an enabled primary; it never changes them
+without administrator action.
+
 ### Optional AI Command Briefing
 
-Set `AI_ENABLED=true`, `AI_MODEL`, and optionally `AI_API_KEY`/`AI_BASE_URL` for any OpenAI-compatible cloud or local endpoint. The briefing receives sanitized dashboard evidence from services, health checks, Daily Briefing, host monitors, OPNsense snapshots, and API widgets, then caches the latest summary in `SystemConfig`.
+Set `AI_ENABLED=true`, `AI_MODEL`, and optionally `AI_API_KEY`/`AI_BASE_URL` for any OpenAI-compatible cloud or local endpoint. The briefing receives sanitized dashboard evidence from services, health checks, Daily Briefing, host monitors, OPNsense snapshots, and API widgets, then caches the latest summary in `SystemConfig`. Personal context, media data, and TrueNAS storage snapshots are deliberately excluded from AI evidence.
 
 By default, service URLs, hosts, IP addresses, and check targets are redacted before they are sent to the provider. Set `AI_INCLUDE_TARGETS=true` only if you want the model to see those details. The AI feature is authenticated admin-only, is not exposed on `/status`, and can only summarize or suggest read-only next checks.
 
 ### Optional API Widgets
 
-API widgets are configured in **Admin > API widgets**. Widgets only perform read-only JSON requests, and secrets are read from environment variables by name instead of being stored in SQLite. Each credential is bound to its confirmed normalized origin in non-secret `SystemConfig` metadata, and changing that origin requires recent password confirmation. Only names used by built-in templates or explicitly listed in `API_WIDGET_SECRET_ALLOWLIST` can be attached to requests. Built-in templates currently cover Home Assistant, Proxmox VE, Portainer, AdGuard Home, Pi-hole v6, Jellyfin, Grafana, Prometheus, Sonarr, and Radarr.
+API widgets are configured in **Admin > API widgets**. Widgets only perform read-only JSON requests, and secrets are read from environment variables by name instead of being stored in SQLite. Each credential is bound to its confirmed normalized origin in non-secret `SystemConfig` metadata, and changing that origin requires recent password confirmation. Only names used by built-in templates or explicitly listed in `API_WIDGET_SECRET_ALLOWLIST` can be attached to requests. Built-in templates currently cover Home Assistant, Proxmox VE, Portainer, AdGuard Home, Pi-hole v6, Jellyfin, Grafana, Prometheus, Sonarr, Radarr, and Plex.
 
 ### Optional Launchpad Utilities
 

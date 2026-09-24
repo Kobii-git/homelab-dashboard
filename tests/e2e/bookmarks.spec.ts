@@ -1,0 +1,115 @@
+import { enableHomeWidgets } from "./homepage-fixtures";
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test } from "@playwright/test";
+
+test("bookmarks save without checks, survive reload, filter, and work with keyboard search", async ({ page }, testInfo) => {
+  const bookmarkName = `Reading shelf ${testInfo.project.name}`;
+  await page.goto("/");
+  await page.getByLabel("Username").fill("admin");
+  await page.getByLabel("Password").fill("e2e-admin-password");
+  await page.getByRole("button", { name: "Unlock" }).click();
+  const library = page.getByRole("region", { name: "Bookmarks" });
+  await library.getByRole("button", { name: "Add bookmark" }).click();
+  const form = page.getByRole("form", { name: "New bookmark" });
+  await expect(form.getByLabel("Name", { exact: true })).toBeFocused();
+  await form.getByLabel("Name", { exact: true }).fill(bookmarkName);
+  await form.getByLabel("Website address").fill("https://example.com/reading");
+  await form.getByLabel("Collection").selectOption({ label: "Unfiled" });
+  await form.getByRole("button", { name: "Save bookmark" }).click();
+  const reauth = page.getByRole("dialog", { name: "Confirm it’s you" });
+  await reauth.getByLabel(/administrator password/i).fill("e2e-admin-password");
+  await reauth.getByRole("button", { name: "Confirm", exact: true }).click();
+  await expect(library.getByRole("link", { name: new RegExp(bookmarkName) })).toHaveAttribute("href", "https://example.com/reading");
+  await expect(library.getByRole("button", { name: "Add bookmark" })).toBeFocused();
+  const response = await page.request.get("/api/resources");
+  const saved = (await response.json()).find((item: { name: string }) => item.name === bookmarkName);
+  expect(saved.monitoringMode).toBe("disabled");
+  expect(saved.kind).toBe("website");
+  const checks = await (await page.request.get("/api/health-checks")).json();
+  expect(checks.filter((item: { resourceId: string }) => item.resourceId === saved.id)).toEqual([]);
+  await page.reload();
+  await expect(library.getByRole("link", { name: new RegExp(bookmarkName) })).toBeVisible();
+  await expect(page.locator(".launchpad-services").getByText(bookmarkName, { exact: true })).toHaveCount(0);
+  await library.getByLabel("Collection", { exact: true }).selectOption({ label: "Unfiled" });
+  await library.getByLabel("Filter bookmarks").fill("missing");
+  await expect(library.getByRole("status")).toContainText("No matching bookmarks");
+  await library.getByLabel("Filter bookmarks").fill("Reading");
+  await expect(library.getByRole("link", { name: new RegExp(bookmarkName) })).toBeVisible();
+  await library.getByRole("button", { name: `Unpin ${bookmarkName}` }).click();
+  await expect(library.getByRole("button", { name: `Pin ${bookmarkName}` })).toHaveAttribute("aria-pressed", "false");
+  await page.getByRole("button", { name: "My bookmarks", exact: true }).click();
+  const search = page.getByRole("combobox", { name: "Search my bookmarks" });
+  await search.fill(bookmarkName);
+  await expect(search).toHaveAttribute("aria-expanded", "true");
+  await expect(search).not.toHaveAttribute("aria-activedescendant");
+  await expect(page.getByRole("listbox", { name: "Saved bookmark suggestions" }).getByRole("option").first()).toContainText(bookmarkName);
+  await search.press("ArrowDown");
+  await expect(search).toHaveAttribute("aria-activedescendant", "hp-result-0");
+  await search.press("Escape");
+  await expect(search).toHaveAttribute("aria-expanded", "false");
+  await library.getByRole("button", { name: "Add bookmark" }).click();
+  await form.getByLabel("Name", { exact: true }).press("Escape");
+  await expect(library.getByRole("button", { name: "Add bookmark" })).toBeFocused();
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? ""))).toEqual([]);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await library.getByRole("button", { name: `Edit bookmark ${bookmarkName}` }).click();
+  await expect(page.getByRole("heading", { name: "Edit bookmark" })).toBeVisible();
+});
+
+test("bookmark save errors preserve the draft and announce the failure", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Username").fill("admin");
+  await page.getByLabel("Password").fill("e2e-admin-password");
+  await page.getByRole("button", { name: "Unlock" }).click();
+  await page.route("**/api/homepage/bookmarks", (route) => route.request().method() === "POST"
+    ? route.fulfill({ status: 500, json: { error: "Could not save bookmark" } }) : route.continue());
+  await page.getByRole("button", { name: "Add bookmark" }).click();
+  const form = page.getByRole("form", { name: "New bookmark" });
+  await form.getByLabel("Name", { exact: true }).fill("Keep this draft");
+  await form.getByLabel("Website address").fill("https://example.com");
+  await form.getByRole("button", { name: "Save bookmark" }).click();
+  await expect(form.getByRole("alert")).toContainText("Could not save bookmark");
+  await expect(form.getByLabel("Name", { exact: true })).toHaveValue("Keep this draft");
+});
+
+for (const unavailable of [false, true]) {
+  test(`weather ${unavailable ? "failure" : "card"} remains visible on an empty home`, async ({ page }) => {
+    await enableHomeWidgets(page, ["weather"]);
+    await page.route("**/api/settings", (route) => route.fulfill({ json: {
+      autoPingIntervalSeconds: 60,
+      dashboardUtilities: { searchEngine: "duckduckgo", weather: { enabled: true, units: "metric", location: { name: "Example City" } }, releases: { enabled: false, repositories: [] } },
+      dashboardHome: { agendaEnabled: false, tasksEnabled: false, mailEnabled: false, mediaEnabled: false, storageEnabled: false }
+    } }));
+    await page.route("**/api/dashboard", async (route) => {
+      const data = await (await route.fetch()).json();
+      await route.fulfill({ json: { ...data, groups: [], ungroupedResources: [] } });
+    });
+    await page.route("**/api/utilities/summary", (route) => route.fulfill(unavailable
+      ? { status: 503, json: { error: "Weather provider unavailable" } }
+      : { json: { weather: { state: "ready", data: { units: "metric", temperature: 22, apparentTemperature: 21, weatherCode: 0, isDay: true, condition: "Clear", location: { name: "Example City" } }, stale: false } } }));
+    await page.goto("/");
+    await page.getByLabel("Username").fill("admin");
+    await page.getByLabel("Password").fill("e2e-admin-password");
+    await page.getByRole("button", { name: "Unlock" }).click();
+    const today = page.getByRole("region", { name: "Weather", exact: true });
+    await expect(today.getByText(unavailable ? /Weather unavailable/ : "22°C").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add bookmark", exact: true })).toBeVisible();
+    if (!unavailable) {
+      const grid = await page.getByRole("region", { name: "Weather", exact: true }).boundingBox();
+      const card = await page.locator(".compact-weather-card").boundingBox();
+      expect(grid && card && card.width <= grid.width).toBe(true);
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: "Add bookmark", exact: true }).click();
+    await expect(page.getByRole("form", { name: "New bookmark" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await page.getByRole("form", { name: "New bookmark" }).getByRole("button", { name: "Cancel" }).click();
+    await page.getByRole("button", { name: /Switch to light mode|Light mode/ }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await expect(page.getByRole("heading", { name: "Favorites", exact: true })).toHaveCSS("color", "rgb(21, 32, 38)");
+    const results = await new AxeBuilder({ page }).analyze();
+    expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? ""))).toEqual([]);
+  });
+}

@@ -46,6 +46,12 @@ Credentialed integrations require HTTPS and certificate verification. The emerge
 `ALLOW_INSECURE_INTEGRATIONS=true` override is reported as a critical Runtime Health warning
 and is not acceptable for launch.
 
+Google, Todoist, TMDB, Plex, Radarr, and TrueNAS credentials belong only in the operator-owned
+environment. Use a Google refresh token limited to Calendar events and Gmail labels, a read-only
+TMDB token, and least-privileged service accounts for media/storage systems. TrueNAS requires WSS;
+grant only the permissions needed for `pool.query` and `pool.dataset.query`. Do not place API keys
+in SQLite, screenshots, logs, Compose files committed to Git, or the custom widget field mappings.
+
 For a private CA, mount its PEM bundle into the container with a Compose override and set
 `NODE_EXTRA_CA_CERTS` to that in-container path. The base Compose file passes the variable
 through but does not assume an operator-specific certificate location.
@@ -80,6 +86,7 @@ authenticated ZAP baselines.
 - Public status is disabled unless deliberately approved.
 - Monitoring CIDRs and any exact public hosts are minimal and correct.
 - All private CAs are trusted; insecure integration overrides are off.
+- Personal-context and media modules show only expected safe fields; TrueNAS uses a read-only role.
 - Forgejo Git uses SSH and the registry passes its HTTPS `/v2/` preflight.
 - The Forgejo workflow is green and the Cosign signature verifies by digest.
 - npm audit and the final Trivy image scan report zero vulnerabilities at the configured gate.

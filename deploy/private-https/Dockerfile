@@ -1,0 +1,7 @@
+FROM caddy:2.11.4-builder-alpine@sha256:2b9f32cbba6045e79212bb253f595588d20be8f7d1edf61582c519e124e0d2d8 AS builder
+RUN xcaddy build v2.11.4 --with github.com/caddy-dns/cloudflare@a8737d095ad5a48ca031cea6ab704057dbc2d250
+
+FROM caddy:2.11.4-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+RUN setcap -r /usr/bin/caddy && mkdir -p /data /config && chown -R 1000:1000 /data /config
+USER 1000:1000

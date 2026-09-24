@@ -10,6 +10,7 @@ export type JsonRequestOptions = {
   method?: "GET" | "POST" | "DELETE";
   headers?: Record<string, string>;
   body?: unknown;
+  form?: URLSearchParams;
   timeoutMs: number;
   maxBytes: number;
   tlsVerify?: boolean;
@@ -38,7 +39,11 @@ async function performBoundedJsonRequest(target: URL, options: JsonRequestOption
     fixedProvider: options.fixedProvider
   });
 
-  const body = options.body === undefined ? null : JSON.stringify(options.body);
+  if (options.body !== undefined && options.form !== undefined) {
+    throw new Error(`${options.label} request cannot include both JSON and form data`);
+  }
+  const body = options.form?.toString() ?? (options.body === undefined ? null : JSON.stringify(options.body));
+  const contentType = options.form ? "application/x-www-form-urlencoded" : "application/json";
   const transport = target.protocol === "https:" ? https : http;
 
   return new Promise((resolve, reject) => {
@@ -62,7 +67,7 @@ async function performBoundedJsonRequest(target: URL, options: JsonRequestOption
         method: options.method ?? "GET",
         headers: {
           Accept: "application/json",
-          ...(body ? { "Content-Type": "application/json", "Content-Length": String(Buffer.byteLength(body)) } : {}),
+          ...(body ? { "Content-Type": contentType, "Content-Length": String(Buffer.byteLength(body)) } : {}),
           ...(options.headers ?? {})
         },
         rejectUnauthorized: options.tlsVerify ?? true,

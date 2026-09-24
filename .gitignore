@@ -13,4 +13,5 @@ blob-report/
 security-artifacts/
 backups/
 .claude/
+.ai/local/
 .gh-bin/

@@ -1,0 +1,56 @@
+# Deployment and release topology
+
+## Supported runtime
+
+The supported production shape is the prebuilt Docker image run by `docker-compose.yml`, bound to
+loopback on port 4173 and reached through an existing HTTPS reverse proxy. The application does not
+terminate production TLS. Local development runs Fastify on 4173 and Vite on 5173.
+
+The runtime image:
+
+- uses the pinned Node 22 Alpine base;
+- runs as the unprivileged `node` user;
+- writes durable SQLite state only to `/data`;
+- supports a read-only root filesystem and bounded `/tmp` tmpfs;
+- drops Linux capabilities and enables `no-new-privileges` in Compose;
+- exposes an HTTP liveness health check at `/api/health`;
+- applies the Prisma schema before starting the compiled server.
+
+`.dockerignore` must continue excluding Git metadata, dependencies/build output, databases,
+environment files, reports, backups, logs, and private tooling context from the build context.
+
+## Configuration and secrets
+
+`.env.example` owns safe variable names/placeholders. `src/server/env.ts` owns parsing and production
+startup requirements. `docker-compose.yml` owns the deployed environment mapping and hardening.
+`docs/SECURE_DEPLOYMENT.md` owns the operator launch checklist, reverse-proxy requirements, private
+CA guidance, and image-trust procedure.
+
+Configuration changes must be reconciled across those sources. Never bake secret values or a real
+network boundary into an image, Compose file, example, or AI document.
+
+## Upgrade, rollback, and recovery
+
+The named volume survives image/container replacement. Operators must create and verify a backup
+before schema-affecting upgrades. Runtime `db push` has no down-migration path; image rollback may
+not roll data back. Follow `docs/BACKUP_AND_RESTORE.md` for recovery and rehearse only on disposable
+data unless a real maintenance operation is separately authorized.
+
+Liveness proves the HTTP process responds; it does not prove every configured integration or
+scheduler is healthy. Authenticated Runtime Health provides the richer operational view.
+
+## CI, publication, and channels
+
+`.forgejo/workflows/docker.yml` is the canonical private publication workflow; the GitHub workflow
+is a compatibility mirror. The stable and beta branches map to their documented image channels.
+Both workflows validate, scan, build, smoke-test, generate SBOM/provenance, scan the pushed digest,
+and sign/verify it before success.
+
+Privileged actions and scanner images are pinned to immutable revisions/digests. Publishing requires
+repository variables/secrets and a trusted TLS registry. Workflow permission separation and mirror
+drift remain tracked risks. Local implementation work must not push images, sign releases, create
+tags, or deploy without explicit separate authorization.
+
+The optional standalone `deploy/private-https/compose.yaml` supplies a pinned Caddy DNS-01 proxy.
+It binds HTTPS to an explicitly configured private host address, publishes no app port, and keeps the
+DNS token proxy-only. `docs/PRIVATE_HTTPS.md` owns this alternative deployment and renewal procedure.

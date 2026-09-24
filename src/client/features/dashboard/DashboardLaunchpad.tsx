@@ -1,12 +1,19 @@
 import {
   AlertTriangle,
+  Bookmark,
+  Settings2,
+  CalendarDays,
+  CheckCircle2,
   Cloud,
   CloudLightning,
   CloudRain,
   CloudSun,
   ExternalLink,
+  Film,
   Github,
   Globe2,
+  HardDrive,
+  Inbox,
   Plus,
   Search,
   Server,
@@ -16,14 +23,18 @@ import {
 import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import type {
   DashboardResource,
+  DashboardHomeConfigDto,
+  DashboardHomeSummaryDto,
   DashboardUtilitiesConfigDto,
   DashboardUtilitiesSummaryDto,
   ReleaseItemDto,
   WeatherSummaryDto
 } from "../../../shared/types";
 import { ServiceIcon } from "../../components/ServiceIcon";
+import { isBookmark } from "../../lib/bookmarks";
 import { apiGet } from "../../lib/api";
-import { greetingFor, relativeTime, statusFor } from "../../lib/format";
+import { calendarEventsOnDay, calendarEventStart, upcomingCalendarEvents } from "../../lib/calendar";
+import { formatBytes, greetingFor, relativeTime, statusFor } from "../../lib/format";
 import { serviceTemplates } from "../../lib/serviceCatalog";
 
 export type DashboardMode = "launchpad" | "operations";
@@ -113,14 +124,19 @@ function UniversalSearch({
   }
 
   return (
-    <div className="universal-search">
+    <div className="universal-search" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
       <label className="universal-search-field">
         <Search size={20} />
         <input
           value={query}
-          placeholder="Open a service or search the web…"
+          placeholder="Search your bookmarks, services, or the web…"
           aria-label="Open a service or search the web"
           autoComplete="off"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={open && Boolean(query.trim())}
+          aria-controls={open && query.trim() ? "home-search-results" : undefined}
+          aria-activedescendant={open && query.trim() ? `home-search-result-${active}` : undefined}
           onFocus={() => setOpen(true)}
           onChange={(event) => {
             setQuery(event.target.value);
@@ -132,10 +148,11 @@ function UniversalSearch({
       </label>
 
       {open && query.trim() ? (
-        <div className="universal-search-results" role="listbox" aria-label="Launchpad search results">
+        <div id="home-search-results" className="universal-search-results" role="listbox" aria-label="Launchpad search results">
           {matches.map((resource, index) => (
             <button
               key={resource.id}
+              id={`home-search-result-${index}`}
               className={active === index ? "active" : ""}
               type="button"
               role="option"
@@ -149,10 +166,11 @@ function UniversalSearch({
                 <strong>{resource.name}</strong>
                 <small>{resource.description ?? resource.url ?? resource.host ?? resource.kind}</small>
               </span>
-              <i className={`svc-dot dot-${statusFor(resource)}`} aria-label={statusFor(resource)} />
+              {isBookmark(resource) ? <Bookmark size={14} aria-label="Bookmark" /> : <i className={`svc-dot dot-${statusFor(resource)}`} aria-label={statusFor(resource)} />}
             </button>
           ))}
           <button
+            id={`home-search-result-${matches.length}`}
             className={`universal-web-result ${active === matches.length ? "active" : ""}`}
             type="button"
             role="option"
@@ -183,30 +201,7 @@ function WeatherIcon({ data }: { data: WeatherSummaryDto }) {
   return <Cloud size={22} />;
 }
 
-function WeatherCard({ data, stale, error }: { data: WeatherSummaryDto; stale: boolean; error: string | null }) {
-  const degree = data.units === "metric" ? "°C" : "°F";
-  return (
-    <article className="launchpad-utility-card weather-card">
-      <header>
-        <span className="utility-card-icon"><WeatherIcon data={data} /></span>
-        <span><strong>{data.location.name}</strong><small>{data.condition}</small></span>
-        <b>{Math.round(data.temperature)}{degree}</b>
-      </header>
-      <div className="weather-days">
-        {data.days.map((day, index) => (
-          <span key={day.date}>
-            <small>{index === 0 ? "Today" : new Date(`${day.date}T12:00:00`).toLocaleDateString([], { weekday: "short" })}</small>
-            <strong>{Math.round(day.high)}° <i>{Math.round(day.low)}°</i></strong>
-            <small>{day.precipitationChance == null ? day.condition : `${Math.round(day.precipitationChance)}% rain`}</small>
-          </span>
-        ))}
-      </div>
-      {(stale || error) ? <p className="utility-note">{error ?? "Showing cached weather."}</p> : null}
-    </article>
-  );
-}
-
-function ReleasesCard({ releases, stale, error }: { releases: ReleaseItemDto[]; stale: boolean; error: string | null }) {
+export function ReleasesCard({ releases, stale, error }: { releases: ReleaseItemDto[]; stale: boolean; error: string | null }) {
   return (
     <article className="launchpad-utility-card releases-card">
       <header>
@@ -222,6 +217,181 @@ function ReleasesCard({ releases, stale, error }: { releases: ReleaseItemDto[]; 
         ))}
       </div>
       {(stale || error) ? <p className="utility-note">{error ?? "Showing cached release data."}</p> : null}
+    </article>
+  );
+}
+
+function ResultNotice({ label, error }: { label: string; error: string | null }) {
+  return (
+    <article className="home-module home-module-message" role="status">
+      <AlertTriangle size={18} />
+      <span><strong>{label}</strong><small>{error ?? "Not configured yet."}</small></span>
+    </article>
+  );
+}
+
+const googleEventColors = ["#7986cb", "#33b679", "#8e24aa", "#e67c73", "#f6c026", "#f5511d", "#039be5", "#616161", "#3f51b5", "#0b8043", "#d60000"];
+
+function calendarColor(colorId: string | null): string {
+  const index = colorId ? Number(colorId) - 1 : -1;
+  return Number.isInteger(index) && index >= 0 && index < googleEventColors.length ? googleEventColors[index] : "var(--accent)";
+}
+
+export function CalendarCard({ summary, now }: { summary: DashboardHomeSummaryDto["agenda"]; now: Date }) {
+  if (summary.state !== "ready" || !summary.data) return <ResultNotice label="Calendar unavailable" error={summary.error} />;
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const days = new Date(year, month + 1, 0).getDate();
+  const events = summary.data.events;
+  const agenda = upcomingCalendarEvents(events, now).slice(0, 5);
+  return (
+    <article className="home-module home-calendar-card">
+      <header className="home-module-header">
+        <span><CalendarDays size={18} /><strong>{now.toLocaleDateString([], { month: "long", year: "numeric" })}</strong></span>
+        {summary.stale ? <small>Cached</small> : <small>{agenda.length} next</small>}
+      </header>
+      <div className="compact-calendar" aria-label={`Calendar for ${now.toLocaleDateString([], { month: "long", year: "numeric" })}`}>
+        {Array.from({ length: 7 }, (_, index) => <small key={index}>{["S", "M", "T", "W", "T", "F", "S"][index]}</small>)}
+        {Array.from({ length: firstWeekday }, (_, index) => <span key={`blank-${index}`} />)}
+        {Array.from({ length: days }, (_, index) => {
+          const day = index + 1;
+          const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+          const date = new Date(year, month, day);
+          const dayEvents = calendarEventsOnDay(events, date);
+          const today = day === now.getDate();
+          const label = `${date.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}${dayEvents.length ? ` · ${dayEvents.length} event${dayEvents.length === 1 ? "" : "s"}` : ""}`;
+          return <time key={key} dateTime={key} className={today ? "today" : ""} aria-current={today ? "date" : undefined} aria-label={label}>{day}{dayEvents.length ? <i aria-hidden="true" style={{ background: calendarColor(dayEvents[0].color) }} /> : null}</time>;
+        })}
+      </div>
+      <div className="agenda-list">
+        {agenda.length === 0 ? <p className="home-empty">Nothing else on the calendar.</p> : agenda.map((event) => {
+          const start = calendarEventStart(event);
+          const content = <><time dateTime={event.start} style={{ color: calendarColor(event.color) }}>{event.allDay ? "All day" : start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time><span><strong>{event.title}</strong><small>{start.toLocaleDateString([], { weekday: "short", day: "numeric" })} · {event.calendarName}</small></span></>;
+          const key = `${event.calendarName}:${event.id}`;
+          return event.url ? <a tabIndex={0} key={key} href={event.url} target="_blank" rel="noreferrer">{content}</a> : <div key={key}>{content}</div>;
+        })}
+      </div>
+      {summary.error ? <p className="utility-note">{summary.error}</p> : null}
+    </article>
+  );
+}
+
+export function TasksCard({ summary }: { summary: DashboardHomeSummaryDto["tasks"] }) {
+  if (summary.state !== "ready" || !summary.data) return <ResultNotice label="Todoist unavailable" error={summary.error} />;
+  return (
+    <article className="home-module home-tasks-card">
+      <header className="home-module-header">
+        <span><CheckCircle2 size={18} /><strong>Today</strong></span>
+        <a href="https://app.todoist.com/app/today" target="_blank" rel="noreferrer">Todoist <ExternalLink size={12} /></a>
+      </header>
+      <div className="home-task-list">
+        {summary.data.length === 0 ? <p className="home-empty">You’re clear for today.</p> : summary.data.map((task) => (
+          <a key={task.id} href={task.url} target="_blank" rel="noreferrer">
+            <i className={`task-priority p${task.priority}`} />
+            <span><strong>{task.content}</strong><small>{task.overdue ? "Overdue" : task.dueAt ? new Date(task.dueAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Today"}{task.projectName ? ` · ${task.projectName}` : ""}</small></span>
+            <ExternalLink size={12} />
+          </a>
+        ))}
+      </div>
+      {(summary.stale || summary.error) ? <p className="utility-note">{summary.error ?? "Showing cached tasks."}</p> : null}
+    </article>
+  );
+}
+
+export function MailCard({ summary }: { summary: DashboardHomeSummaryDto["mail"] }) {
+  if (summary.state !== "ready" || !summary.data) return <ResultNotice label="Gmail unavailable" error={summary.error} />;
+  return (
+    <article className="home-module home-mail-card">
+      <span className="mail-icon"><Inbox size={19} /></span>
+      <span><strong>{summary.data.inboxUnread}</strong><small>unread in Inbox</small></span>
+      <div><a href={summary.data.inboxUrl} target="_blank" rel="noreferrer">Inbox</a><a href={summary.data.composeUrl} target="_blank" rel="noreferrer">Compose</a></div>
+      {(summary.stale || summary.error) ? <p className="utility-note" role="status">{summary.stale ? "Showing cached mail count." : ""}{summary.error ? ` ${summary.error}` : ""}</p> : null}
+    </article>
+  );
+}
+
+export function CompactWeatherCard({ data, stale }: { data: WeatherSummaryDto; stale: boolean }) {
+  const degree = data.units === "metric" ? "°C" : "°F";
+  return (
+    <article className="home-module compact-weather-card">
+      <span className="utility-card-icon"><WeatherIcon data={data} /></span>
+      <span><strong>{Math.round(data.temperature)}{degree}</strong><small>{data.condition} · {data.location.name}</small></span>
+      <small>{stale ? "Cached forecast" : `Feels ${Math.round(data.apparentTemperature ?? data.temperature)}°`}</small>
+      <div className="hp-forecast">{(data.days ?? []).slice(0,3).map(day => <div key={day.date}><strong>{new Date(`${day.date}T12:00:00`).toLocaleDateString([], { weekday: "short" })}</strong><span>{day.condition}</span><small>{Math.round(day.high)}° / {Math.round(day.low)}°</small>{day.precipitationChance !== null && <small>{day.precipitationChance}% rain</small>}</div>)}</div>
+    </article>
+  );
+}
+
+type MediaTab = "recentlyAdded" | "upcoming" | "trending";
+
+export function MediaCard({ summary }: { summary: DashboardHomeSummaryDto["media"] }) {
+  const [tab, setTab] = useState<MediaTab>("recentlyAdded");
+  if (summary.state !== "ready" || !summary.data) return <ResultNotice label="Media unavailable" error={summary.error} />;
+  const items = summary.data[tab];
+  const labels: Record<MediaTab, string> = { recentlyAdded: "Recently added", upcoming: "Upcoming", trending: "Trending" };
+  const tabs = Object.keys(labels) as MediaTab[];
+
+  function moveTab(event: KeyboardEvent<HTMLButtonElement>, current: MediaTab) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const currentIndex = tabs.indexOf(current);
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? tabs.length - 1
+        : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    const next = tabs[nextIndex];
+    setTab(next);
+    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("[role=tab]")[nextIndex]?.focus();
+  }
+
+  return (
+    <article className="home-module home-media-card">
+      <header className="home-module-header media-header">
+        <span><Film size={18} /><strong>Media</strong></span>
+        <div className="media-tabs" role="tablist" aria-label="Movie shelf">
+          {tabs.map((key) => (
+            <button
+              key={key}
+              id={`media-tab-${key}`}
+              type="button"
+              role="tab"
+              aria-controls="media-tabpanel"
+              aria-selected={tab === key}
+              tabIndex={tab === key ? 0 : -1}
+              className={tab === key ? "active" : ""}
+              onClick={() => setTab(key)}
+              onKeyDown={(event) => moveTab(event, key)}
+            >
+              {labels[key]}
+            </button>
+          ))}
+        </div>
+      </header>
+      <div id="media-tabpanel" className="poster-shelf" role="tabpanel" aria-labelledby={`media-tab-${tab}`}>
+        {items.length === 0 ? <p className="home-empty">No movies to show from this source.</p> : items.map((item) => {
+          const content = <><span className="poster-art">{item.posterUrl ? <img src={item.posterUrl} alt={`${item.title} poster`} loading="lazy" /> : <Film size={26} />}</span><strong>{item.title}</strong><small>{item.releaseDate ? new Date(`${item.releaseDate.slice(0, 10)}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" }) : item.year ?? item.source}</small></>;
+          return item.externalUrl ? <a key={item.id} href={item.externalUrl} target="_blank" rel="noreferrer">{content}</a> : <div key={item.id}>{content}</div>;
+        })}
+      </div>
+      {(summary.stale || summary.error) ? <p className="utility-note">{summary.error ?? "Showing cached media."}</p> : null}
+    </article>
+  );
+}
+
+export function StorageCard({ summary }: { summary: DashboardHomeSummaryDto["storage"] }) {
+  if (summary.state !== "ready" || !summary.data) return <ResultNotice label="Storage unavailable" error={summary.error} />;
+  const data = summary.data;
+  const level = data.usedPercent >= 90 || !["ONLINE", "HEALTHY"].includes(data.health.toUpperCase()) ? "critical" : data.usedPercent >= 80 ? "warning" : "healthy";
+  return (
+    <article className={`home-module home-storage-card storage-${level}`}>
+      <header className="home-module-header"><span><HardDrive size={18} /><strong>{data.name}</strong></span><small>{data.health}</small></header>
+      <div className="storage-capacity"><strong>{data.usedPercent}%</strong><small>used</small></div>
+      <div className="storage-bar" role="progressbar" aria-label="Storage used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={data.usedPercent}><i style={{ width: `${Math.min(100, data.usedPercent)}%` }} /></div>
+      <div className="storage-facts"><span><small>Used</small><strong>{formatBytes(data.usedBytes)}</strong></span><span><small>Free</small><strong>{formatBytes(data.freeBytes)}</strong></span></div>
+      <p>{data.datasetName ?? data.poolName} · {data.change24hBytes == null ? "building 24h trend" : `${data.change24hBytes >= 0 ? "+" : "−"}${formatBytes(Math.abs(data.change24hBytes))} in 24h`}</p>
+      {(summary.stale || summary.error) ? <p className="utility-note" role="status">{summary.stale ? "Showing cached storage data." : ""}{summary.error ? ` ${summary.error}` : ""}</p> : null}
     </article>
   );
 }
@@ -253,7 +423,9 @@ export function DashboardLaunchpad({
   favorites,
   offlineResources,
   utilityConfig,
+  homeConfig,
   serviceDirectory,
+  bookmarkLibrary,
   mode,
   onModeChange,
   onLaunch,
@@ -269,7 +441,9 @@ export function DashboardLaunchpad({
   favorites: DashboardResource[];
   offlineResources: DashboardResource[];
   utilityConfig: DashboardUtilitiesConfigDto;
+  homeConfig: DashboardHomeConfigDto;
   serviceDirectory: ReactNode;
+  bookmarkLibrary: ReactNode;
   mode: DashboardMode;
   onModeChange: (mode: DashboardMode) => void;
   onLaunch: (resource: DashboardResource) => void;
@@ -280,7 +454,10 @@ export function DashboardLaunchpad({
 }) {
   const [utilities, setUtilities] = useState<DashboardUtilitiesSummaryDto | null>(null);
   const [utilityError, setUtilityError] = useState<string | null>(null);
+  const [home, setHome] = useState<DashboardHomeSummaryDto | null>(null);
+  const [homeError, setHomeError] = useState<string | null>(null);
   const hasConfiguredUtilities = utilityConfig.weather.enabled || utilityConfig.releases.enabled;
+  const hasHomeModules = homeConfig.agendaEnabled || homeConfig.tasksEnabled || homeConfig.mailEnabled || homeConfig.mediaEnabled || homeConfig.storageEnabled;
 
   useEffect(() => {
     if (!hasConfiguredUtilities) {
@@ -302,6 +479,32 @@ export function DashboardLaunchpad({
     };
   }, [hasConfiguredUtilities, utilityConfig.weather, utilityConfig.releases]);
 
+  useEffect(() => {
+    if (!hasHomeModules) {
+      setHome(null);
+      setHomeError(null);
+      return;
+    }
+    let active = true;
+    setHomeError(null);
+    const load = () => {
+      apiGet<DashboardHomeSummaryDto>("/api/home/summary")
+        .then((summary) => {
+          if (!active) return;
+          setHome(summary);
+          setHomeError(null);
+        })
+        .catch((error) => { if (active) setHomeError(error instanceof Error ? error.message : "Daily context is unavailable"); });
+    };
+    load();
+    const timer = window.setInterval(load, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [hasHomeModules, homeConfig]);
+
+  const todayColumns = Number(homeConfig.agendaEnabled) + Number(homeConfig.tasksEnabled) + Number(homeConfig.mailEnabled || utilityConfig.weather.enabled);
   const dateLine = now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
   const clock = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -310,8 +513,8 @@ export function DashboardLaunchpad({
       <header className="launchpad-hero">
         <div className="launchpad-heading">
           <span>{greetingFor(now)}{username ? `, ${username}` : ""}</span>
-          <h2>Your homelab, one click away</h2>
-          <p>{dateLine} · {resources.length} service{resources.length === 1 ? "" : "s"}</p>
+          <h2>Your day, one place</h2>
+          <p>{dateLine} · {resources.length} saved place{resources.length === 1 ? "" : "s"}</p>
         </div>
         <div className="launchpad-hero-actions">
           <div className="launchpad-clock" aria-label={`Current time ${clock}`}>{clock}</div>
@@ -319,25 +522,11 @@ export function DashboardLaunchpad({
         </div>
       </header>
 
-      <UniversalSearch resources={resources} searchEngine={utilityConfig.searchEngine} onLaunch={onLaunch} />
-
-      <div className="launchpad-status-line" aria-label="Service health summary">
-        <span><i className="svc-dot dot-online" /> {totals.online} online</span>
-        {totals.offline > 0 ? <span className="status-line-danger"><i className="svc-dot dot-offline" /> {totals.offline} offline</span> : null}
-        {totals.unknown > 0 ? <span><i className="svc-dot dot-unknown" /> {totals.unknown} unknown</span> : null}
-        {resources.length > 0 && totals.offline === 0 ? <strong>Everything looks reachable</strong> : null}
+      <div className="home-search-row">
+        <UniversalSearch resources={resources} searchEngine={utilityConfig.searchEngine} onLaunch={onLaunch} />
+        <button className="icon-text-button home-customize" type="button" onClick={onOpenSettings}><Settings2 size={16} /> Customize home</button>
       </div>
-
-      {offlineResources.length > 0 ? (
-        <section className="attention-strip launchpad-attention" aria-label="Services needing attention">
-          <span className="attention-label"><AlertTriangle size={15} /> {offlineResources.length} down</span>
-          <div className="attention-chips">
-            {offlineResources.map((resource) => (
-              <button key={resource.id} type="button" onClick={() => onInspect(resource)}>{resource.name}</button>
-            ))}
-          </div>
-        </section>
-      ) : null}
+      {!utilityConfig.weather.enabled ? <button className="home-weather-invite" type="button" onClick={onOpenSettings}><CloudSun size={20} /><span>Add your local weather <small>Choose a city in Settings</small></span><Plus size={16} /></button> : null}
 
       {favorites.length > 0 ? (
         <section className="launchpad-favorites" aria-label="Favorites">
@@ -352,8 +541,61 @@ export function DashboardLaunchpad({
               >
                 <ServiceIcon resource={resource} size={30} />
                 <span>{resource.name}</span>
-                <i className={`svc-dot dot-${statusFor(resource)}`} />
+                {isBookmark(resource) ? <Bookmark size={13} /> : <i className={`svc-dot dot-${statusFor(resource)}`} />}
               </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {bookmarkLibrary}
+
+      {(homeConfig.agendaEnabled || homeConfig.tasksEnabled || homeConfig.mailEnabled || utilityConfig.weather.enabled) ? (
+        <section className="launchpad-cockpit-section" aria-labelledby="today-heading">
+          <div className="launchpad-section-heading"><h3 id="today-heading">Today</h3><small>Your day at a glance</small></div>
+          {!home && hasHomeModules && !homeError ? <div className="home-loading" role="status">Loading today’s context…</div> : null}
+          {homeError ? <ResultNotice label="Daily context unavailable" error={homeError} /> : null}
+          <div className="today-grid" style={{ gridTemplateColumns: `repeat(${todayColumns}, minmax(0, 1fr))` }}>
+            {homeConfig.agendaEnabled && home ? <CalendarCard summary={home.agenda} now={now} /> : null}
+            {homeConfig.tasksEnabled && home ? <TasksCard summary={home.tasks} /> : null}
+            {(homeConfig.mailEnabled || utilityConfig.weather.enabled) ? <div className="today-context-stack">
+              {utilityConfig.weather.enabled && !utilities && !utilityError ? <div className="home-loading" role="status">Loading weather…</div> : null}
+              {utilityConfig.weather.enabled && utilityError ? <ResultNotice label="Weather unavailable" error={utilityError} /> : null}
+              {utilityConfig.weather.enabled && utilities?.weather.state === "ready" && utilities.weather.data ? <CompactWeatherCard data={utilities.weather.data} stale={utilities.weather.stale} /> : null}
+              {utilityConfig.weather.enabled && utilities?.weather.state === "error" ? <ResultNotice label="Weather unavailable" error={utilities.weather.error} /> : null}
+              {homeConfig.mailEnabled && home ? <MailCard summary={home.mail} /> : null}
+            </div> : null}
+          </div>
+        </section>
+      ) : null}
+
+      {(homeConfig.mediaEnabled || homeConfig.storageEnabled) ? (
+        <section className="launchpad-cockpit-section" aria-labelledby="media-heading">
+          <div className="launchpad-section-heading"><h3 id="media-heading">Media &amp; storage</h3><small>What’s new and how much room is left</small></div>
+          {!home && !homeError ? <div className="home-loading" role="status">Loading media and storage…</div> : null}
+          {homeError ? <ResultNotice label="Media and storage unavailable" error={homeError} /> : null}
+          {home ? (
+            <div className={`media-storage-grid ${homeConfig.mediaEnabled && homeConfig.storageEnabled ? "" : "single-module"}`}>
+              {homeConfig.mediaEnabled ? <MediaCard summary={home.media} /> : null}
+              {homeConfig.storageEnabled ? <StorageCard summary={home.storage} /> : null}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      <div className="launchpad-status-line" aria-label="Service health summary">
+        <span><i className="svc-dot dot-online" /> {totals.online} online</span>
+        {totals.offline > 0 ? <span className="status-line-danger"><i className="svc-dot dot-offline" /> {totals.offline} offline</span> : null}
+        {totals.unknown > 0 ? <span><i className="svc-dot dot-unknown" /> {totals.unknown} unknown</span> : null}
+        {resources.some((resource) => resource.monitoringMode !== "disabled") && totals.online === resources.filter((resource) => resource.monitoringMode !== "disabled").length ? <strong>Everything looks reachable</strong> : null}
+      </div>
+
+      {offlineResources.length > 0 ? (
+        <section className="attention-strip launchpad-attention" aria-label="Services needing attention">
+          <span className="attention-label"><AlertTriangle size={15} /> {offlineResources.length} down</span>
+          <div className="attention-chips">
+            {offlineResources.map((resource) => (
+              <button key={resource.id} type="button" onClick={() => onInspect(resource)}>{resource.name}</button>
             ))}
           </div>
         </section>
@@ -388,20 +630,12 @@ export function DashboardLaunchpad({
           </div>
         </section>
       ) : (
-        <div className={`launchpad-layout ${hasConfiguredUtilities ? "has-utilities" : ""}`}>
+        <div className={`launchpad-layout ${utilityConfig.releases.enabled ? "has-utilities" : ""}`}>
           <div className="launchpad-services">{serviceDirectory}</div>
           <aside className="launchpad-utilities" aria-label="Launchpad utilities">
             {hasConfiguredUtilities && !utilities && !utilityError ? (
               <article className="launchpad-utility-card utility-loading-card" role="status">
                 <CloudSun size={20} /><span><strong>Loading utilities</strong><small>Services remain ready to use.</small></span>
-              </article>
-            ) : null}
-            {utilities?.weather.state === "ready" && utilities.weather.data ? (
-              <WeatherCard data={utilities.weather.data} stale={utilities.weather.stale} error={utilities.weather.error} />
-            ) : null}
-            {utilities?.weather.state === "error" ? (
-              <article className="launchpad-utility-card utility-error-card">
-                <CloudSun size={20} /><span><strong>Weather unavailable</strong><small>{utilities.weather.error}</small></span>
               </article>
             ) : null}
             {utilities?.releases.state === "ready" && utilities.releases.data ? (
@@ -417,10 +651,10 @@ export function DashboardLaunchpad({
                 <AlertTriangle size={20} /><span><strong>Utilities unavailable</strong><small>{utilityError}</small></span>
               </article>
             ) : null}
-            {!hasConfiguredUtilities ? (
+            {!hasConfiguredUtilities && !hasHomeModules ? (
               <button className="utility-setup-card" type="button" onClick={onOpenSettings}>
                 <Plus size={18} />
-                <span><strong>Add Launchpad context</strong><small>Weather and software releases</small></span>
+                <span><strong>Add Launchpad context</strong><small>Calendar, tasks, media, storage, and weather</small></span>
               </button>
             ) : null}
           </aside>

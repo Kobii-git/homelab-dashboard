@@ -9,10 +9,23 @@ import { resolveOutboundTarget } from "./outboundPolicy.js";
 
 const execFileAsync = promisify(execFile);
 
-type CheckOutcome = {
+export type CheckFailureReason =
+  | "connection_refused"
+  | "dns"
+  | "http_5xx"
+  | "icmp_no_reply"
+  | "icmp_unavailable"
+  | "invalid_target"
+  | "policy"
+  | "timeout"
+  | "tls"
+  | "unknown";
+
+export type CheckOutcome = {
   status: "online" | "offline";
   latencyMs?: number;
   error?: string;
+  reason?: CheckFailureReason;
 };
 
 export type SchedulerUpdate = {
@@ -31,6 +44,65 @@ function elapsedSince(startedAt: number): number {
   return Math.max(1, Date.now() - startedAt);
 }
 
+function failureReason(error: unknown, fallback: CheckFailureReason = "unknown"): CheckFailureReason {
+  const code = error && typeof error === "object" && "code" in error
+    ? String((error as { code?: unknown }).code ?? "").toUpperCase()
+    : "";
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error ?? "").toLowerCase();
+
+  if (
+    code === "ENOENT" ||
+    code === "EACCES" ||
+    code === "EPERM" ||
+    message.includes("operation not permitted") ||
+    message.includes("permission denied")
+  ) {
+    return fallback === "icmp_no_reply" ? "icmp_unavailable" : fallback;
+  }
+  if (
+    message.includes("outside the configured allowlist") ||
+    message.includes("forbidden address") ||
+    message.includes("outbound provider host is not allowlisted")
+  ) {
+    return "policy";
+  }
+  if (
+    code === "ENOTFOUND" ||
+    code === "EAI_AGAIN" ||
+    code === "EAI_FAIL" ||
+    message.includes("dns resolution") ||
+    message.includes("no address found")
+  ) {
+    return "dns";
+  }
+  if (
+    code === "ECONNREFUSED" ||
+    message.includes("connection refused")
+  ) {
+    return "connection_refused";
+  }
+  if (
+    code === "ETIMEDOUT" ||
+    message.includes("timed out") ||
+    message.includes("timeout")
+  ) {
+    return "timeout";
+  }
+  if (
+    code.startsWith("CERT_") ||
+    code.startsWith("ERR_TLS") ||
+    code.includes("SELF_SIGNED") ||
+    code.includes("UNABLE_TO_VERIFY") ||
+    message.includes("certificate") ||
+    message.includes("self-signed") ||
+    message.includes("self signed") ||
+    message.includes("tls")
+  ) {
+    return "tls";
+  }
+  return fallback;
+}
+
 async function checkHttp(target: string, timeoutMs: number): Promise<CheckOutcome> {
   const startedAt = Date.now();
   try {
@@ -38,7 +110,9 @@ async function checkHttp(target: string, timeoutMs: number): Promise<CheckOutcom
     if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) {
       throw new Error("HTTP check URL must use HTTP or HTTPS without embedded credentials");
     }
-    const resolved = await resolveOutboundTarget(url.hostname);
+    const resolved = await resolveOutboundTarget(url.hostname, { timeoutMs });
+    const remainingMs = timeoutMs - (Date.now() - startedAt);
+    if (remainingMs <= 0) throw new Error("Timeout");
     const transport = url.protocol === "https:" ? https : http;
     return await new Promise<CheckOutcome>((resolve) => {
       let settled = false;
@@ -61,18 +135,21 @@ async function checkHttp(target: string, timeoutMs: number): Promise<CheckOutcom
         finish({
           status: online ? "online" : "offline",
           latencyMs: elapsedSince(startedAt),
-          error: online ? undefined : `HTTP ${response.statusCode ?? 500}`
+          error: online ? undefined : `HTTP ${response.statusCode ?? 500}`,
+          reason: online ? undefined : "http_5xx"
         });
       });
       timeout = setTimeout(() => finish({
         status: "offline",
         latencyMs: elapsedSince(startedAt),
-        error: "Timeout"
-      }), timeoutMs);
+        error: "Timeout",
+        reason: "timeout"
+      }), remainingMs);
       request.once("error", (error) => finish({
         status: "offline",
         latencyMs: elapsedSince(startedAt),
-        error: error.message
+        error: error.message,
+        reason: failureReason(error)
       }));
       request.end();
     });
@@ -80,7 +157,8 @@ async function checkHttp(target: string, timeoutMs: number): Promise<CheckOutcom
     return {
       status: "offline",
       latencyMs: elapsedSince(startedAt),
-      error: error instanceof Error ? error.message : "HTTP check failed"
+      error: error instanceof Error ? error.message : "HTTP check failed",
+      reason: error instanceof TypeError ? "invalid_target" : failureReason(error)
     };
   }
 }
@@ -108,7 +186,8 @@ async function checkTcp(target: string, timeoutMs: number): Promise<CheckOutcome
       resolve({
         status: "offline",
         latencyMs: elapsedSince(startedAt),
-        error: error instanceof Error ? error.message : "Invalid TCP target"
+        error: error instanceof Error ? error.message : "Invalid TCP target",
+        reason: "invalid_target"
       });
       return;
     }
@@ -123,20 +202,32 @@ async function checkTcp(target: string, timeoutMs: number): Promise<CheckOutcome
       socket?.destroy();
       resolve(outcome);
     };
-    void resolveOutboundTarget(host).then((resolved) => {
+    void resolveOutboundTarget(host, { timeoutMs }).then((resolved) => {
+      const remainingMs = timeoutMs - (Date.now() - startedAt);
+      if (remainingMs <= 0) {
+        finish({ status: "offline", latencyMs: elapsedSince(startedAt), error: "Timeout", reason: "timeout" });
+        return;
+      }
       socket = net.createConnection({ host: resolved.address, family: resolved.family, port });
-      socket.setTimeout(timeoutMs);
+      socket.setTimeout(remainingMs);
       socket.once("connect", () => finish({ status: "online", latencyMs: elapsedSince(startedAt) }));
-      socket.once("timeout", () => finish({ status: "offline", latencyMs: elapsedSince(startedAt), error: "Timeout" }));
+      socket.once("timeout", () => finish({
+        status: "offline",
+        latencyMs: elapsedSince(startedAt),
+        error: "Timeout",
+        reason: "timeout"
+      }));
       socket.once("error", (error) => finish({
         status: "offline",
         latencyMs: elapsedSince(startedAt),
-        error: error.message
+        error: error.message,
+        reason: failureReason(error)
       }));
     }).catch((error: unknown) => finish({
       status: "offline",
       latencyMs: elapsedSince(startedAt),
-      error: error instanceof Error ? error.message : "Target resolution failed"
+      error: error instanceof Error ? error.message : "Target resolution failed",
+      reason: failureReason(error)
     }));
   });
 }
@@ -149,14 +240,17 @@ async function checkPing(target: string, timeoutMs: number): Promise<CheckOutcom
     : ["-c", "1", "-W", String(timeoutSeconds)];
 
   try {
-    const resolved = await resolveOutboundTarget(target);
-    await execFileAsync("ping", [...args, resolved.address], { timeout: timeoutMs + 500 });
+    const resolved = await resolveOutboundTarget(target, { timeoutMs });
+    const remainingMs = timeoutMs - (Date.now() - startedAt);
+    if (remainingMs <= 0) throw new Error("Timeout");
+    await execFileAsync("ping", [...args, resolved.address], { timeout: remainingMs });
     return { status: "online", latencyMs: elapsedSince(startedAt) };
   } catch (error) {
     return {
       status: "offline",
       latencyMs: elapsedSince(startedAt),
-      error: error instanceof Error ? error.message : "Ping failed"
+      error: error instanceof Error ? error.message : "Ping failed",
+      reason: failureReason(error, "icmp_no_reply")
     };
   }
 }
@@ -180,7 +274,7 @@ async function applyHealthOutcome(
         successThreshold: true,
         lastTransitionAt: true,
         resource: {
-          select: { monitoringMode: true }
+          select: { monitoringMode: true, purpose: true }
         }
       }
     });
@@ -189,6 +283,7 @@ async function applyHealthOutcome(
       !currentCheck ||
       !currentCheck.enabled ||
       currentCheck.resource.monitoringMode !== "auto" ||
+      currentCheck.resource.purpose === "bookmark" ||
       currentCheck.type !== check.type ||
       currentCheck.target !== check.target
     ) {
@@ -247,6 +342,14 @@ export async function runHealthCheck(
   prisma: PrismaClient,
   check: HealthCheck
 ): Promise<CheckOutcome> {
+  const outcome = await executeHealthCheck(check);
+  await applyHealthOutcome(prisma, check, outcome);
+  return outcome;
+}
+
+export async function executeHealthCheck(
+  check: Pick<HealthCheck, "type" | "target" | "timeoutMs">
+): Promise<CheckOutcome> {
   let outcome: CheckOutcome;
 
   if (check.type === "http") {
@@ -257,11 +360,16 @@ export async function runHealthCheck(
     outcome = await checkPing(check.target, check.timeoutMs);
   } else if (check.type === "ssl") {
     outcome = await checkSslCertificate(check.target, check.timeoutMs);
+    if (outcome.status === "offline") {
+      outcome.reason = failureReason(outcome.error, "tls");
+    }
   } else {
-    outcome = { status: "offline", error: `Unsupported check type: ${check.type}` };
+    outcome = {
+      status: "offline",
+      error: `Unsupported check type: ${check.type}`,
+      reason: "invalid_target"
+    };
   }
-
-  await applyHealthOutcome(prisma, check, outcome);
 
   return outcome;
 }
@@ -287,7 +395,8 @@ export function startHealthScheduler(
         where: {
           enabled: true,
           resource: {
-            monitoringMode: "auto"
+            monitoringMode: "auto",
+            purpose: "service"
           }
         }
       });

@@ -193,6 +193,19 @@ export const apiWidgetTemplates: ApiWidgetTemplateDto[] = [
     ]
   },
   {
+    id: "plex",
+    name: "Plex library",
+    app: "Plex",
+    description: "Reads Plex library metadata using a server token.",
+    docsUrl: "https://developer.plex.tv/pms/",
+    authType: "header",
+    authHeaderName: "X-Plex-Token",
+    authEnvVarHint: "PLEX_TOKEN",
+    authValuePrefix: null,
+    endpointPath: "/library/recentlyAdded?type=1&X-Plex-Container-Size=1",
+    fieldMappings: [{ label: "Recently added", path: "MediaContainer.Metadata", kind: "count" }]
+  },
+  {
     id: "radarr",
     name: "Radarr status",
     app: "Radarr",
@@ -245,6 +258,7 @@ const suggestionTemplateAliases: Array<{ templateId: string; aliases: string[] }
   { templateId: "grafana", aliases: ["grafana"] },
   { templateId: "prometheus", aliases: ["prometheus"] },
   { templateId: "sonarr", aliases: ["sonarr"] },
+  { templateId: "plex", aliases: ["plex", "plex media server"] },
   { templateId: "radarr", aliases: ["radarr"] }
 ];
 
@@ -488,6 +502,27 @@ function authHeaders(widget: ApiWidget, allowlist: readonly string[]): Record<st
   }
   const header = widget.authHeaderName || "Authorization";
   return { [header]: `${widget.authValuePrefix ?? ""}${secret}` };
+}
+
+export async function requestApiWidgetJson(
+  prisma: PrismaClient,
+  widget: ApiWidget,
+  endpointPath: string,
+  allowlist: readonly string[] = []
+): Promise<unknown> {
+  await assertApiWidgetSecretBinding(prisma, widget);
+  assertSafeWidgetConfiguration(widget, allowlist);
+  if (!endpointPath.startsWith("/") || endpointPath.startsWith("//")) {
+    throw new Error("API widget endpoint is not permitted");
+  }
+  if (widget.authType === "pihole") {
+    throw new Error("Pi-hole session auth is not supported for this read-only endpoint");
+  }
+  return requestJson(widget.baseUrl, endpointPath, {
+    headers: authHeaders(widget, allowlist),
+    tlsVerify: widget.tlsVerify,
+    credentialed: widget.authType !== "none"
+  });
 }
 
 async function requestWidgetData(widget: ApiWidget, allowlist: readonly string[]): Promise<unknown> {

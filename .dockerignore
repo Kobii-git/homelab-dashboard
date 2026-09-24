@@ -3,6 +3,7 @@
 .forgejo
 .gh-bin
 .claude
+.ai/local
 
 node_modules
 dist

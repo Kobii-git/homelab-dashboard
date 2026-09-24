@@ -60,7 +60,7 @@ export function AppSidebar({
           </button>
         </div>
 
-        <button className="sidebar-search" type="button" title="Search (⌘K)" onClick={onOpenPalette}>
+        <button className="sidebar-search" type="button" title="Search (⌘K)" onClick={(event) => { event.currentTarget.focus(); onOpenPalette(); }}>
           <Search size={15} />
           {!compact ? (
             <>

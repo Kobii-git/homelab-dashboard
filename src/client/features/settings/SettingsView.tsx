@@ -1,5 +1,6 @@
-import { Activity, Clipboard, CloudSun, Cpu, ExternalLink, Gauge, Github, MapPin, PanelsTopLeft, Play, Plus, RefreshCw, Save, Search, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { DataBackups } from "../homepage/DataBackups";
+import { Activity, CalendarDays, Clipboard, CloudSun, Cpu, ExternalLink, Film, Gauge, Github, HardDrive, Inbox, ListTodo, MapPin, PanelsTopLeft, Play, Plus, RefreshCw, Save, Search, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "../../components/Primitives";
 import { FormErrorBanner, runFormAction } from "../../lib/forms";
 import {
@@ -107,7 +108,8 @@ export function SettingsView({
   resources,
   onRefresh,
   systemSettings,
-  onSaveSettings
+  onSaveSettings,
+  onReloadSettings
 }: {
   username: string;
   authSource: "env" | "database";
@@ -115,12 +117,14 @@ export function SettingsView({
   onRefresh: () => Promise<void>;
   systemSettings: SystemSettingsDto;
   onSaveSettings: (next: Partial<SystemSettingsDto>) => Promise<void>;
+  onReloadSettings: () => Promise<void>;
 }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [autoPingIntervalSeconds, setAutoPingIntervalSeconds] = useState(systemSettings.autoPingIntervalSeconds.toString());
   const [utilitySettings, setUtilitySettings] = useState(systemSettings.dashboardUtilities);
+  const [homeSettings, setHomeSettings] = useState(systemSettings.dashboardHome);
   const [weatherQuery, setWeatherQuery] = useState("");
   const [weatherLocations, setWeatherLocations] = useState<WeatherLocationDto[]>([]);
   const [weatherSearching, setWeatherSearching] = useState(false);
@@ -142,9 +146,12 @@ export function SettingsView({
   const [actionError, setActionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const keepSettingsDraft = useRef(false);
   useEffect(() => {
+    if (keepSettingsDraft.current) { keepSettingsDraft.current = false; return; }
     setAutoPingIntervalSeconds(systemSettings.autoPingIntervalSeconds.toString());
     setUtilitySettings(systemSettings.dashboardUtilities);
+    setHomeSettings(systemSettings.dashboardHome);
   }, [systemSettings]);
 
   const releaseSuggestions = useMemo(
@@ -322,6 +329,18 @@ export function SettingsView({
       setActionError,
       setSubmitting,
       "Dashboard utilities updated"
+    );
+  }
+
+  async function saveDashboardHome(event: FormEvent) {
+    event.preventDefault();
+    await runFormAction(
+      async () => {
+        await onSaveSettings({ dashboardHome: homeSettings });
+      },
+      setActionError,
+      setSubmitting,
+      "Daily cockpit updated"
     );
   }
 
@@ -574,11 +593,25 @@ export function SettingsView({
     );
   }
 
+  const trueNasSource = integrations.find((source) => source.provider === "truenas") ?? null;
+  const opnsenseSources = integrations.filter((source) => source.provider === "opnsense");
+
   return (
     <main className="view-shell">
       <PageHeader title="Admin" subtitle="Account, appearance, and system tools" />
 
+      <DataBackups onRestored={async () => {
+        keepSettingsDraft.current = false;
+        await Promise.all([onRefresh(), onReloadSettings(), loadHostMonitors(), loadApiWidgets(), loadIntegrations(), loadRuntime()]);
+      }} />
       <FormErrorBanner message={actionError} />
+      {actionError?.includes("Configuration changed") && <div className="hp-actions">
+        <button disabled={submitting} onClick={() => void runFormAction(onReloadSettings, setActionError, setSubmitting)}>Reload saved settings</button>
+        <button disabled={submitting} onClick={() => void runFormAction(async () => {
+          keepSettingsDraft.current = true;
+          try { await onReloadSettings(); } catch (error) { keepSettingsDraft.current = false; throw error; }
+        }, setActionError, setSubmitting, "Draft retained. Review your changes before saving again.")}>Keep draft against latest version</button>
+      </div>}
 
       <section className="settings-grid">
         <section className="table-panel settings-wide-panel">
@@ -794,6 +827,76 @@ export function SettingsView({
         </section>
 
         <section className="table-panel settings-wide-panel">
+          <h3><CalendarDays size={16} /> Personal context</h3>
+          <p className="muted-copy">
+            Choose which read-only modules appear on Launchpad. Credentials are supplied only through environment variables; secrets are never shown or stored here.
+          </p>
+          <form className="dashboard-home-settings" onSubmit={saveDashboardHome}>
+            <div className="home-settings-grid">
+              <label className="home-module-toggle">
+                <span><CalendarDays size={17} /><strong>Calendar &amp; agenda</strong><small>Google Calendar · next five events</small></span>
+                <input type="checkbox" checked={homeSettings.agendaEnabled} onChange={(event) => setHomeSettings((current) => ({ ...current, agendaEnabled: event.target.checked }))} />
+              </label>
+              <label className="home-module-toggle">
+                <span><ListTodo size={17} /><strong>Todoist</strong><small>Overdue and today · links only</small></span>
+                <input type="checkbox" checked={homeSettings.tasksEnabled} onChange={(event) => setHomeSettings((current) => ({ ...current, tasksEnabled: event.target.checked }))} />
+              </label>
+              <label className="home-module-toggle">
+                <span><Inbox size={17} /><strong>Gmail count</strong><small>Unread Inbox total only</small></span>
+                <input type="checkbox" checked={homeSettings.mailEnabled} onChange={(event) => setHomeSettings((current) => ({ ...current, mailEnabled: event.target.checked }))} />
+              </label>
+            </div>
+            <div className="provider-readiness-grid" aria-label="Personal context provider readiness">
+              <span><small>Google</small><strong>{runtime?.integrations.personalContext.googleConfigured ? "ready" : "missing env"}</strong></span>
+              <span><small>Todoist</small><strong>{runtime?.integrations.personalContext.todoistConfigured ? "ready" : "missing env"}</strong></span>
+            </div>
+            <p className="muted-copy">Google needs client ID, client secret, refresh token, and calendar IDs. Todoist needs a personal API token.</p>
+
+            <div className="section-heading compact-section-heading home-settings-subheading">
+              <span><strong><Film size={15} /> Media &amp; storage</strong><small>Select existing credential-bound widgets; the dashboard never copies their tokens.</small></span>
+            </div>
+            <div className="home-settings-grid">
+              <label className="home-module-toggle">
+                <span><Film size={17} /><strong>Movie shelf</strong><small>Plex, Radarr, and TMDB</small></span>
+                <input type="checkbox" checked={homeSettings.mediaEnabled} onChange={(event) => setHomeSettings((current) => ({ ...current, mediaEnabled: event.target.checked }))} />
+              </label>
+              <label className="home-module-toggle">
+                <span><HardDrive size={17} /><strong>TrueNAS capacity</strong><small>Health, used/free, and 24h trend</small></span>
+                <input type="checkbox" checked={homeSettings.storageEnabled} onChange={(event) => setHomeSettings((current) => ({ ...current, storageEnabled: event.target.checked }))} />
+              </label>
+            </div>
+            <div className="settings-form-grid home-source-fields">
+              <label>
+                Plex widget
+                <select value={homeSettings.plexWidgetId ?? ""} onChange={(event) => setHomeSettings((current) => ({ ...current, plexWidgetId: event.target.value || null }))}>
+                  <option value="">Not selected</option>
+                  {apiWidgets.filter((widget) => widget.templateId === "plex").map((widget) => <option key={widget.id} value={widget.id}>{widget.name}</option>)}
+                </select>
+              </label>
+              <label>
+                Radarr widget
+                <select value={homeSettings.radarrWidgetId ?? ""} onChange={(event) => setHomeSettings((current) => ({ ...current, radarrWidgetId: event.target.value || null }))}>
+                  <option value="">Not selected</option>
+                  {apiWidgets.filter((widget) => widget.templateId === "radarr").map((widget) => <option key={widget.id} value={widget.id}>{widget.name}</option>)}
+                </select>
+              </label>
+              <label>TMDB region<input maxLength={2} value={homeSettings.mediaRegion} onChange={(event) => setHomeSettings((current) => ({ ...current, mediaRegion: event.target.value.toUpperCase() }))} /></label>
+              <label>TMDB language<input value={homeSettings.mediaLanguage} onChange={(event) => setHomeSettings((current) => ({ ...current, mediaLanguage: event.target.value }))} /></label>
+              <label>Items per tab<input type="number" min={1} max={12} value={homeSettings.mediaLimit} onChange={(event) => setHomeSettings((current) => ({ ...current, mediaLimit: Number(event.target.value) }))} /></label>
+            </div>
+            <div className="provider-readiness-grid" aria-label="Media provider readiness">
+              <span><small>TMDB</small><strong>{runtime?.integrations.personalContext.tmdbConfigured ? "ready" : "missing env"}</strong></span>
+              <span><small>TrueNAS</small><strong>{runtime?.integrations.truenas.configured ? "ready" : "missing env"}</strong></span>
+              <span><small>Storage status</small><strong>{trueNasSource?.status ?? (runtime?.integrations.truenas.configured ? "waiting" : "disabled")}</strong></span>
+              <span><small>Pool</small><strong>{runtime?.integrations.truenas.poolName ?? "not set"}</strong></span>
+              <span><small>Dataset</small><strong>{runtime?.integrations.truenas.datasetName ?? "pool total"}</strong></span>
+            </div>
+            {trueNasSource?.latestError ? <p className="form-error" role="status">TrueNAS: {trueNasSource.latestError}</p> : null}
+            <div className="form-actions"><button className="primary-button" type="submit" disabled={submitting}><Save size={15} /> Save daily cockpit</button></div>
+          </form>
+        </section>
+
+        <section className="table-panel settings-wide-panel">
           <h3><Cpu size={16} /> Host metrics</h3>
           <p className="muted-copy">
             Add Glances web endpoints from trusted LAN/VPN hosts. v1 does not store Glances credentials.
@@ -901,10 +1004,11 @@ export function SettingsView({
           </div>
 
           <div className="host-monitor-list integration-source-list">
-            {integrations.map((source) => {
-              const gatewayTotal = source.latestSnapshot?.gateways.length ?? 0;
-              const gatewayOnline = source.latestSnapshot?.gateways.filter((gateway) => gateway.status === "online").length ?? 0;
-              const traffic = source.latestSnapshot?.interfaces.reduce(
+            {opnsenseSources.map((source) => {
+              const opnsense = source.latestSnapshot?.provider === "opnsense" ? source.latestSnapshot : null;
+              const gatewayTotal = opnsense?.gateways.length ?? 0;
+              const gatewayOnline = opnsense?.gateways.filter((gateway) => gateway.status === "online").length ?? 0;
+              const traffic = opnsense?.interfaces.reduce(
                 (sum, item) => sum + (item.receivedBytesPerSec ?? 0) + (item.sentBytesPerSec ?? 0),
                 0
               ) ?? 0;
@@ -918,9 +1022,7 @@ export function SettingsView({
                     {source.latestError ? <small className="drawer-check-error">{source.latestError}</small> : null}
                   </span>
                   <span className="host-monitor-stats">
-                    <i>CPU {formatPercent(source.latestSnapshot?.system.cpuPercent)}</i>
-                    <i>GW {gatewayOnline}/{gatewayTotal}</i>
-                    <i>NET {formatByteRate(traffic || null)}</i>
+                    {opnsense ? <><i>CPU {formatPercent(opnsense.system.cpuPercent)}</i><i>GW {gatewayOnline}/{gatewayTotal}</i><i>NET {formatByteRate(traffic || null)}</i></> : null}
                   </span>
                   <button className="icon-button" type="button" title="Test connection" disabled={testingIntegrationId === source.id} onClick={() => void testIntegration(source)}>
                     {testingIntegrationId === source.id ? <RefreshCw size={14} className="spin" /> : <Play size={14} />}
@@ -928,7 +1030,7 @@ export function SettingsView({
                 </div>
               );
             })}
-            {integrations.length === 0 ? <p className="muted-copy">Set `OPNSENSE_ENABLED=true`, `OPNSENSE_BASE_URL`, `OPNSENSE_API_KEY`, and `OPNSENSE_API_SECRET` to enable polling.</p> : null}
+            {opnsenseSources.length === 0 ? <p className="muted-copy">Set `OPNSENSE_ENABLED=true`, `OPNSENSE_BASE_URL`, `OPNSENSE_API_KEY`, and `OPNSENSE_API_SECRET` to enable polling.</p> : null}
           </div>
         </section>
 
@@ -1190,6 +1292,14 @@ export function SettingsView({
         </section>
 
         <section className="table-panel">
+          <h3><Film size={16} /> Credits</h3>
+          <a className="tmdb-credit" href="https://www.themoviedb.org" target="_blank" rel="noreferrer">
+            <img src="/tmdb-logo.svg" alt="TMDB" />
+          </a>
+          <p className="muted-copy">This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+        </section>
+
+        <section className="table-panel">
           <h3><Gauge size={16} /> Data &amp; system</h3>
           <form className="inline-form settings-form-grid" onSubmit={updateSettings}>
             <label>
@@ -1264,6 +1374,7 @@ export function SettingsView({
                 <SchedulerRuntimeCard label="Health checks" state={runtime.schedulers.health} />
                 <SchedulerRuntimeCard label="Host metrics" state={runtime.schedulers.metrics} />
                 <SchedulerRuntimeCard label="Integrations" state={runtime.schedulers.integrations} />
+                <SchedulerRuntimeCard label="TrueNAS" state={runtime.schedulers.truenas} />
                 <SchedulerRuntimeCard label="API widgets" state={runtime.schedulers.apiWidgets} />
                 <SchedulerRuntimeCard label="AI briefing" state={runtime.schedulers.ai} />
               </div>

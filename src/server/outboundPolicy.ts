@@ -29,7 +29,14 @@ const FIXED_PROVIDER_HOSTS = new Set([
   "api.github.com",
   "api.open-meteo.com",
   "cdn.jsdelivr.net",
-  "geocoding-api.open-meteo.com"
+  "geocoding-api.open-meteo.com",
+  "accounts.google.com",
+  "oauth2.googleapis.com",
+  "www.googleapis.com",
+  "gmail.googleapis.com",
+  "api.todoist.com",
+  "api.themoviedb.org",
+  "image.tmdb.org"
 ]);
 const FIXED_PROVIDER_CONCURRENCY = 4;
 const DNS_LOOKUP_TIMEOUT_MS = 3_000;

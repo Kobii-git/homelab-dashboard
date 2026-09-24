@@ -1,3 +1,5 @@
+import { claimRevision, initializeHomepage, registerHomepageRoutes } from "./homepage.js";
+import { registerHomepageBackupRoutes } from "./homepageBackup.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -5,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import staticFiles from "@fastify/static";
-import { PrismaClient, type HealthCheck, type HostMonitor } from "@prisma/client";
+import { Prisma, PrismaClient, type HealthCheck, type HostMonitor } from "@prisma/client";
 import Fastify, {
   type FastifyInstance,
   type FastifyReply,
@@ -31,7 +33,13 @@ import {
 } from "./auth.js";
 import { getEnv, type AppEnv } from "./env.js";
 import { getBuildInfo } from "../shared/version.js";
-import { runHealthCheck, startHealthScheduler, type SchedulerUpdate } from "./healthChecks.js";
+import type { DashboardHomeConfigDto, DashboardHomeSummaryDto, HealthCheckType } from "../shared/types.js";
+import {
+  executeHealthCheck,
+  runHealthCheck,
+  startHealthScheduler,
+  type SchedulerUpdate
+} from "./healthChecks.js";
 import { runHostMetricSample, startMetricsScheduler, toHostMonitorDto } from "./metrics.js";
 import {
   apiWidgetTemplateById,
@@ -66,12 +74,26 @@ import {
   setDashboardUtilitiesConfig
 } from "./dashboardUtilities.js";
 import {
+  HomeContextService,
+  getDashboardHomeConfig,
+  setDashboardHomeConfig
+} from "./homeContext.js";
+import {
+  isTrueNasConfigured,
+  runTrueNasSample,
+  startTrueNasScheduler,
+  syncConfiguredTrueNasSource,
+  trueNasRuntimeConfig,
+  trueNasSourceDto
+} from "./truenas.js";
+import {
   apiWidgetPatchSchema,
   apiWidgetSchema,
   dashboardGroupPatchSchema,
   dashboardGroupSchema,
   healthCheckPatchSchema,
   healthCheckSchema,
+  healthCheckTestSchema,
   hostMonitorPatchSchema,
   hostMonitorSchema,
   idParamSchema,
@@ -106,6 +128,7 @@ type CreateAppOptions = {
   logger?: FastifyServerOptions["logger"];
   setupCode?: string;
   dashboardUtilities?: DashboardUtilitiesService;
+  homeContext?: HomeContextService;
 };
 
 type SchedulerRuntime = {
@@ -294,12 +317,18 @@ function routeId(request: { params: unknown }): string {
   return idParamSchema.parse(request.params).id;
 }
 
-type AutoPingTarget = { type: "http" | "ping"; target: string };
+type HealthCheckTarget = {
+  type: HealthCheckType;
+  target: string;
+};
 
 type ResourceAddress = {
   url: string | null;
   host: string | null;
 };
+
+type PrimaryCheckInput = NonNullable<z.infer<typeof resourceSchema>["primaryCheck"]>;
+type DatabaseClient = PrismaClient | Prisma.TransactionClient;
 
 type ResourceWithHealthChecks = ResourceAddress & {
   id: string;
@@ -308,8 +337,10 @@ type ResourceWithHealthChecks = ResourceAddress & {
     HealthCheck,
     | "id"
     | "managed"
+    | "primary"
     | "type"
     | "target"
+    | "intervalSeconds"
     | "timeoutMs"
     | "enabled"
     | "latestStatus"
@@ -324,31 +355,62 @@ type ResourceWithHealthChecks = ResourceAddress & {
   >[];
 };
 
-function normalizedResourceTarget(resource: ResourceAddress): AutoPingTarget | null {
+function implicitPrimaryTarget(resource: ResourceAddress): HealthCheckTarget | null {
   const url = resource.url?.trim();
   if (url) {
     const hasScheme = /^https?:\/\//i.test(url);
     return { type: "http", target: hasScheme ? url : `http://${url}` };
   }
-
-  const host = resource.host?.trim();
-  if (host) {
-    return { type: "ping", target: host };
-  }
-
   return null;
 }
 
-function normalizedAutoPingTarget(resource: ResourceAddress & { monitoringMode?: string | null }): AutoPingTarget | null {
+function legacyManagedTarget(resource: ResourceAddress): HealthCheckTarget | null {
+  const httpTarget = implicitPrimaryTarget(resource);
+  if (httpTarget) return httpTarget;
+  const host = resource.host?.trim();
+  return host ? { type: "ping", target: host } : null;
+}
+
+function automaticImplicitTarget(
+  resource: ResourceAddress & { monitoringMode?: string | null }
+): HealthCheckTarget | null {
   if (resource.monitoringMode === "manual" || resource.monitoringMode === "disabled") {
     return null;
   }
-
-  return normalizedResourceTarget(resource);
+  return implicitPrimaryTarget(resource);
 }
 
-function healthCheckMatchesTarget(check: Pick<HealthCheck, "type" | "target">, target: AutoPingTarget): boolean {
+function healthCheckMatchesTarget(check: Pick<HealthCheck, "type" | "target">, target: HealthCheckTarget): boolean {
   return check.type === target.type && check.target === target.target;
+}
+
+function tcpTargetForHost(previousTarget: string, host: string): string | null {
+  try {
+    const parsed = new URL(previousTarget.includes("://") ? previousTarget : `tcp://${previousTarget}`);
+    const port = Number(parsed.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65_535) return null;
+    const normalizedHost = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+    return `${normalizedHost}:${port}`;
+  } catch {
+    return null;
+  }
+}
+
+function synchronizedManagedTarget(
+  check: Pick<HealthCheck, "type" | "target">,
+  resource: ResourceAddress
+): HealthCheckTarget | null {
+  if (check.type === "http") return implicitPrimaryTarget(resource);
+  if (check.type === "ping") {
+    const host = resource.host?.trim();
+    return host ? { type: "ping", target: host } : null;
+  }
+  if (check.type === "tcp") {
+    const host = resource.host?.trim();
+    const target = host ? tcpTargetForHost(check.target, host) : null;
+    return target ? { type: "tcp", target } : null;
+  }
+  return null;
 }
 
 function shouldResetHealthCheckAfterPatch(
@@ -390,7 +452,7 @@ async function backfillManagedHealthChecks(prisma: PrismaClient): Promise<void> 
 
   for (const resource of resources) {
     if (resource.healthChecks.some((check) => check.managed)) continue;
-    const target = normalizedResourceTarget(resource);
+    const target = legacyManagedTarget(resource);
     if (!target) continue;
     const candidates = resource.healthChecks.filter(
       (check) => healthCheckMatchesTarget(check, target) && isAutoManagedCheckCandidate(check)
@@ -407,21 +469,76 @@ async function backfillManagedHealthChecks(prisma: PrismaClient): Promise<void> 
   });
 }
 
-async function createManagedHealthCheck(prisma: PrismaClient, resource: ResourceAddress & { id: string }): Promise<void> {
-  const target = normalizedResourceTarget(resource);
+async function backfillPrimaryHealthChecks(prisma: PrismaClient): Promise<void> {
+  const migrationKey = "primary_health_checks_v1";
+  if (await prisma.systemConfig.findUnique({ where: { key: migrationKey } })) return;
+  const resources = await prisma.resource.findMany({
+    include: {
+      healthChecks: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }]
+      }
+    }
+  });
+
+  for (const resource of resources) {
+    const enabled = resource.healthChecks.filter((check) => check.enabled);
+    const selected = enabled.find((check) => check.managed) ?? enabled[0];
+    await prisma.$transaction([
+      prisma.healthCheck.updateMany({
+        where: { resourceId: resource.id, primary: true },
+        data: { primary: false }
+      }),
+      ...(selected
+        ? [prisma.healthCheck.update({ where: { id: selected.id }, data: { primary: true } })]
+        : [])
+    ]);
+  }
+
+  await prisma.systemConfig.upsert({
+    where: { key: migrationKey },
+    create: { key: migrationKey, value: new Date().toISOString() },
+    update: { value: new Date().toISOString() }
+  });
+}
+
+function checkInputWithDefaults(
+  input: PrimaryCheckInput | HealthCheckTarget,
+  intervalSeconds: number,
+  previous?: Pick<
+    HealthCheck,
+    "intervalSeconds" | "timeoutMs" | "failureThreshold" | "successThreshold"
+  >
+) {
+  const configured = input as PrimaryCheckInput;
+  return {
+    type: input.type,
+    target: input.target,
+    intervalSeconds: configured.intervalSeconds ?? previous?.intervalSeconds ?? intervalSeconds,
+    timeoutMs: configured.timeoutMs ?? previous?.timeoutMs ?? 3000,
+    failureThreshold: configured.failureThreshold ?? previous?.failureThreshold ?? 1,
+    successThreshold: configured.successThreshold ?? previous?.successThreshold ?? 1,
+    enabled: true,
+    managed: true,
+    primary: true
+  };
+}
+
+async function createManagedHealthCheck(
+  database: DatabaseClient,
+  resource: ResourceAddress & { id: string },
+  input?: PrimaryCheckInput | HealthCheckTarget
+): Promise<void> {
+  const target = input ?? implicitPrimaryTarget(resource);
   if (!target) return;
-  const intervalSeconds = await getAutoPingIntervalSeconds(prisma);
-  await prisma.healthCheck.create({
+  const intervalSeconds = await getAutoPingIntervalSeconds(database);
+  await database.healthCheck.updateMany({
+    where: { resourceId: resource.id, primary: true },
+    data: { primary: false }
+  });
+  await database.healthCheck.create({
     data: {
       resourceId: resource.id,
-      type: target.type,
-      target: target.target,
-      intervalSeconds,
-      timeoutMs: 3000,
-      failureThreshold: 1,
-      successThreshold: 1,
-      enabled: true,
-      managed: true
+      ...checkInputWithDefaults(target, intervalSeconds)
     }
   });
 }
@@ -442,13 +559,13 @@ function clampAutoPingInterval(value: number | null): number {
   return value;
 }
 
-async function getAutoPingIntervalSeconds(prisma: PrismaClient): Promise<number> {
-  const entry = await prisma.systemConfig.findUnique({ where: { key: AUTO_PING_INTERVAL_KEY } });
+async function getAutoPingIntervalSeconds(database: DatabaseClient): Promise<number> {
+  const entry = await database.systemConfig.findUnique({ where: { key: AUTO_PING_INTERVAL_KEY } });
   const parsed = Number.parseInt(entry?.value ?? "", 10);
   return clampAutoPingInterval(Number.isNaN(parsed) ? null : parsed);
 }
 
-async function setAutoPingIntervalSeconds(prisma: PrismaClient, value: number): Promise<void> {
+async function setAutoPingIntervalSeconds(prisma: DatabaseClient, value: number): Promise<void> {
   const interval = clampAutoPingInterval(Math.trunc(value));
   await prisma.systemConfig.upsert({
     where: { key: AUTO_PING_INTERVAL_KEY },
@@ -571,6 +688,12 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       tlsVerify: env.opnsense.tlsVerify
     });
   }
+  if (env.truenas.configured && env.truenas.baseUrl) {
+    assertIntegrationTransport(new URL(env.truenas.baseUrl), {
+      credentialed: true,
+      tlsVerify: env.truenas.tlsVerify
+    });
+  }
   if (env.ai.configured && env.ai.baseUrl) {
     assertIntegrationTransport(new URL(env.ai.baseUrl), {
       credentialed: Boolean(env.ai.apiKey),
@@ -586,10 +709,12 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     trustProxy: env.trustedProxyCidrs.length > 0 ? env.trustedProxyCidrs : false
   });
   const dashboardUtilities = options.dashboardUtilities ?? new DashboardUtilitiesService();
+  const homeContext = options.homeContext ?? new HomeContextService();
   const startedAt = new Date();
   const healthScheduler = createSchedulerRuntime(15_000);
   const metricsScheduler = createSchedulerRuntime(15_000);
   const integrationScheduler = createSchedulerRuntime(15_000);
+  const trueNasScheduler = createSchedulerRuntime(15_000);
   const apiWidgetScheduler = createSchedulerRuntime(15_000);
   const aiScheduler = createSchedulerRuntime(AI_SCHEDULER_INTERVAL_MS);
 
@@ -602,7 +727,9 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     credentials: true
   });
 
+  await initializeHomepage(prisma);
   await backfillManagedHealthChecks(prisma);
+  await backfillPrimaryHealthChecks(prisma);
   await adoptExistingApiWidgetBindings(prisma);
   await prisma.systemConfig.deleteMany({ where: { key: "vault_key" } });
   enforceDatabasePermissions(env.databaseUrl);
@@ -661,7 +788,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       if (
         request.method === "PATCH" &&
         collection.type === "resource" &&
-        !["url", "host", "icon", "monitoringMode"].some((key) => key in body)
+        !["url", "host", "icon", "monitoringMode", "primaryCheck"].some((key) => key in body)
       ) {
         return null;
       }
@@ -1017,6 +1144,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   });
 
   await registerStatusRoutes({ app, prisma, env });
+  await registerHomepageRoutes(app, prisma, requireRecentReauthentication);
+  registerHomepageBackupRoutes(app, prisma, requireRecentReauthentication);
 
   const dashboardCheckInclude = {
     healthChecks: {
@@ -1052,19 +1181,23 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   } as const;
 
   app.get("/api/dashboard", async () => {
-    await syncConfiguredIntegrationSources(prisma, env.opnsense);
+    await Promise.all([
+      syncConfiguredIntegrationSources(prisma, env.opnsense),
+      syncConfiguredTrueNasSource(prisma, env.truenas)
+    ]);
     const [groups, ungroupedResources, hostMonitorsRaw, integrationsRaw, apiWidgetsRaw, aiBriefing] = await Promise.all([
       prisma.dashboardGroup.findMany({
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
         include: {
           resources: {
+            where: { deletedAt: null },
             orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
             include: dashboardCheckInclude
           }
         }
       }),
       prisma.resource.findMany({
-        where: { groupId: null },
+        where: { groupId: null, deletedAt: null },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
         include: dashboardCheckInclude
       }),
@@ -1085,7 +1218,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       getDashboardAiBriefing(prisma, env.ai)
     ]);
     const hostMonitors = hostMonitorsRaw.map(toHostMonitorDto);
-    const integrations = integrationsRaw.map(toIntegrationSourceDto);
+    const integrations = integrationsRaw.map((source) => source.provider === "truenas" ? trueNasSourceDto(source) : toIntegrationSourceDto(source));
     const apiWidgets = apiWidgetsRaw.map(toApiWidgetDto);
     const resources = [...groups.flatMap((group) => group.resources), ...ungroupedResources];
 
@@ -1096,32 +1229,49 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       integrations,
       apiWidgets,
       aiBriefing,
-      dailyBriefing: buildDailyBriefing(resources, hostMonitors),
+      dailyBriefing: buildDailyBriefing(resources.filter(r => r.purpose !== "bookmark"), hostMonitors, integrations),
       layout: {}
     };
   });
 
-  app.get("/api/settings", async () => {
-    const [autoPingIntervalSeconds, utilities] = await Promise.all([
-      getAutoPingIntervalSeconds(prisma),
-      getDashboardUtilitiesConfig(prisma)
+  async function readSettings(tx: DatabaseClient) {
+    const [autoPingIntervalSeconds, utilities, dashboardHome, state] = await Promise.all([
+      getAutoPingIntervalSeconds(tx), getDashboardUtilitiesConfig(tx), getDashboardHomeConfig(tx),
+      tx.homepageState.findUniqueOrThrow({ where: { id: "main" } })
     ]);
-    return { autoPingIntervalSeconds, dashboardUtilities: utilities };
+    return { autoPingIntervalSeconds, dashboardUtilities: utilities, dashboardHome, revision: state.revision };
+  }
+  app.get("/api/settings", () => prisma.$transaction(tx => readSettings(tx)));
+  app.patch("/api/settings", async request => {
+    const body = settingsSchema.parse(request.body);
+    const { revision } = z.object({ revision: z.number().int().min(0).optional() }).parse(request.body);
+    return prisma.$transaction(async tx => {
+      if (revision !== undefined) await claimRevision(tx, revision);
+      if (body.autoPingIntervalSeconds !== undefined) await setAutoPingIntervalSeconds(tx, body.autoPingIntervalSeconds);
+      if (body.dashboardUtilities !== undefined) await setDashboardUtilitiesConfig(tx, body.dashboardUtilities);
+      if (body.dashboardHome !== undefined) await setDashboardHomeConfig(tx, body.dashboardHome);
+      return readSettings(tx);
+    });
   });
 
-  app.patch("/api/settings", async (request) => {
-    const body = settingsSchema.parse(request.body);
-    if (body.autoPingIntervalSeconds !== undefined) {
-      await setAutoPingIntervalSeconds(prisma, body.autoPingIntervalSeconds);
+  app.get("/api/home/summary", async (): Promise<DashboardHomeSummaryDto> => {
+    await syncConfiguredTrueNasSource(prisma, env.truenas);
+    const config: DashboardHomeConfigDto = await getDashboardHomeConfig(prisma);
+    return homeContext.getSummary(prisma, env, config);
+  });
+
+  app.get("/api/home/posters/:ref", async (request, reply) => {
+    const params = z.object({ ref: z.string().regex(/^[A-Za-z0-9_-]{24}$/) }).parse(request.params);
+    try {
+      const poster = await homeContext.getPoster(prisma, env, params.ref);
+      return reply
+        .header("Cache-Control", "private, max-age=300")
+        .header("X-Content-Type-Options", "nosniff")
+        .type(poster.contentType)
+        .send(poster.body);
+    } catch {
+      return reply.code(404).send({ error: "Poster is unavailable" });
     }
-    if (body.dashboardUtilities !== undefined) {
-      await setDashboardUtilitiesConfig(prisma, body.dashboardUtilities);
-    }
-    const [autoPingIntervalSeconds, utilities] = await Promise.all([
-      getAutoPingIntervalSeconds(prisma),
-      getDashboardUtilitiesConfig(prisma)
-    ]);
-    return { autoPingIntervalSeconds, dashboardUtilities: utilities };
   });
 
   app.get("/api/utilities/weather-locations", async (request) => {
@@ -1210,13 +1360,20 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
         }
       },
       integrations: {
-        opnsense: opnsenseRuntimeConfig(env.opnsense)
+        opnsense: opnsenseRuntimeConfig(env.opnsense),
+        truenas: trueNasRuntimeConfig(env.truenas),
+        personalContext: {
+          googleConfigured: env.google.configured,
+          todoistConfigured: env.todoist.configured,
+          tmdbConfigured: env.tmdb.configured
+        }
       },
       ai: aiRuntimeConfig(env.ai, cachedAiBriefing),
       schedulers: {
         health: serializeSchedulerRuntime(healthScheduler),
         metrics: serializeSchedulerRuntime(metricsScheduler),
         integrations: serializeSchedulerRuntime(integrationScheduler),
+        truenas: serializeSchedulerRuntime(trueNasScheduler),
         apiWidgets: serializeSchedulerRuntime(apiWidgetScheduler),
         ai: serializeSchedulerRuntime(aiScheduler)
       }
@@ -1315,17 +1472,23 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   });
 
   app.get("/api/integrations", async () => {
-    await syncConfiguredIntegrationSources(prisma, env.opnsense);
+    await Promise.all([
+      syncConfiguredIntegrationSources(prisma, env.opnsense),
+      syncConfiguredTrueNasSource(prisma, env.truenas)
+    ]);
     const sources = await prisma.integrationSource.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: integrationInclude
     });
-    return sources.map(toIntegrationSourceDto);
+    return sources.map((source) => source.provider === "truenas" ? trueNasSourceDto(source) : toIntegrationSourceDto(source));
   });
 
   app.get("/api/integrations/:id", async (request) => {
     const id = routeId(request);
-    await syncConfiguredIntegrationSources(prisma, env.opnsense);
+    await Promise.all([
+      syncConfiguredIntegrationSources(prisma, env.opnsense),
+      syncConfiguredTrueNasSource(prisma, env.truenas)
+    ]);
     const source = await prisma.integrationSource.findUniqueOrThrow({
       where: { id },
       include: {
@@ -1335,14 +1498,26 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
         }
       }
     });
-    return toIntegrationSourceDto(source);
+    return source.provider === "truenas" ? trueNasSourceDto(source) : toIntegrationSourceDto(source);
   });
 
   app.post("/api/integrations/:id/run", async (request, reply) => {
     const id = routeId(request);
-    await syncConfiguredIntegrationSources(prisma, env.opnsense);
+    await Promise.all([
+      syncConfiguredIntegrationSources(prisma, env.opnsense),
+      syncConfiguredTrueNasSource(prisma, env.truenas)
+    ]);
     const source = await prisma.integrationSource.findUniqueOrThrow({ where: { id } });
 
+    if (source.provider === "truenas") {
+      if (!isTrueNasConfigured(env.truenas)) {
+        reply.code(400);
+        return { error: "TrueNAS integration is not configured" };
+      }
+      const outcome = await runTrueNasSample(prisma, source, env.truenas);
+      const refreshed = await prisma.integrationSource.findUniqueOrThrow({ where: { id }, include: integrationInclude });
+      return { id, ...outcome, source: trueNasSourceDto(refreshed) };
+    }
     if (source.provider !== "opnsense" || !isOpnsenseConfigured(env.opnsense)) {
       reply.code(400);
       return { error: "OPNsense integration is not configured" };
@@ -1609,11 +1784,22 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   app.post("/api/resources", async (request, reply) => {
     const body = resourceSchema.parse(request.body);
-    const proposedTarget = normalizedAutoPingTarget({
+    const { primaryCheck, ...resourceData } = body;
+    const monitoringMode = resourceData.monitoringMode ?? "auto";
+    const implicitTarget = automaticImplicitTarget({
       url: body.url ?? null,
       host: body.host ?? null,
-      monitoringMode: body.monitoringMode
+      monitoringMode
     });
+    const proposedTarget = primaryCheck ?? implicitTarget;
+    if (monitoringMode === "auto" && body.host && !body.url && !primaryCheck) {
+      return reply.code(400).send({
+        error: "Automatic monitoring for a host-only service requires a TCP port or an explicit ping check"
+      });
+    }
+    if (monitoringMode !== "auto" && primaryCheck) {
+      return reply.code(400).send({ error: "A primary check can only be configured for automatic monitoring" });
+    }
     if (proposedTarget) {
       try {
         await validateConfiguredOutboundTarget(healthCheckHostname(proposedTarget.type, proposedTarget.target));
@@ -1621,12 +1807,11 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
         return reply.code(400).send({ error: error instanceof Error ? error.message : "Resource target is not allowed" });
       }
     }
-    const resource = await prisma.resource.create({ data: { ...body } });
-
-    const defaultCheck = normalizedAutoPingTarget(resource);
-    if (defaultCheck) {
-      await createManagedHealthCheck(prisma, resource);
-    }
+    const resource = await prisma.$transaction(async (tx) => {
+      const created = await tx.resource.create({ data: resourceData });
+      if (proposedTarget) await createManagedHealthCheck(tx, created, proposedTarget);
+      return created;
+    });
 
     reply.code(201);
     return resource;
@@ -1635,46 +1820,98 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.patch("/api/resources/:id", async (request, reply) => {
     const id = routeId(request);
     const body = resourcePatchSchema.parse(request.body);
-    const data = { ...body };
+    const { primaryCheck, ...data } = body;
 
     if (data.monitoringMode === "auto") {
       data.manualStatus = null;
     }
 
     const previousResource = await prisma.resource.findUniqueOrThrow({ where: { id }, include: { healthChecks: true } });
-    const nextResourceAddress = { ...previousResource, ...body };
-    if (
-      nextResourceAddress.monitoringMode === "auto" &&
-      (body.monitoringMode !== undefined || body.url !== undefined || body.host !== undefined)
-    ) {
-      const proposedTarget = normalizedResourceTarget(nextResourceAddress);
-      if (proposedTarget) {
-        try {
-          await validateConfiguredOutboundTarget(healthCheckHostname(proposedTarget.type, proposedTarget.target));
-        } catch (error) {
-          return reply.code(400).send({ error: error instanceof Error ? error.message : "Resource target is not allowed" });
-        }
-      }
-    }
-    const resource = await prisma.resource.update({ where: { id }, data, include: { healthChecks: true, group: true } });
-
-    const transitionedToAuto = body.monitoringMode === "auto" && previousResource.monitoringMode !== "auto";
+    if (previousResource.purpose === "bookmark") return reply.code(409).send({ error: "Use the bookmark editor for this saved link" });
+    const nextResourceAddress = { ...previousResource, ...data };
+    const nextAutomatic = nextResourceAddress.monitoringMode === "auto";
+    const transitionedToAuto = data.monitoringMode === "auto" && previousResource.monitoringMode !== "auto";
     const addressChanged =
-      (body.url !== undefined && body.url !== previousResource.url) ||
-      (body.host !== undefined && body.host !== previousResource.host);
-    const managedCheck = resource.healthChecks.find((check) => check.managed);
+      (data.url !== undefined && data.url !== previousResource.url) ||
+      (data.host !== undefined && data.host !== previousResource.host);
+    const currentPrimary = previousResource.healthChecks.find((check) => check.primary);
+    const managedPrimary = currentPrimary?.managed ? currentPrimary : null;
+    const synchronizedTarget = addressChanged && managedPrimary
+      ? synchronizedManagedTarget(managedPrimary, nextResourceAddress)
+      : null;
+    const implicitTarget = !currentPrimary && nextAutomatic && (transitionedToAuto || addressChanged)
+      ? implicitPrimaryTarget(nextResourceAddress)
+      : null;
+    const proposedTarget = primaryCheck ?? synchronizedTarget ?? implicitTarget;
 
-    if (transitionedToAuto && !managedCheck) {
-      await createManagedHealthCheck(prisma, resource);
-    } else if (addressChanged && managedCheck) {
-      const nextTarget = normalizedResourceTarget(resource);
-      if (nextTarget && !healthCheckMatchesTarget(managedCheck, nextTarget)) {
-        await prisma.healthCheck.update({
-          where: { id: managedCheck.id },
-          data: { type: nextTarget.type, target: nextTarget.target, ...resetHealthCheckState }
-        });
+    if (!nextAutomatic && primaryCheck) {
+      return reply.code(400).send({ error: "A primary check can only be configured for automatic monitoring" });
+    }
+    if (
+      nextAutomatic &&
+      nextResourceAddress.host &&
+      !nextResourceAddress.url &&
+      !currentPrimary &&
+      !primaryCheck &&
+      (transitionedToAuto || addressChanged)
+    ) {
+      return reply.code(400).send({
+        error: "Automatic monitoring for a host-only service requires a TCP port or an explicit ping check"
+      });
+    }
+    if (
+      nextAutomatic &&
+      addressChanged &&
+      managedPrimary &&
+      !primaryCheck &&
+      !synchronizedTarget &&
+      nextResourceAddress.host &&
+      !nextResourceAddress.url
+    ) {
+      return reply.code(400).send({
+        error: "Choose a TCP port or explicitly confirm ping before removing the service URL"
+      });
+    }
+    if (proposedTarget) {
+      try {
+        await validateConfiguredOutboundTarget(healthCheckHostname(proposedTarget.type, proposedTarget.target));
+      } catch (error) {
+        return reply.code(400).send({ error: error instanceof Error ? error.message : "Resource target is not allowed" });
       }
     }
+
+    await prisma.$transaction(async (tx) => {
+      const resource = await tx.resource.update({ where: { id }, data });
+      if (primaryCheck) {
+        if (managedPrimary) {
+          const intervalSeconds = await getAutoPingIntervalSeconds(tx);
+          await tx.healthCheck.update({
+            where: { id: managedPrimary.id },
+            data: {
+              ...checkInputWithDefaults(primaryCheck, intervalSeconds, managedPrimary),
+              ...resetHealthCheckState
+            }
+          });
+        } else {
+          await createManagedHealthCheck(tx, resource, primaryCheck);
+        }
+      } else if (
+        managedPrimary &&
+        synchronizedTarget &&
+        !healthCheckMatchesTarget(managedPrimary, synchronizedTarget)
+      ) {
+        await tx.healthCheck.update({
+          where: { id: managedPrimary.id },
+          data: {
+            type: synchronizedTarget.type,
+            target: synchronizedTarget.target,
+            ...resetHealthCheckState
+          }
+        });
+      } else if (!currentPrimary && implicitTarget) {
+        await createManagedHealthCheck(tx, resource, implicitTarget);
+      }
+    });
 
     return prisma.resource.findUniqueOrThrow({ where: { id }, include: { healthChecks: true, group: true } });
   });
@@ -1704,6 +1941,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   app.get("/api/health-checks", async () =>
     prisma.healthCheck.findMany({
+      where: { resource: { purpose: "service" } },
       orderBy: [{ latestStatus: "asc" }, { target: "asc" }],
       include: {
         resource: true,
@@ -1715,14 +1953,50 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     })
   );
 
+  app.post("/api/health-checks/test", async (request, reply) => {
+    const body = healthCheckTestSchema.parse(request.body);
+    try {
+      await validateConfiguredOutboundTarget(healthCheckHostname(body.type, body.target));
+    } catch (error) {
+      return reply.code(400).send({
+        status: "offline",
+        error: error instanceof Error ? error.message : "Health-check target is not allowed",
+        reason: "policy"
+      });
+    }
+    return executeHealthCheck({
+      type: body.type,
+      target: body.target,
+      timeoutMs: body.timeoutMs ?? 3000
+    });
+  });
+
   app.post("/api/health-checks", async (request, reply) => {
     const body = healthCheckSchema.parse(request.body);
+    const resource = await prisma.resource.findUniqueOrThrow({ where: { id: body.resourceId } });
+    if (resource.purpose === "bookmark") return reply.code(400).send({ error: "Bookmarks cannot have health checks" });
     try {
       await validateConfiguredOutboundTarget(healthCheckHostname(body.type, body.target));
     } catch (error) {
       return reply.code(400).send({ error: error instanceof Error ? error.message : "Health-check target is not allowed" });
     }
-    const check = await prisma.healthCheck.create({ data: body, include: { resource: true } });
+    const check = await prisma.$transaction(async (tx) => {
+      const currentPrimary = await tx.healthCheck.findFirst({
+        where: { resourceId: body.resourceId, primary: true },
+        select: { id: true }
+      });
+      const makePrimary = body.primary === true || !currentPrimary;
+      if (makePrimary) {
+        await tx.healthCheck.updateMany({
+          where: { resourceId: body.resourceId, primary: true },
+          data: { primary: false }
+        });
+      }
+      return tx.healthCheck.create({
+        data: { ...body, primary: makePrimary },
+        include: { resource: true }
+      });
+    });
     reply.code(201);
     return check;
   });
@@ -1739,9 +2013,15 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
         timeoutMs: true,
         failureThreshold: true,
         successThreshold: true,
-        enabled: true
+        enabled: true,
+        primary: true
       }
     });
+    if (body.primary === false && previousCheck.primary) {
+      return reply.code(400).send({
+        error: "Promote another check before removing this service's primary check"
+      });
+    }
     const nextType = body.type ?? previousCheck.type;
     const nextTarget = body.target ?? previousCheck.target;
     const targetError = validateHealthCheckTarget(nextType, nextTarget);
@@ -1754,11 +2034,25 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       }
     }
     const resetState = shouldResetHealthCheckAfterPatch(previousCheck, body);
+    const nextResourceId = body.resourceId ?? previousCheck.resourceId;
+    const willBePrimary = body.primary === true || previousCheck.primary;
 
-    return prisma.healthCheck.update({
-      where: { id },
-      data: resetState ? { ...body, ...resetHealthCheckState } : body,
-      include: { resource: true }
+    return prisma.$transaction(async (tx) => {
+      if (willBePrimary) {
+        await tx.healthCheck.updateMany({
+          where: {
+            resourceId: nextResourceId,
+            primary: true,
+            id: { not: id }
+          },
+          data: { primary: false }
+        });
+      }
+      return tx.healthCheck.update({
+        where: { id },
+        data: resetState ? { ...body, ...resetHealthCheckState } : body,
+        include: { resource: true }
+      });
     });
   });
 
@@ -1802,6 +2096,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   let stopScheduler: (() => void) | undefined;
   let stopMetricsScheduler: (() => void) | undefined;
   let stopIntegrationScheduler: (() => void) | undefined;
+  let stopTrueNasScheduler: (() => void) | undefined;
   let stopApiWidgetScheduler: (() => void) | undefined;
   let stopAiBriefingScheduler: (() => void) | undefined;
   const shouldMonitor = options.monitor ?? env.nodeEnv !== "test";
@@ -1810,9 +2105,13 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     healthScheduler.enabled = true;
     metricsScheduler.enabled = true;
     integrationScheduler.enabled = isOpnsenseConfigured(env.opnsense);
+    trueNasScheduler.enabled = isTrueNasConfigured(env.truenas);
     apiWidgetScheduler.enabled = true;
     aiScheduler.enabled = env.ai.configured;
-    await syncConfiguredIntegrationSources(prisma, env.opnsense);
+    await Promise.all([
+      syncConfiguredIntegrationSources(prisma, env.opnsense),
+      syncConfiguredTrueNasSource(prisma, env.truenas)
+    ]);
     stopScheduler = startHealthScheduler(prisma, healthScheduler.intervalMs, (update) => applySchedulerUpdate(healthScheduler, update));
     stopMetricsScheduler = startMetricsScheduler(
       prisma,
@@ -1826,6 +2125,14 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
         env.opnsense,
         integrationScheduler.intervalMs,
         (update) => applySchedulerUpdate(integrationScheduler, update)
+      );
+    }
+    if (trueNasScheduler.enabled) {
+      stopTrueNasScheduler = startTrueNasScheduler(
+        prisma,
+        env.truenas,
+        trueNasScheduler.intervalMs,
+        (update) => applySchedulerUpdate(trueNasScheduler, update)
       );
     }
     stopApiWidgetScheduler = startApiWidgetScheduler(
@@ -1848,6 +2155,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     stopScheduler?.();
     stopMetricsScheduler?.();
     stopIntegrationScheduler?.();
+    stopTrueNasScheduler?.();
     stopApiWidgetScheduler?.();
     stopAiBriefingScheduler?.();
     if (!options.prisma) {

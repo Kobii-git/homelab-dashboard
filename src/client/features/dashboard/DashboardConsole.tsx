@@ -1,3 +1,4 @@
+import { BrowserHomepage } from "../homepage/BrowserHomepage";
 import {
   Activity,
   AlertTriangle,
@@ -50,6 +51,8 @@ import {
 import { apiGet, apiSend } from "../../lib/api";
 import type { SystemSettingsDto } from "../../lib/api";
 import { type AppData } from "../types";
+import { BookmarkLibrary } from "./BookmarkLibrary";
+import { isBookmark } from "../../lib/bookmarks";
 import {
   DASHBOARD_MODE_KEY,
   DashboardLaunchpad,
@@ -340,7 +343,7 @@ function IntegrationMetricSparkline({
   metric: IntegrationMetricKey;
 }) {
   const values = sortIntegrationSamples(samples)
-    .map((sample) => sample.snapshot?.system[metric])
+    .map((sample) => sample.snapshot?.provider === "opnsense" ? sample.snapshot.system[metric] : null)
     .filter((value): value is number => typeof value === "number");
 
   if (values.length < 2) {
@@ -367,7 +370,22 @@ function IntegrationCard({
   source: IntegrationSourceDto;
   onInspect: (source: IntegrationSourceDto) => void;
 }) {
-  const snapshot = source.latestSnapshot;
+  const trueNasSnapshot = source.latestSnapshot?.provider === "truenas" ? source.latestSnapshot : null;
+  if (source.provider === "truenas") {
+    const capacity = trueNasSnapshot?.dataset ?? trueNasSnapshot?.pool;
+    const percent = capacity && capacity.sizeBytes > 0 ? (capacity.usedBytes / capacity.sizeBytes) * 100 : null;
+    const unhealthy = trueNasSnapshot && !["ONLINE", "HEALTHY"].includes(trueNasSnapshot.pool.health.toUpperCase());
+    return (
+      <button className={`host-card integration-card host-${unhealthy ? "offline" : source.status}`} type="button" title={`Inspect ${source.name} integration`} onClick={() => onInspect(source)}>
+        <header className="host-card-head"><span className="host-icon integration-icon"><HardDrive size={18} /></span><span><strong>{source.name}</strong><small>{capacity?.name ?? source.baseUrl}</small></span><i className={`svc-dot dot-${source.status}`} title={source.status} /></header>
+        <div className="host-metrics"><MetricBar icon={<HardDrive size={13} />} label="Used" value={percent} /></div>
+        <div className="drawer-stats"><span><small>Used</small><strong>{formatBytes(capacity?.usedBytes)}</strong></span><span><small>Free</small><strong>{formatBytes(capacity?.freeBytes)}</strong></span></div>
+        <footer className="host-card-foot"><span>{trueNasSnapshot?.pool.health ?? "No sample"}</span><span>{relativeTime(source.latestSampledAt)}</span></footer>
+        {source.latestError ? <p className="host-error">{source.latestError}</p> : null}
+      </button>
+    );
+  }
+  const snapshot = source.latestSnapshot?.provider === "opnsense" ? source.latestSnapshot : null;
   const networkTotal = latestNetworkRate(snapshot);
   const gatewaysOffline = snapshot?.gateways.filter((gateway) => gateway.status === "offline").length ?? 0;
   const detailStatus = gatewaysOffline > 0 ? "offline" : source.status;
@@ -424,7 +442,24 @@ function IntegrationDetailDrawer({
   error: string | null;
   onClose: () => void;
 }) {
-  const snapshot = source.latestSnapshot;
+  const trueNasSnapshot = source.latestSnapshot?.provider === "truenas" ? source.latestSnapshot : null;
+  if (source.provider === "truenas") {
+    const capacity = trueNasSnapshot?.dataset ?? trueNasSnapshot?.pool;
+    const percent = capacity && capacity.sizeBytes > 0 ? (capacity.usedBytes / capacity.sizeBytes) * 100 : null;
+    const trueNasSamples = sortIntegrationSamples(source.samples).filter((sample) => sample.snapshot?.provider === "truenas");
+    const oldestCapacity = trueNasSamples[0]?.snapshot?.provider === "truenas" ? trueNasSamples[0].snapshot.dataset ?? trueNasSamples[0].snapshot.pool : null;
+    const change = capacity && oldestCapacity ? capacity.usedBytes - oldestCapacity.usedBytes : null;
+    return (
+      <ModalSurface backdropClassName="drawer-backdrop" className="service-drawer host-detail-drawer integration-detail-drawer" ariaLabel={`${source.name} integration`} onClose={onClose}>
+        <header className="drawer-head"><span className="host-icon integration-icon"><HardDrive size={20} /></span><div className="drawer-title"><h2>{source.name}</h2><small>{source.baseUrl}</small></div><StatusBadge status={source.status} /><button className="icon-button drawer-close" type="button" aria-label={`Close ${source.name} integration details`} onClick={onClose}><X size={16} /></button></header>
+        <div className="drawer-stats"><span><small>Used</small><strong>{formatPercent(percent)}</strong></span><span><small>Allocated</small><strong>{formatBytes(capacity?.usedBytes)}</strong></span><span><small>Free</small><strong>{formatBytes(capacity?.freeBytes)}</strong></span><span><small>24h change</small><strong>{change == null ? "—" : `${change >= 0 ? "+" : "−"}${formatBytes(Math.abs(change))}`}</strong></span></div>
+        {loading ? <p className="muted-copy">Loading integration history...</p> : null}{error ? <div className="app-error">{error}</div> : null}{source.latestError ? <p className="drawer-check-error">{source.latestError}</p> : null}
+        <section className="drawer-section"><h4>Storage</h4><div className="key-value-grid host-detail-grid"><span><span>Pool</span><strong>{trueNasSnapshot?.pool.name ?? "—"}</strong></span><span><span>Pool health</span><strong>{trueNasSnapshot?.pool.health ?? "—"}</strong></span><span><span>Dataset</span><strong>{trueNasSnapshot?.dataset?.name ?? "Pool total"}</strong></span><span><span>Capacity</span><strong>{formatBytes(capacity?.sizeBytes)}</strong></span><span><span>Collected</span><strong>{relativeTime(source.latestSampledAt)}</strong></span><span><span>Samples</span><strong>{trueNasSamples.length}</strong></span></div></section>
+        {trueNasSnapshot?.warnings.length ? <section className="drawer-section"><h4>Attention</h4>{trueNasSnapshot.warnings.map((warning) => <p className="drawer-check-error" key={warning}>{warning}</p>)}</section> : null}
+      </ModalSurface>
+    );
+  }
+  const snapshot = source.latestSnapshot?.provider === "opnsense" ? source.latestSnapshot : null;
   const samples = sortIntegrationSamples(source.samples);
   const newest = samples[samples.length - 1];
   const oldest = samples[0];
@@ -490,8 +525,8 @@ function IntegrationDetailDrawer({
                 diskPercent: null,
                 diskUsedBytes: null,
                 diskTotalBytes: null,
-                networkRxBytesPerSec: sample.snapshot?.interfaces.reduce((sum, item) => sum + (item.receivedBytesPerSec ?? 0), 0) ?? null,
-                networkTxBytesPerSec: sample.snapshot?.interfaces.reduce((sum, item) => sum + (item.sentBytesPerSec ?? 0), 0) ?? null,
+                networkRxBytesPerSec: sample.snapshot?.provider === "opnsense" ? sample.snapshot.interfaces.reduce((sum, item) => sum + (item.receivedBytesPerSec ?? 0), 0) : null,
+                networkTxBytesPerSec: sample.snapshot?.provider === "opnsense" ? sample.snapshot.interfaces.reduce((sum, item) => sum + (item.sentBytesPerSec ?? 0), 0) : null,
                 temperatureC: null,
                 containersRunning: null,
                 containersTotal: null,
@@ -750,7 +785,7 @@ function ServiceCard({
               <RefreshCw size={14} className={checking ? "spin" : ""} />
             </button>
           ) : null}
-          <button className="svc-action" type="button" aria-label={`Show details for ${resource.name}`} onClick={() => onInspect(resource)}>
+          <button className="svc-action" type="button" aria-label={`Show details for ${resource.name}`} onClick={(event) => { event.currentTarget.focus(); onInspect(resource); }}>
             <Info size={14} />
           </button>
           {resource.url ? (
@@ -827,9 +862,10 @@ export function DashboardConsole({
   const apiWidgets = data.dashboard.apiWidgets ?? [];
   const aiBriefing = data.dashboard.aiBriefing ?? null;
   const briefing = data.dashboard.dailyBriefing;
-  const totals = summarizeResourceStatus(resources);
+  const directoryResources = resources.filter((resource) => !isBookmark(resource));
+  const totals = summarizeResourceStatus(directoryResources);
   const favorites = resources.filter((resource) => resource.favorite);
-  const offlineResources = resources.filter((resource) => statusFor(resource) === "offline");
+  const offlineResources = directoryResources.filter((resource) => statusFor(resource) === "offline");
   const inspected = inspectedId ? resources.find((resource) => resource.id === inspectedId) ?? null : null;
   const inspectedHost = inspectedHostId
     ? hostDetail ?? hostMonitors.find((host) => host.id === inspectedHostId) ?? null
@@ -841,10 +877,11 @@ export function DashboardConsole({
   const offlineIntegrations = integrations.filter((source) => source.status === "offline").length;
   const offlineApiWidgets = apiWidgets.filter((widget) => widget.latestStatus === "offline").length;
   const offlineGateways = integrations.reduce(
-    (sum, source) => sum + (source.latestSnapshot?.gateways.filter((gateway) => gateway.status === "offline").length ?? 0),
+    (sum, source) => sum + (source.latestSnapshot?.provider === "opnsense" ? source.latestSnapshot.gateways.filter((gateway) => gateway.status === "offline").length : 0),
     0
   );
   const pressureHosts = briefing.hostsUnderPressure.length;
+  const storageIssues = briefing.storageIssues ?? [];
   const dailyIssueCount =
     offlineResources.length +
     offlineHosts +
@@ -852,6 +889,7 @@ export function DashboardConsole({
     offlineApiWidgets +
     offlineGateways +
     pressureHosts +
+    storageIssues.length +
     briefing.staleChecks.length +
     briefing.watchlist.length;
   const lastUpdatedAt = [
@@ -864,7 +902,7 @@ export function DashboardConsole({
     .sort((left, right) => right.localeCompare(left))[0] ?? null;
 
   const filters: Array<{ id: StatusFilter; label: string; count: number }> = [
-    { id: "all", label: "All", count: resources.length },
+    { id: "all", label: "All", count: directoryResources.length },
     { id: "favorites", label: "Favorites", count: totals.favorites },
     { id: "online", label: "Online", count: totals.online },
     { id: "offline", label: "Offline", count: totals.offline },
@@ -872,6 +910,7 @@ export function DashboardConsole({
   ];
 
   function matchesResource(resource: DashboardResource): boolean {
+    if (isBookmark(resource)) return false;
     const status = statusFor(resource);
     const haystack = [resource.name, resource.url, resource.host, resource.kind, resource.description]
       .join(" ")
@@ -885,7 +924,7 @@ export function DashboardConsole({
 
   const filteredGroups = data.dashboard.groups
     .map((group) => ({ ...group, resources: group.resources.filter(matchesResource) }))
-    .filter((group) => group.resources.length > 0 || (!query && statusFilter === "all"));
+    .filter((group) => group.resources.length > 0 || (mode !== "launchpad" && !query && statusFilter === "all"));
   const filteredUngrouped = data.dashboard.ungroupedResources.filter(matchesResource);
   const visibleCount =
     filteredGroups.reduce((sum, group) => sum + group.resources.length, 0) + filteredUngrouped.length;
@@ -1179,7 +1218,7 @@ export function DashboardConsole({
         </section>
       ) : null}
 
-      {resources.length > 0 && visibleCount === 0 ? (
+      {directoryResources.length > 0 && visibleCount === 0 ? (
         <EmptyPanel icon={<Search size={36} />} title="No services match" body="Clear search or change the status filter." />
       ) : null}
     </>
@@ -1228,23 +1267,7 @@ export function DashboardConsole({
   if (mode === "launchpad") {
     return (
       <main className="view-shell dashboard-view launchpad-view">
-        <DashboardLaunchpad
-          now={now}
-          username={username}
-          resources={resources}
-          totals={totals}
-          favorites={favorites}
-          offlineResources={offlineResources}
-          utilityConfig={systemSettings.dashboardUtilities}
-          serviceDirectory={serviceDirectory}
-          mode={mode}
-          onModeChange={setMode}
-          onLaunch={openResource}
-          onInspect={(resource) => setInspectedId(resource.id)}
-          onOpenSettings={onOpenSettings}
-          onAddService={onOpenServices}
-          onAddTemplate={onAddServiceTemplate}
-        />
+        <BrowserHomepage username={username} now={now} settings={systemSettings} onOperations={() => setMode("operations")} onSettings={onOpenSettings} services={resources.filter(r => !isBookmark(r))} serviceDirectory={serviceDirectory} />
         {overlays}
       </main>
     );
@@ -1259,7 +1282,7 @@ export function DashboardConsole({
           <p>
             {dateLine}
             <span className="dash-hero-sep">·</span>
-            {resources.length} service{resources.length === 1 ? "" : "s"}
+            {directoryResources.length} service{directoryResources.length === 1 ? "" : "s"}
             <span className="dash-hero-sep">·</span>
             {hostMonitors.length} host monitor{hostMonitors.length === 1 ? "" : "s"}
             {integrations.length > 0 ? (
@@ -1423,6 +1446,16 @@ export function DashboardConsole({
                 </span>
               ))}
           </article>
+          ) : null}
+          {storageIssues.length > 0 ? (
+            <article className="briefing-card briefing-warning">
+              <strong><HardDrive size={15} /> Storage</strong>
+              {storageIssues.map((item) => (
+                <button key={item.id} type="button" onClick={() => setInspectedIntegrationId(item.id)}>
+                  <span>{item.name}</span><small>{item.health} · {item.usedPercent}% used</small>
+                </button>
+              ))}
+            </article>
           ) : null}
 
           {briefing.recentChanges.length > 0 ? (
@@ -1616,7 +1649,7 @@ export function DashboardConsole({
         </section>
       ) : null}
 
-      {resources.length > 0 && visibleCount === 0 ? (
+      {directoryResources.length > 0 && visibleCount === 0 ? (
         <EmptyPanel icon={<Search size={36} />} title="No services match" body="Clear search or change the status filter." />
       ) : null}
 

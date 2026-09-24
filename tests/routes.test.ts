@@ -80,6 +80,27 @@ const env = {
     tlsVerify: true,
     pollIntervalSeconds: 60
   },
+  google: {
+    configured: false,
+    clientId: null,
+    clientSecret: null,
+    refreshToken: null,
+    calendarIds: ["primary"]
+  },
+  todoist: { configured: false, apiToken: null },
+  tmdb: { configured: false, bearerToken: null },
+  truenas: {
+    enabled: false,
+    configured: false,
+    name: "TrueNAS",
+    baseUrl: null,
+    username: null,
+    apiKey: null,
+    poolName: null,
+    datasetName: null,
+    tlsVerify: true,
+    pollIntervalSeconds: 60
+  },
   ai: disabledAiEnv
 };
 
@@ -306,6 +327,77 @@ async function withMockJsonApi<T>(
 }
 
 describe("api routes", () => {
+  it("keeps home context authenticated and disabled by default", async () => {
+    const unauthenticated = await app.inject({ method: "GET", url: "/api/home/summary" });
+    expect(unauthenticated.statusCode).toBe(401);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/home/summary",
+      headers: { cookie: await loginCookie() }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      agenda: { state: "disabled", data: null },
+      tasks: { state: "disabled", data: null },
+      mail: { state: "disabled", data: null },
+      media: { state: "disabled", data: null },
+      storage: { state: "disabled", data: null }
+    });
+  });
+
+  it("validates and persists non-secret daily cockpit settings", async () => {
+    const cookie = await loginCookie();
+    const dashboardHome = {
+      agendaEnabled: false,
+      tasksEnabled: false,
+      mailEnabled: false,
+      mediaEnabled: false,
+      storageEnabled: true,
+      plexWidgetId: null,
+      radarrWidgetId: null,
+      mediaRegion: "ZA",
+      mediaLanguage: "en-US",
+      mediaLimit: 6
+    };
+    const updated = await app.inject({ method: "PATCH", url: "/api/settings", headers: { cookie }, payload: { dashboardHome } });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().dashboardHome).toEqual(dashboardHome);
+    const invalid = await app.inject({ method: "PATCH", url: "/api/settings", headers: { cookie }, payload: { dashboardHome: { ...dashboardHome, mediaRegion: "south-africa" } } });
+    expect(invalid.statusCode).toBe(400);
+    await app.inject({ method: "PATCH", url: "/api/settings", headers: { cookie }, payload: { dashboardHome: { ...dashboardHome, storageEnabled: false } } });
+  });
+
+  it("rejects primitive settings bodies without changing persisted settings", async () => {
+    const cookie = await loginCookie();
+    const before = await app.inject({ method: "GET", url: "/api/settings", headers: { cookie } });
+    expect(before.statusCode).toBe(200);
+
+    for (const value of [null, true, 60, "60"]) {
+      const response = await app.inject({
+        method: "PATCH",
+        url: "/api/settings",
+        headers: { cookie, "content-type": "application/json" },
+        payload: JSON.stringify(value)
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({ error: "Invalid request" });
+      const after = await app.inject({ method: "GET", url: "/api/settings", headers: { cookie } });
+      expect(after.statusCode).toBe(200);
+      expect(after.json()).toEqual(before.json());
+    }
+  });
+
+  it("rejects unknown poster references without exposing proxy parameters", async () => {
+    expect((await app.inject({ method: "GET", url: "/api/home/posters/AAAAAAAAAAAAAAAAAAAAAAAA" })).statusCode).toBe(401);
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/home/posters/AAAAAAAAAAAAAAAAAAAAAAAA",
+      headers: { cookie: await loginCookie() }
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: "Poster is unavailable" });
+  });
   beforeAll(async () => {
     await app.ready();
   });
@@ -906,6 +998,7 @@ describe("api routes", () => {
         name: "Router",
         kind: "server",
         host: "192.168.1.1",
+        primaryCheck: { type: "tcp", target: "192.168.1.1:443" },
         groupId: groupBody.id,
         favorite: true
       }
@@ -1857,7 +1950,7 @@ describe("api routes", () => {
     });
   });
 
-  it("syncs the default health check when a service address changes", async () => {
+  it("syncs a managed TCP primary check and preserves its port when a service host changes", async () => {
     const cookie = await loginCookie();
 
     const resource = await app.inject({
@@ -1867,14 +1960,15 @@ describe("api routes", () => {
       payload: {
         name: "Moving Host",
         kind: "server",
-        host: "192.0.2.10"
+        host: "192.0.2.10",
+        primaryCheck: { type: "tcp", target: "192.0.2.10:443" }
       }
     });
     expect(resource.statusCode).toBe(201);
     const resourceId = resource.json<{ id: string }>().id;
 
     const defaultCheck = await prisma.healthCheck.findFirstOrThrow({
-      where: { resourceId, type: "ping", target: "192.0.2.10" }
+      where: { resourceId, type: "tcp", target: "192.0.2.10:443", primary: true }
     });
 
     const custom = await app.inject({
@@ -1883,8 +1977,8 @@ describe("api routes", () => {
       headers: { cookie },
       payload: {
         resourceId,
-        type: "tcp",
-        target: "192.0.2.10:443",
+        type: "ping",
+        target: "192.0.2.10",
         timeoutMs: 250,
         intervalSeconds: 15
       }
@@ -1928,8 +2022,8 @@ describe("api routes", () => {
     }>();
 
     expect(body.healthChecks.find((check) => check.id === defaultCheck.id)).toMatchObject({
-      type: "ping",
-      target: "192.0.2.11",
+      type: "tcp",
+      target: "192.0.2.11:443",
       enabled: false,
       latestStatus: "unknown",
       latestLatencyMs: null,
@@ -1938,8 +2032,8 @@ describe("api routes", () => {
       consecutiveFailures: 0
     });
     expect(body.healthChecks.find((check) => check.id === customCheckId)).toMatchObject({
-      type: "tcp",
-      target: "192.0.2.10:443"
+      type: "ping",
+      target: "192.0.2.10"
     });
   });
 
@@ -1953,7 +2047,8 @@ describe("api routes", () => {
       payload: {
         name: "Previously Moved Host",
         kind: "server",
-        host: "192.0.2.20"
+        host: "192.0.2.20",
+        primaryCheck: { type: "ping", target: "192.0.2.20" }
       }
     });
     expect(resource.statusCode).toBe(201);
@@ -2012,7 +2107,7 @@ describe("api routes", () => {
       method: "POST",
       url: "/api/resources",
       headers: { cookie },
-      payload: { name: "Deleted Default", kind: "server", host: "192.0.2.31" }
+      payload: { name: "Deleted Default", kind: "server", url: "http://deleted-default.test" }
     });
     const resourceId = created.json<{ id: string }>().id;
     const managed = await prisma.healthCheck.findFirstOrThrow({ where: { resourceId, managed: true } });
@@ -2070,6 +2165,182 @@ describe("api routes", () => {
       headers: { cookie }
     });
     expect(disabledRun.statusCode).toBe(409);
+  });
+
+  it("requires an explicit primary protocol for host-only automatic services", async () => {
+    const cookie = await loginCookie();
+    const rejected = await app.inject({
+      method: "POST",
+      url: "/api/resources",
+      headers: { cookie },
+      payload: { name: "Unconfirmed ICMP Host", kind: "server", host: "192.168.88.10" }
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.body).toContain("requires a TCP port or an explicit ping");
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/resources",
+      headers: { cookie },
+      payload: {
+        name: "Explicit TCP Host",
+        kind: "server",
+        host: "192.168.88.10",
+        primaryCheck: { type: "tcp", target: "192.168.88.10:8443" }
+      }
+    });
+    expect(created.statusCode).toBe(201);
+    const primary = await prisma.healthCheck.findFirstOrThrow({
+      where: { resourceId: created.json<{ id: string }>().id }
+    });
+    expect(primary).toMatchObject({
+      type: "tcp",
+      target: "192.168.88.10:8443",
+      managed: true,
+      primary: true
+    });
+  });
+
+  it("uses only the enabled primary check for service availability", async () => {
+    const cookie = await loginCookie();
+    const resource = await app.inject({
+      method: "POST",
+      url: "/api/resources",
+      headers: { cookie },
+      payload: { name: "Primary Availability", kind: "app" }
+    });
+    const resourceId = resource.json<{ id: string }>().id;
+    const primaryResponse = await app.inject({
+      method: "POST",
+      url: "/api/health-checks",
+      headers: { cookie },
+      payload: { resourceId, type: "tcp", target: "primary.test:443" }
+    });
+    const diagnosticResponse = await app.inject({
+      method: "POST",
+      url: "/api/health-checks",
+      headers: { cookie },
+      payload: { resourceId, type: "ping", target: "diagnostic.test" }
+    });
+    const primaryId = primaryResponse.json<{ id: string }>().id;
+    const diagnosticId = diagnosticResponse.json<{ id: string }>().id;
+    await prisma.healthCheck.update({
+      where: { id: primaryId },
+      data: { latestStatus: "online", latestCheckedAt: new Date(), latestLatencyMs: 12 }
+    });
+    await prisma.healthCheck.update({
+      where: { id: diagnosticId },
+      data: { latestStatus: "offline", latestCheckedAt: new Date(), latestError: "ICMP blocked" }
+    });
+
+    let status = await app.inject({ method: "GET", url: "/api/status" });
+    expect(status.json<{ resources: Array<{ name: string; status: string }> }>().resources)
+      .toContainEqual(expect.objectContaining({ name: "Primary Availability", status: "online" }));
+
+    const promoted = await app.inject({
+      method: "PATCH",
+      url: `/api/health-checks/${diagnosticId}`,
+      headers: { cookie },
+      payload: { primary: true }
+    });
+    expect(promoted.statusCode).toBe(200);
+    expect(await prisma.healthCheck.findUniqueOrThrow({ where: { id: primaryId } })).toMatchObject({ primary: false });
+    expect(await prisma.healthCheck.findUniqueOrThrow({ where: { id: diagnosticId } })).toMatchObject({ primary: true });
+
+    status = await app.inject({ method: "GET", url: "/api/status" });
+    expect(status.json<{ resources: Array<{ name: string; status: string }> }>().resources)
+      .toContainEqual(expect.objectContaining({ name: "Primary Availability", status: "offline" }));
+
+    await app.inject({
+      method: "PATCH",
+      url: `/api/health-checks/${diagnosticId}`,
+      headers: { cookie },
+      payload: { enabled: false }
+    });
+    status = await app.inject({ method: "GET", url: "/api/status" });
+    expect(status.json<{ resources: Array<{ name: string; status: string }> }>().resources)
+      .toContainEqual(expect.objectContaining({ name: "Primary Availability", status: "unknown" }));
+  });
+
+  it("tests HTTP reachability without persisting history and preserves exact URL ports and paths", async () => {
+    const cookie = await loginCookie();
+    await withMockJsonApi((request, response) => {
+      response.statusCode = request.url?.startsWith("/down") ? 503 : 403;
+      response.end();
+    }, async (baseUrl) => {
+      const exactUrl = `${baseUrl}/auth?source=dashboard`;
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/resources",
+        headers: { cookie },
+        payload: { name: "Port and Path App", kind: "docker", url: exactUrl }
+      });
+      expect(created.statusCode).toBe(201);
+      expect(await prisma.healthCheck.findFirstOrThrow({
+        where: { resourceId: created.json<{ id: string }>().id }
+      })).toMatchObject({ type: "http", target: exactUrl, primary: true, managed: true });
+
+      const before = await prisma.healthResult.count();
+      const reachable = await app.inject({
+        method: "POST",
+        url: "/api/health-checks/test",
+        headers: { cookie },
+        payload: { type: "http", target: exactUrl, timeoutMs: 1000 }
+      });
+      expect(reachable.statusCode).toBe(200);
+      expect(reachable.json<{ status: string }>().status).toBe("online");
+
+      const unavailable = await app.inject({
+        method: "POST",
+        url: "/api/health-checks/test",
+        headers: { cookie },
+        payload: { type: "http", target: `${baseUrl}/down`, timeoutMs: 1000 }
+      });
+      expect(unavailable.statusCode).toBe(200);
+      expect(unavailable.json<{ status: string; reason: string }>())
+        .toMatchObject({ status: "offline", reason: "http_5xx" });
+      expect(await prisma.healthResult.count()).toBe(before);
+    });
+  });
+
+  it("backfills one deterministic primary without rewriting checks or history", async () => {
+    const resource = await prisma.resource.create({
+      data: { name: "Primary Backfill", kind: "server", monitoringMode: "auto" }
+    });
+    const oldest = await prisma.healthCheck.create({
+      data: {
+        resourceId: resource.id,
+        type: "tcp",
+        target: "backfill.test:80",
+        enabled: true,
+        managed: false,
+        primary: false
+      }
+    });
+    const managed = await prisma.healthCheck.create({
+      data: {
+        resourceId: resource.id,
+        type: "tcp",
+        target: "backfill.test:443",
+        enabled: true,
+        managed: true,
+        primary: false
+      }
+    });
+    await prisma.healthResult.create({
+      data: { checkId: oldest.id, status: "online", latencyMs: 9 }
+    });
+    await prisma.systemConfig.deleteMany({ where: { key: "primary_health_checks_v1" } });
+
+    const restarted = await createApp({ prisma, env, monitor: false, logger: false });
+    await restarted.ready();
+    await restarted.close();
+
+    expect(await prisma.healthCheck.findUniqueOrThrow({ where: { id: managed.id } }))
+      .toMatchObject({ primary: true, target: "backfill.test:443" });
+    expect(await prisma.healthCheck.findUniqueOrThrow({ where: { id: oldest.id } }))
+      .toMatchObject({ primary: false, target: "backfill.test:80" });
+    expect(await prisma.healthResult.count({ where: { checkId: oldest.id } })).toBe(1);
   });
 
   it("clears stale offline state when a health check target is edited", async () => {
@@ -2165,8 +2436,7 @@ describe("api routes", () => {
       headers: { cookie },
       payload: {
         name: "Missing TCP",
-        kind: "other",
-        host: "127.0.0.1"
+        kind: "other"
       }
     });
 
@@ -2249,7 +2519,7 @@ describe("api routes", () => {
         method: "POST",
         url: "/api/resources",
         headers: { cookie },
-        payload: { name, kind: "app", host: "192.168.77.1" }
+        payload: { name, kind: "app", host: "192.168.77.1", monitoringMode: "disabled" }
       });
       expect(response.statusCode).toBe(201);
       created.push(response.json<{ id: string }>().id);
@@ -2288,7 +2558,7 @@ describe("api routes", () => {
       method: "POST",
       url: "/api/resources",
       headers: { cookie },
-      payload: { name: "History Box", kind: "server", host: "127.0.0.1" }
+      payload: { name: "History Box", kind: "server" }
     });
     const resourceId = resource.json<{ id: string }>().id;
 
@@ -2460,6 +2730,9 @@ describe("api routes", () => {
     expect(aggregate.json<{ summary: { resources: number } }>().summary.resources).toBeGreaterThan(0);
     expect(aggregate.body).not.toContain("gitSha");
     expect(aggregate.body).not.toContain("buildTime");
+    expect(aggregate.body).not.toContain("truenas");
+    expect(aggregate.body).not.toContain("agenda");
+    expect(aggregate.body).not.toContain("mediaRegion");
     await aggregateApp.close();
     configureOutboundPolicy(env);
   });
@@ -2497,10 +2770,28 @@ describe("api routes", () => {
       remoteAddress: "10.0.0.25",
       headers: { host: "dashboard.test", "x-forwarded-proto": "https" }
     })).statusCode).toBe(421);
+    const forwardedHeaders = {
+      "x-forwarded-proto": "https",
+      "x-forwarded-host": "dashboard.test",
+      "x-forwarded-for": "127.0.0.1"
+    };
+    expect((await productionApp.inject({
+      method: "GET",
+      url: "/api/version",
+      remoteAddress: "10.0.0.25",
+      headers: { host: "dashboard.test", ...forwardedHeaders }
+    })).statusCode).toBe(421);
+    expect((await productionApp.inject({
+      method: "GET",
+      url: "/api/health",
+      remoteAddress: "10.0.0.25",
+      headers: { host: "127.0.0.1:4173", ...forwardedHeaders }
+    })).statusCode).toBe(421);
     const version = await productionApp.inject({
       method: "GET",
       url: "/api/version",
-      headers: { host: "dashboard.test", "x-forwarded-proto": "https" }
+      remoteAddress: "127.0.0.1",
+      headers: { host: "dashboard.test", ...forwardedHeaders }
     });
     expect(version.statusCode).toBe(200);
     expect(Object.keys(version.json())).toEqual(["version"]);

@@ -126,12 +126,15 @@ export function ServiceDrawer({
         {checks.length > 0 ? (
           <section className="drawer-section">
             <h4>Health checks</h4>
+            {automatic && !checks.some((check) => check.enabled && check.primary) ? (
+              <p className="muted-copy">No enabled primary check is selected, so this service remains unknown.</p>
+            ) : null}
             <div className="drawer-checks">
               {checks.map((check) => (
                 <div className="drawer-check" key={check.id}>
                   <span className={`svc-dot dot-${check.latestStatus}`} />
                   <div className="drawer-check-copy">
-                    <strong>{check.type.toUpperCase()} · {check.target}</strong>
+                    <strong>{check.type.toUpperCase()} · {check.primary ? "Primary" : "Diagnostic"} · {check.target}</strong>
                     <small>
                       every {check.intervalSeconds}s · {check.enabled ? "enabled" : "paused"}
                       {check.latestCheckedAt ? ` · ${formatDateTime(check.latestCheckedAt)}` : ""}

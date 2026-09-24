@@ -50,7 +50,9 @@ export async function checkSslCertificate(target: string, timeoutMs: number): Pr
 
   try {
     const { host, port, servername } = parseSslTarget(target);
-    const resolved = await resolveOutboundTarget(host);
+    const resolved = await resolveOutboundTarget(host, { timeoutMs });
+    const remainingMs = timeoutMs - (Date.now() - startedAt);
+    if (remainingMs <= 0) throw new Error("Timeout");
     const cert = await new Promise<tls.PeerCertificate>((resolve, reject) => {
       let settled = false;
       const finishReject = (error: Error) => {
@@ -79,7 +81,7 @@ export async function checkSslCertificate(target: string, timeoutMs: number): Pr
       const timeout = setTimeout(() => {
         socket.destroy();
         finishReject(new Error("Timeout"));
-      }, timeoutMs);
+      }, remainingMs);
       socket.once("error", finishReject);
     });
 

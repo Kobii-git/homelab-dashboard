@@ -1,0 +1,195 @@
+import { z } from "zod";
+
+export const workspaceIdSchema = z.enum(["home", "work"]);
+export type WorkspaceId = z.infer<typeof workspaceIdSchema>;
+export const homepageId = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
+export const widgetIds = [
+  "favorites",
+  "bookmarks",
+  "weather",
+  "notes",
+  "prompts",
+  "reading",
+  "timer",
+  "agenda",
+  "tasks",
+  "mail",
+  "media",
+  "storage",
+  "services",
+  "releases",
+] as const;
+export const layoutSchema = z
+  .object({
+    accent: z.enum(["blue", "green", "violet", "amber"]),
+    background: z.string().regex(/^(none|dawn|ocean|asset:[a-f0-9]{64})$/),
+    clock: z.enum(["digital", "hidden"]),
+    widgets: z
+      .array(
+        z
+          .object({
+            id: z.enum(widgetIds),
+            enabled: z.boolean(),
+            size: z.enum(["normal", "wide"]),
+          })
+          .strict(),
+      )
+      .length(widgetIds.length),
+  })
+  .strict()
+  .refine(
+    (v) => new Set(v.widgets.map((w) => w.id)).size === widgetIds.length,
+    "Widgets must be unique",
+  );
+export type HomeLayout = z.infer<typeof layoutSchema>;
+export function defaultLayout(work: boolean): HomeLayout {
+  return {
+    accent: "blue",
+    background: "none",
+    clock: "digital",
+    widgets: widgetIds.map((id) => ({
+      id,
+      enabled:
+        ["favorites", "bookmarks"].includes(id) ||
+        (!work && id === "services") ||
+        (work && ["notes", "prompts", "reading", "timer"].includes(id)),
+      size: ["favorites", "bookmarks", "services"].includes(id)
+        ? "wide"
+        : "normal",
+    })),
+  };
+}
+export const homepageDataSchema = z
+  .object({
+    workspaces: z
+      .object({
+        home: z
+          .object({ notes: z.string().max(50_000), layout: layoutSchema })
+          .strict(),
+        work: z
+          .object({ notes: z.string().max(50_000), layout: layoutSchema })
+          .strict(),
+      })
+      .strict(),
+    collections: z
+      .array(
+        z
+          .object({
+            id: homepageId,
+            workspaceId: workspaceIdSchema,
+            parentId: homepageId.nullable(),
+            name: z.string().trim().min(1).max(120),
+            sortOrder: z.number().int().min(0),
+          })
+          .strict(),
+      )
+      .max(1000),
+    prompts: z
+      .array(
+        z
+          .object({
+            id: homepageId,
+            workspaceId: workspaceIdSchema,
+            title: z.string().trim().min(1).max(160),
+            text: z.string().trim().min(1).max(20_000),
+          })
+          .strict(),
+      )
+      .max(500),
+  })
+  .strict()
+  .superRefine((data, ctx) => {
+    if (new Set(data.prompts.map((p) => p.id)).size !== data.prompts.length)
+      ctx.addIssue({ code: "custom", message: "Duplicate prompt IDs" });
+    const byId = new Map(data.collections.map((c) => [c.id, c]));
+    if (byId.size !== data.collections.length)
+      ctx.addIssue({ code: "custom", message: "Duplicate collections" });
+    for (const c of data.collections) {
+      const seen = new Set([c.id]);
+      let parent = c.parentId;
+      while (parent) {
+        const p = byId.get(parent);
+        if (
+          !p ||
+          seen.has(parent) ||
+          p.workspaceId !== c.workspaceId ||
+          seen.size > 20
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Collection hierarchy is invalid or deeper than 20 levels",
+          });
+          break;
+        }
+        seen.add(parent);
+        parent = p.parentId;
+      }
+    }
+  });
+export type HomepageData = z.infer<typeof homepageDataSchema>;
+export function defaultHomepage(): HomepageData {
+  return {
+    workspaces: {
+      home: { notes: "", layout: defaultLayout(false) },
+      work: { notes: "", layout: defaultLayout(true) },
+    },
+    collections: [],
+    prompts: [],
+  };
+}
+export const bookmarkInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(160),
+    url: z
+      .string()
+      .trim()
+      .max(2000)
+      .transform((v, ctx) => {
+        try {
+          const u = new URL(v);
+          if (
+            !["http:", "https:"].includes(u.protocol) ||
+            u.username ||
+            u.password
+          )
+            throw new Error();
+          return u.href;
+        } catch {
+          ctx.addIssue({
+            code: "custom",
+            message: "Use an HTTP or HTTPS URL without credentials",
+          });
+          return z.NEVER;
+        }
+      }),
+    notes: z.string().max(20_000).default(""),
+    favorite: z.boolean().default(false),
+    workspaceId: workspaceIdSchema,
+    collectionId: homepageId.nullable().default(null),
+    readingState: z.enum(["none", "unread", "reading", "done"]).default("none"),
+  })
+  .strict();
+export type BookmarkInput = z.infer<typeof bookmarkInputSchema>;
+export type HomepageBookmark = BookmarkInput & {
+  id: string;
+  sortOrder: number;
+  deletedAt: string | null;
+  updatedAt: string;
+};
+export type HomepageSnapshot = {
+  revision: number;
+  data: HomepageData;
+  bookmarks: HomepageBookmark[];
+  assets: { id: string; mimeType: string }[];
+};
+export function collectionLabel(data: HomepageData, id: string | null): string {
+  const parts: string[] = [];
+  let next = id;
+  for (let i = 0; next && i < 20; i++) {
+    const c = data.collections.find((c) => c.id === next);
+    if (!c) break;
+    parts.unshift(c.name);
+    next = c.parentId;
+  }
+  return parts.join(" / ") || "Unfiled";
+}

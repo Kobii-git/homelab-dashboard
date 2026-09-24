@@ -73,6 +73,20 @@ export const dashboardGroupSchema = z.object({
 
 export const dashboardGroupPatchSchema = dashboardGroupSchema.partial();
 
+const healthCheckSettingsBaseSchema = z.object({
+  type: z.enum(HEALTH_CHECK_TYPES),
+  target: z.string().trim().min(1).max(500),
+  intervalSeconds: z.number().int().min(15).max(86400).optional(),
+  timeoutMs: z.number().int().min(250).max(30000).optional(),
+  failureThreshold: z.number().int().min(1).max(20).optional(),
+  successThreshold: z.number().int().min(1).max(20).optional()
+});
+
+const healthCheckSettingsSchema = healthCheckSettingsBaseSchema.superRefine((value, context) => {
+  const error = validateHealthCheckTarget(value.type, value.target);
+  if (error) context.addIssue({ code: "custom", path: ["target"], message: error });
+});
+
 export const resourceSchema = z.object({
   name: z.string().trim().min(1).max(160),
   kind: z.enum(RESOURCE_KINDS),
@@ -85,7 +99,8 @@ export const resourceSchema = z.object({
   monitoringMode: z.enum(MONITORING_MODES).optional(),
   manualStatus: z.enum(HEALTH_STATUSES).optional().nullable(),
   sortOrder: z.number().int().min(0).optional(),
-  groupId: z.string().cuid().optional().nullable()
+  groupId: z.string().cuid().optional().nullable(),
+  primaryCheck: healthCheckSettingsSchema.optional()
 });
 
 export const resourcePatchSchema = resourceSchema.partial();
@@ -98,7 +113,8 @@ const healthCheckBaseSchema = z.object({
   timeoutMs: z.number().int().min(250).max(30000).optional(),
   failureThreshold: z.number().int().min(1).max(20).optional(),
   successThreshold: z.number().int().min(1).max(20).optional(),
-  enabled: z.boolean().optional()
+  enabled: z.boolean().optional(),
+  primary: z.boolean().optional()
 });
 
 export function validateHealthCheckTarget(type: string, target: string): string | null {
@@ -140,6 +156,15 @@ export const healthCheckSchema = healthCheckBaseSchema.superRefine((value, conte
 });
 
 export const healthCheckPatchSchema = healthCheckBaseSchema.partial();
+
+export const healthCheckTestSchema = healthCheckSettingsBaseSchema.pick({
+  type: true,
+  target: true,
+  timeoutMs: true
+}).superRefine((value, context) => {
+  const error = validateHealthCheckTarget(value.type, value.target);
+  if (error) context.addIssue({ code: "custom", path: ["target"], message: error });
+});
 
 const glancesBaseUrl = httpUrl;
 
@@ -258,10 +283,24 @@ export const dashboardUtilitiesConfigSchema = z.object({
   }))
 });
 
+export const dashboardHomeConfigSchema = z.object({
+  agendaEnabled: z.boolean(),
+  tasksEnabled: z.boolean(),
+  mailEnabled: z.boolean(),
+  mediaEnabled: z.boolean(),
+  storageEnabled: z.boolean(),
+  plexWidgetId: z.string().cuid().nullable(),
+  radarrWidgetId: z.string().cuid().nullable(),
+  mediaRegion: z.string().trim().regex(/^[A-Z]{2}$/, "Use a two-letter uppercase region"),
+  mediaLanguage: z.string().trim().regex(/^[a-z]{2}-[A-Z]{2}$/, "Use a language such as en-US"),
+  mediaLimit: z.number().int().min(1).max(12)
+});
+
 export const settingsSchema = z.object({
   autoPingIntervalSeconds: z.number().int().min(15).max(86400).optional(),
-  dashboardUtilities: dashboardUtilitiesConfigSchema.optional()
-}).refine((value) => value.autoPingIntervalSeconds !== undefined || value.dashboardUtilities !== undefined, {
+  dashboardUtilities: dashboardUtilitiesConfigSchema.optional(),
+  dashboardHome: dashboardHomeConfigSchema.optional()
+}).refine((value) => value.autoPingIntervalSeconds !== undefined || value.dashboardUtilities !== undefined || value.dashboardHome !== undefined, {
   message: "Provide at least one setting"
 });
 

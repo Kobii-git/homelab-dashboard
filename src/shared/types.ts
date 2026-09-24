@@ -75,6 +75,93 @@ export type DashboardUtilitiesSummaryDto = {
   releases: UtilityResultDto<ReleaseItemDto[]>;
 };
 
+export type DashboardHomeConfigDto = {
+  agendaEnabled: boolean;
+  tasksEnabled: boolean;
+  mailEnabled: boolean;
+  mediaEnabled: boolean;
+  storageEnabled: boolean;
+  plexWidgetId: string | null;
+  radarrWidgetId: string | null;
+  mediaRegion: string;
+  mediaLanguage: string;
+  mediaLimit: number;
+};
+
+export type AgendaEventDto = {
+  id: string;
+  title: string;
+  start: string;
+  end: string | null;
+  allDay: boolean;
+  calendarName: string;
+  color: string | null;
+  url: string | null;
+};
+
+export type AgendaSummaryDto = {
+  events: AgendaEventDto[];
+  timeZone: string | null;
+};
+
+export type TodoistTaskDto = {
+  id: string;
+  content: string;
+  dueAt: string | null;
+  dueDate: string | null;
+  overdue: boolean;
+  priority: number;
+  projectName: string | null;
+  url: string;
+};
+
+export type MailSummaryDto = {
+  inboxUnread: number;
+  inboxUrl: string;
+  composeUrl: string;
+};
+
+export type HomeMediaItemDto = {
+  id: string;
+  source: "plex" | "radarr" | "tmdb";
+  title: string;
+  year: number | null;
+  releaseDate: string | null;
+  addedAt: string | null;
+  posterUrl: string | null;
+  externalUrl: string | null;
+};
+
+export type HomeMediaSummaryDto = {
+  recentlyAdded: HomeMediaItemDto[];
+  upcoming: HomeMediaItemDto[];
+  trending: HomeMediaItemDto[];
+  attribution: { provider: "tmdb"; notice: string; logoUrl: string } | null;
+};
+
+export type HomeStorageSummaryDto = {
+  sourceId: string;
+  name: string;
+  poolName: string;
+  datasetName: string | null;
+  status: HealthStatus;
+  health: string;
+  sizeBytes: number;
+  usedBytes: number;
+  freeBytes: number;
+  usedPercent: number;
+  change24hBytes: number | null;
+  sampledAt: string;
+};
+
+export type DashboardHomeSummaryDto = {
+  agenda: UtilityResultDto<AgendaSummaryDto>;
+  tasks: UtilityResultDto<TodoistTaskDto[]>;
+  mail: UtilityResultDto<MailSummaryDto>;
+  media: UtilityResultDto<HomeMediaSummaryDto>;
+  storage: UtilityResultDto<HomeStorageSummaryDto>;
+};
+
 export type HealthTick = {
   id: string;
   status: HealthStatus;
@@ -83,6 +170,9 @@ export type HealthTick = {
 };
 
 export type DashboardResource = {
+  purpose?: "service" | "bookmark";
+  workspaceId?: "home" | "work";
+  deletedAt?: string | null;
   id: string;
   name: string;
   kind: ResourceKind;
@@ -106,6 +196,7 @@ export type DashboardResource = {
     timeoutMs: number;
     enabled: boolean;
     managed: boolean;
+    primary: boolean;
     latestStatus: HealthStatus;
     latestLatencyMs: number | null;
     latestCheckedAt: string | null;
@@ -173,7 +264,7 @@ export type HostMonitorDto = {
   samples?: HostMetricSampleDto[];
 };
 
-export type IntegrationProvider = "opnsense";
+export type IntegrationProvider = "opnsense" | "truenas";
 
 export type OpnsenseGatewayDto = {
   id: string;
@@ -247,12 +338,33 @@ export type OpnsenseSnapshotDto = {
   importSuggestions: OpnsenseImportSuggestionDto[];
 };
 
+export type TrueNasCapacityDto = {
+  name: string;
+  sizeBytes: number;
+  usedBytes: number;
+  freeBytes: number;
+};
+
+export type TrueNasSnapshotDto = {
+  provider: "truenas";
+  status: HealthStatus;
+  sampledAt: string;
+  warnings: string[];
+  pool: TrueNasCapacityDto & {
+    health: string;
+    statusDetail: string | null;
+  };
+  dataset: TrueNasCapacityDto | null;
+};
+
+export type IntegrationSnapshotDto = OpnsenseSnapshotDto | TrueNasSnapshotDto;
+
 export type IntegrationSampleDto = {
   id: string;
   sourceId: string;
   status: HealthStatus;
   error: string | null;
-  snapshot: OpnsenseSnapshotDto | null;
+  snapshot: IntegrationSnapshotDto | null;
   sampledAt: string;
 };
 
@@ -264,7 +376,7 @@ export type IntegrationSourceDto = {
   enabled: boolean;
   status: HealthStatus;
   latestError: string | null;
-  latestSnapshot: OpnsenseSnapshotDto | null;
+  latestSnapshot: IntegrationSnapshotDto | null;
   latestSampledAt: string | null;
   sortOrder: number;
   samples?: IntegrationSampleDto[];
@@ -419,6 +531,7 @@ export type DailyBriefingDto = {
     unmonitoredServices: number;
     pendingFailures: number;
     pendingRecoveries: number;
+    storageIssues?: number;
   };
   offlineServices: Array<{
     id: string;
@@ -439,6 +552,13 @@ export type DailyBriefingDto = {
     name: string;
     metric: "cpu" | "memory" | "disk";
     value: number;
+    level: "warning" | "critical";
+  }>;
+  storageIssues?: Array<{
+    id: string;
+    name: string;
+    health: string;
+    usedPercent: number;
     level: "warning" | "critical";
   }>;
   staleChecks: Array<{

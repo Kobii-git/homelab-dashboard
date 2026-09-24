@@ -1,3 +1,4 @@
+import { enableHomeWidgets } from "./homepage-fixtures";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
@@ -46,6 +47,19 @@ const emptyDashboard = {
   layout: {}
 };
 
+const disabledHomeSettings = {
+  agendaEnabled: false,
+  tasksEnabled: false,
+  mailEnabled: false,
+  mediaEnabled: false,
+  storageEnabled: false,
+  plexWidgetId: null,
+  radarrWidgetId: null,
+  mediaRegion: "ZA",
+  mediaLanguage: "en-US",
+  mediaLimit: 6
+};
+
 test("setup uses labeled, keyboard-focusable account controls", async ({ page }) => {
   await page.route("**/api/auth/me", (route) => route.fulfill({ json: { authenticated: false } }));
   await page.route("**/api/setup/status", (route) => route.fulfill({
@@ -75,18 +89,49 @@ test("mobile navigation and service rows remain visible without overflow", async
   expect(rowBox && deleteBox && deleteBox.y + deleteBox.height <= rowBox.y + rowBox.height + 1).toBe(true);
 });
 
+test("service setup makes TCP reachability and exact web endpoints primary", async ({ page }, testInfo) => {
+  const suffix = testInfo.project.name;
+  await login(page);
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Services", exact: true }).click();
+
+  await page.getByRole("button", { name: "Service", exact: true }).click();
+  let serviceForm = page.getByRole("heading", { name: "New service" }).locator("..");
+  await serviceForm.getByRole("textbox", { name: "Name", exact: true }).fill(`OPNsense TCP Reachability ${suffix}`);
+  await serviceForm.getByRole("textbox", { name: "Host", exact: true }).fill("192.168.10.254");
+  await serviceForm.locator('select[name="resourceCheckType"]').selectOption("tcp");
+  await serviceForm.locator('input[type="number"]').fill("443");
+  await serviceForm.getByRole("button", { name: "Save service" }).click();
+
+  const reauth = page.getByRole("dialog", { name: "Confirm it’s you" });
+  await reauth.getByLabel(/administrator password/i).fill("e2e-admin-password");
+  await reauth.getByRole("button", { name: "Confirm", exact: true }).click();
+  await expect(page.getByText(`OPNsense TCP Reachability ${suffix}`, { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Service", exact: true }).click();
+  serviceForm = page.getByRole("heading", { name: "New service" }).locator("..");
+  await serviceForm.getByRole("textbox", { name: "Name", exact: true }).fill(`Docker Port App ${suffix}`);
+  await serviceForm.getByRole("textbox", { name: "URL", exact: true }).fill("http://127.0.0.1:8080/docker/health");
+  await serviceForm.getByRole("button", { name: "Save service" }).click();
+  await expect(page.getByText(`Docker Port App ${suffix}`, { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Checks", exact: true }).click();
+  await expect(page.getByText(/TCP port · Primary · 192\.168\.10\.254:443/).first()).toBeVisible();
+  await expect(page.getByText(/Web endpoint \(HTTP\/HTTPS\) · Primary · http:\/\/127\.0\.0\.1:8080\/docker\/health/).first()).toBeVisible();
+
+  await page.getByRole("button", { name: /Needs review/ }).click();
+  await expect(page.getByText(/blocked ICMP can produce a false outage/).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Review check" }).first()).toBeVisible();
+});
+
 test("Launchpad is the device default, ranks local search, and remembers the selected preset", async ({ page }) => {
   await login(page);
-  const viewSwitch = page.getByRole("group", { name: "Dashboard view" });
-  const launchpad = viewSwitch.getByRole("button", { name: "Launchpad" });
+  const viewSwitch = page.getByRole("navigation", { name: "Dashboard view" });
+  const launchpad = viewSwitch.getByRole("button", { name: "Home", exact: true });
   const operations = viewSwitch.getByRole("button", { name: "Operations" });
   await expect(launchpad).toHaveClass(/active/);
 
-  const search = page.getByLabel("Open a service or search the web");
-  await search.fill("opn");
-  const results = page.getByRole("listbox", { name: "Launchpad search results" });
-  await expect(results.getByRole("option").first()).toContainText("OPNsense Gateway");
-  await expect(results.getByRole("option", { name: /Search DuckDuckGo/ })).toBeVisible();
+  const search = page.getByRole("combobox", { name: "Search Google" });
+  await expect(page.getByRole("link", { name: /Open ChatGPT/ })).toHaveAttribute("href", "https://chatgpt.com/");
 
   await page.evaluate(() => {
     (window as Window & { __openedUrl?: string }).open = ((url?: string | URL) => {
@@ -97,11 +142,11 @@ test("Launchpad is the device default, ranks local search, and remembers the sel
   await search.fill("home lab & vpn");
   await page.keyboard.press("Enter");
   await expect.poll(() => page.evaluate(() => (window as Window & { __openedUrl?: string }).__openedUrl)).toBe(
-    "https://duckduckgo.com/?q=home%20lab%20%26%20vpn"
+    "https://www.google.com/search?q=home%20lab%20%26%20vpn"
   );
 
   await operations.click();
-  await expect(operations).toHaveClass(/active/);
+  await expect(page.getByRole("group", { name: "Dashboard view" }).getByRole("button", { name: "Operations" })).toHaveClass(/active/);
   await page.reload();
   await expect(page.getByRole("group", { name: "Dashboard view" }).getByRole("button", { name: "Operations" })).toHaveClass(/active/);
 });
@@ -110,13 +155,13 @@ test("an empty Launchpad shows focused onboarding and Operations stays signal-on
   await page.route("**/api/dashboard", (route) => route.fulfill({ json: emptyDashboard }));
   await login(page);
 
-  await expect(page.getByText("Start your Launchpad")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Add custom service/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your day, one place." })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add bookmark", exact: true })).toBeVisible();
   await expect(page.getByText("Lab Vitals")).toHaveCount(0);
   await expect(page.getByText("Daily Briefing")).toHaveCount(0);
-  await expect(page.locator(".empty-panel")).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: "Search Google" })).toBeVisible();
 
-  await page.getByRole("group", { name: "Dashboard view" }).getByRole("button", { name: "Operations" }).click();
+  await page.getByRole("navigation", { name: "Dashboard view" }).getByRole("button", { name: "Operations" }).click();
   await expect(page.getByRole("button", { name: /Connect operations data/ })).toBeVisible();
   await expect(page.getByText("No operational issues need attention")).toBeVisible();
   await expect(page.locator(".briefing-grid")).toHaveCount(0);
@@ -124,6 +169,7 @@ test("an empty Launchpad shows focused onboarding and Operations stays signal-on
 });
 
 test("Launchpad utilities render independently and move after services on mobile", async ({ page }) => {
+  await enableHomeWidgets(page, ["weather", "releases"]);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route("**/api/settings", (route) => route.fulfill({
     json: {
@@ -146,7 +192,8 @@ test("Launchpad utilities render independently and move after services on mobile
           enabled: true,
           repositories: ["gethomepage/homepage"]
         }
-      }
+      },
+      dashboardHome: disabledHomeSettings
     }
   }));
   await page.route("**/api/utilities/summary", (route) => route.fulfill({
@@ -195,7 +242,7 @@ test("Launchpad utilities render independently and move after services on mobile
   }));
   await login(page);
 
-  await expect(page.getByText("Cape Town", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Cape Town/).first()).toBeVisible();
   const release = page.getByRole("link", { name: /gethomepage\/homepage/ });
   await expect(release).toHaveAttribute("href", "https://github.com/gethomepage/homepage/releases/tag/v1.8.0");
   const servicesBox = await page.locator(".launchpad-services").boundingBox();
@@ -206,6 +253,7 @@ test("Launchpad utilities render independently and move after services on mobile
 });
 
 test("a utility provider failure does not hide successful utility data or services", async ({ page }) => {
+  await enableHomeWidgets(page, ["weather", "releases"]);
   await page.route("**/api/settings", (route) => route.fulfill({
     json: {
       autoPingIntervalSeconds: 60,
@@ -224,7 +272,8 @@ test("a utility provider failure does not hide successful utility data or servic
           }
         },
         releases: { enabled: true, repositories: ["gethomepage/homepage"] }
-      }
+      },
+      dashboardHome: disabledHomeSettings
     }
   }));
   await page.route("**/api/utilities/summary", (route) => route.fulfill({
@@ -257,6 +306,58 @@ test("a utility provider failure does not hide successful utility data or servic
   await expect(page.locator(".svc-primary").first()).toBeVisible();
 });
 
+test("daily cockpit renders agenda, tasks, mail, media tabs, and storage responsively", async ({ page }) => {
+  await enableHomeWidgets(page, ["agenda", "tasks", "mail", "media", "storage"]);
+  await page.clock.setFixedTime(new Date("2026-08-30T06:00:00.000Z"));
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.route("**/api/settings", (route) => route.fulfill({
+    json: {
+      autoPingIntervalSeconds: 60,
+      dashboardUtilities: {
+        searchEngine: "duckduckgo",
+        weather: { enabled: false, units: "metric", location: null },
+        releases: { enabled: false, repositories: [] }
+      },
+      dashboardHome: {
+        ...disabledHomeSettings,
+        agendaEnabled: true,
+        tasksEnabled: true,
+        mailEnabled: true,
+        mediaEnabled: true,
+        storageEnabled: true
+      }
+    }
+  }));
+  await page.route("**/api/home/summary", (route) => route.fulfill({
+    json: {
+      agenda: { state: "ready", data: { timeZone: "Africa/Johannesburg", events: [{ id: "event", title: "Planning", start: "2026-08-30T09:00:00+02:00", end: "2026-08-30T09:30:00+02:00", allDay: false, calendarName: "Primary", color: null, url: "https://calendar.google.com" }] }, fetchedAt: "2026-08-30T06:00:00.000Z", stale: false, error: null },
+      tasks: { state: "ready", data: [{ id: "task", content: "Review backups", dueAt: null, dueDate: "2026-08-30", overdue: false, priority: 3, projectName: "Homelab", url: "https://app.todoist.com/app/task/task" }], fetchedAt: "2026-08-30T06:00:00.000Z", stale: false, error: null },
+      mail: { state: "ready", data: { inboxUnread: 4, inboxUrl: "https://mail.google.com/mail/u/0/#inbox", composeUrl: "https://mail.google.com/mail/u/0/#compose" }, fetchedAt: "2026-08-30T06:00:00.000Z", stale: false, error: null },
+      media: { state: "ready", data: { recentlyAdded: [{ id: "recent", source: "plex", title: "New Movie", year: 2026, releaseDate: "2026-08-20", addedAt: "2026-08-30T05:00:00.000Z", posterUrl: "/tmdb-logo.svg", externalUrl: null }], upcoming: [{ id: "upcoming", source: "radarr", title: "Soon Movie", year: 2026, releaseDate: "2026-09-05", addedAt: null, posterUrl: null, externalUrl: null }], trending: [{ id: "trending", source: "tmdb", title: "Trending Movie", year: 2026, releaseDate: "2026-08-25", addedAt: null, posterUrl: null, externalUrl: "https://www.themoviedb.org/movie/1" }], attribution: { provider: "tmdb", notice: "This product uses the TMDB API but is not endorsed or certified by TMDB.", logoUrl: "/tmdb-logo.svg" } }, fetchedAt: "2026-08-30T06:00:00.000Z", stale: false, error: null },
+      storage: { state: "ready", data: { sourceId: "nas", name: "TrueNAS", poolName: "tank", datasetName: "tank/media", status: "online", health: "ONLINE", sizeBytes: 10_000, usedBytes: 6_500, freeBytes: 3_500, usedPercent: 65, change24hBytes: 125, sampledAt: "2026-08-30T06:00:00.000Z" }, fetchedAt: "2026-08-30T06:00:00.000Z", stale: false, error: null }
+    }
+  }));
+  await login(page);
+
+  await expect(page.locator(".home-calendar-card")).toBeVisible();
+  await expect(page.getByText("Planning", { exact: true })).toBeVisible();
+  await expect(page.getByText("Review backups", { exact: true })).toBeVisible();
+  await expect(page.locator(".home-mail-card strong")).toHaveText("4");
+  await expect(page.getByRole("img", { name: "New Movie poster" })).toBeVisible();
+  const trending = page.getByRole("tab", { name: "Trending" });
+  await page.getByRole("tab", { name: "Recently added" }).focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(trending).toHaveAttribute("aria-selected", "true");
+  await expect(trending).toBeFocused();
+  await expect(page.getByText("Trending Movie", { exact: true })).toBeVisible();
+  await expect(page.getByText("65%", { exact: true })).toBeVisible();
+  await expectNoSeriousAxeViolations(page);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await expect(page.getByRole("tab", { name: "Recently added" })).toBeVisible();
+});
+
 test("cards and modal surfaces are keyboard operable and restore focus", async ({ page }) => {
   await login(page);
   const primaryCard = page.locator(".svc-primary").first();
@@ -264,7 +365,7 @@ test("cards and modal surfaces are keyboard operable and restore focus", async (
   await primaryCard.focus();
   await expect(primaryCard).toBeFocused();
 
-  const search = page.getByRole("button", { name: /Search/ });
+  const search = page.getByTitle("Search (⌘K)");
   await search.click();
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await expect(palette).toHaveAttribute("aria-modal", "true");
@@ -280,10 +381,15 @@ test("cards and modal surfaces are keyboard operable and restore focus", async (
   await expect(details).toBeFocused();
 });
 
-test("sensitive administration prompts for reauthentication and retries once", async ({ page }) => {
+test("sensitive administration prompts for reauthentication and retries once", async ({ page }, testInfo) => {
+  await login(page);
+  await page.request.post("/api/auth/reauth", { data: { password: "e2e-admin-password" } });
+  const targetName = `Delete target ${testInfo.project.name}`;
+  await page.request.post("/api/resources", { data: { name: targetName, kind: "vm", monitoringMode: "disabled" } });
+  await page.context().clearCookies();
   await login(page);
   await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Services", exact: true }).click();
-  const deleteButton = page.getByRole("button", { name: "Delete Windows Admin VM" });
+  const deleteButton = page.getByRole("button", { name: `Delete ${targetName}` });
   await expect(deleteButton).toBeVisible();
 
   page.once("dialog", (dialog) => dialog.accept());

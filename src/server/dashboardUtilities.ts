@@ -17,7 +17,7 @@ const GEOCODING_CACHE_MS = 24 * 60 * 60_000;
 const RELEASE_CACHE_MS = 6 * 60 * 60_000;
 
 export const DEFAULT_DASHBOARD_UTILITIES_CONFIG: DashboardUtilitiesConfigDto = {
-  searchEngine: "duckduckgo",
+  searchEngine: "google",
   weather: {
     enabled: false,
     units: "metric",
@@ -91,7 +91,7 @@ function cloneDefaultConfig(): DashboardUtilitiesConfigDto {
   };
 }
 
-export async function getDashboardUtilitiesConfig(prisma: PrismaClient): Promise<DashboardUtilitiesConfigDto> {
+export async function getDashboardUtilitiesConfig(prisma: Pick<PrismaClient, "systemConfig">): Promise<DashboardUtilitiesConfigDto> {
   const entry = await prisma.systemConfig.findUnique({ where: { key: DASHBOARD_UTILITIES_CONFIG_KEY } });
   if (!entry) return cloneDefaultConfig();
 
@@ -104,7 +104,7 @@ export async function getDashboardUtilitiesConfig(prisma: PrismaClient): Promise
 }
 
 export async function setDashboardUtilitiesConfig(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, "systemConfig">,
   config: DashboardUtilitiesConfigDto
 ): Promise<DashboardUtilitiesConfigDto> {
   const normalized = dashboardUtilitiesConfigSchema.parse(config);

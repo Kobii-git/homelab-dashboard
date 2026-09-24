@@ -1,0 +1,77 @@
+# Standalone optional deployment. Do not combine with the existing root Compose project.
+services:
+  dashboard:
+    image: ${HOMELAB_IMAGE:?Set a verified dashboard image reference}
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4173
+      DATABASE_URL: file:/data/homelab.db
+      APP_ORIGIN: https://${DASHBOARD_HOST:?Set the private hostname under your owned domain}
+      COOKIE_SECRET: ${COOKIE_SECRET:?Set a strong secret of at least 32 characters}
+      TRUST_PROXY_CIDRS: ${PROXY_CONTAINER_IP:?Set the fixed proxy IP}/32
+      OUTBOUND_ALLOWED_CIDRS: ${OUTBOUND_ALLOWED_CIDRS:?Set monitored LAN CIDRs}
+      OUTBOUND_ALLOWED_HOSTS: ${OUTBOUND_ALLOWED_HOSTS:-}
+      PUBLIC_STATUS_MODE: disabled
+      SETUP_CODE: ${SETUP_CODE:-}
+      SESSION_MAX_AGE_HOURS: ${SESSION_MAX_AGE_HOURS:-168}
+      ALLOW_INSECURE_INTEGRATIONS: "false"
+      AI_ENABLED: "false"
+    networks:
+      homepage: {}
+    volumes:
+      - dashboard-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+  proxy:
+    build: .
+    restart: unless-stopped
+    environment:
+      DASHBOARD_HOST: ${DASHBOARD_HOST:?Set the private hostname}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - 'export CLOUDFLARE_API_TOKEN="$$(cat /run/secrets/cloudflare_dns_token)"; exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile'
+    secrets: [cloudflare_dns_token]
+    ports:
+      - "${LAN_BIND_IP:?Set a private LAN interface IP}:443:8443"
+    networks:
+      homepage:
+        ipv4_address: ${PROXY_CONTAINER_IP:?Set the fixed proxy IP}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+networks:
+  homepage:
+    ipam:
+      config:
+        - subnet: ${PROXY_NETWORK_CIDR:?Set a dedicated non-overlapping Docker subnet}
+volumes:
+  dashboard-data:
+  caddy-data:
+  caddy-config:
+secrets:
+  cloudflare_dns_token:
+    file: ${CLOUDFLARE_TOKEN_FILE:?Set the path to the proxy-only DNS token file}

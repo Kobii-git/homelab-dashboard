@@ -27,6 +27,21 @@ services:
       # OPNSENSE_API_SECRET: your-api-secret
       # OPNSENSE_TLS_VERIFY: "true"
       # OPNSENSE_POLL_INTERVAL_SECONDS: "60"
+      # GOOGLE_CLIENT_ID: your-google-client-id
+      # GOOGLE_CLIENT_SECRET: your-google-client-secret
+      # GOOGLE_REFRESH_TOKEN: your-google-refresh-token
+      # GOOGLE_CALENDAR_IDS: primary
+      # TODOIST_API_TOKEN: your-todoist-token
+      # TMDB_BEARER_TOKEN: your-tmdb-read-token
+      # TRUENAS_ENABLED: "true"
+      # TRUENAS_NAME: TrueNAS
+      # TRUENAS_BASE_URL: https://truenas.local
+      # TRUENAS_USERNAME: dashboard-reader
+      # TRUENAS_API_KEY: your-truenas-api-key
+      # TRUENAS_POOL: tank
+      # TRUENAS_MEDIA_DATASET: tank/media
+      # TRUENAS_TLS_VERIFY: "true"
+      # TRUENAS_POLL_INTERVAL_SECONDS: "60"
       # Optional AI Command Briefing:
       # AI_ENABLED: "true"
       # AI_PROVIDER_NAME: AI
@@ -38,6 +53,8 @@ services:
       # AI_INCLUDE_TARGETS: "false"
       # Optional API widget secrets, referenced by widget config:
       # API_WIDGET_SECRET_ALLOWLIST: MY_CUSTOM_WIDGET_TOKEN
+      # PLEX_TOKEN: your-plex-token
+      # RADARR_API_KEY: your-radarr-api-key
       # HOME_ASSISTANT_TOKEN: your-long-lived-token
       # SONARR_API_KEY: your-api-key
     ports:

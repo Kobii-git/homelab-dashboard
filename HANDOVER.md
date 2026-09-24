@@ -12,9 +12,9 @@ This document captures the current state of the project so the next session can 
 
 ## What It Is Now
 
-Homelab Dashboard is a private, single-admin, self-hosted service launcher and lab command center with an adaptive Launchpad/Operations dashboard, health monitoring, optional weather and release utilities, lab-vitals cards, read-only OPNsense status, custom API widgets, and optional AI command briefings. It is focused on manually managed hosted services, optional Glances host monitors, optional env-backed OPNsense API polling, read-only JSON API widgets, and sanitized read-only AI summaries.
+Homelab Dashboard is a private, single-admin, self-hosted browser homepage with Home, Work, and Operations areas. It provides centralized bookmarks and collections, Google search, ordinary ChatGPT links, prompt templates, notes, reading lists, a local focus timer, configurable layouts and weather, portable configuration backups, and shared state with conflict protection. Operations retains service monitoring, Glances host metrics, read-only integrations and API widgets, and its separately configured optional AI briefing. See `docs/BROWSER_HOME.md` and `docs/HOMEPAGE_VALIDATION.md` for setup and validation.
 
-The current product is deliberately not a remote-management platform. SSH, RDP, VNC, Guacamole, credential vaults, session history, incidents, alert delivery, backup/restore, tags, notes, script/plugin widgets, AI control agents, mutating arbitrary API calls, and firewall-changing OPNsense actions are out of the active scope.
+The current product is deliberately not a remote-management platform. SSH, RDP, VNC, Guacamole, credential vaults, session history, incidents, alert delivery, scheduled backups or full-database restore through the UI, tags, script/plugin widgets, AI control agents, mutating arbitrary API calls, and firewall-changing OPNsense actions are out of the active scope.
 
 **Sidebar views:** Dashboard, Services, Admin.
 
@@ -43,6 +43,8 @@ The active Prisma models are:
 - `ApiWidgetSample`
 - `AdminAccount`
 - `SystemConfig`
+- `HomepageState`
+- `HomepageAsset`
 
 Schema cleanup in `0.5.0` removes old pro-console models: widgets, layout, tags, notes, incidents, maintenance windows, alert channels/rules/deliveries, and audit events.
 
@@ -148,7 +150,8 @@ API_WIDGET_SECRET_ALLOWLIST: MY_CUSTOM_WIDGET_TOKEN
 - Service cards open saved URLs in a new tab.
 - Favorite stars update optimistically.
 - Status and latency chips run the service health check.
-- A managed default check is created only with a new automatic service or an explicit transition to automatic monitoring. Paused or deleted defaults remain paused or deleted.
+- URL-backed automatic services get a managed primary HTTP check using the exact URL. Host-only services require an explicit TCP port or confirmed Ping selection; unrelated edits and restarts do not recreate deleted checks.
+- Exactly one enabled primary check drives service status, uptime, heartbeat, latency, briefing, AI evidence, and public status. Diagnostic checks retain history without taking the service offline.
 - Filters: all, favorites, online, offline, unknown.
 - Group sections can be collapsed.
 
@@ -162,6 +165,9 @@ API_WIDGET_SECRET_ALLOWLIST: MY_CUSTOM_WIDGET_TOKEN
 - Add/edit/delete health checks.
 - Reorder resources.
 - Health check types: `http`, `tcp`, `ping`, `ssl`.
+- Checks are labeled Primary or Diagnostic; promoting a check demotes the previous primary, while disabling/deleting it leaves the service Unknown.
+- Unsaved checks can be tested from the dashboard container with strict TLS and the production outbound policy. Ping remains explicit because ICMP can be blocked.
+- The Needs review tab flags Ping primaries and automatic services without an enabled primary, but never rewrites them automatically.
 - Failure/recovery thresholds gate stable red/green state while every raw sample is still stored in `HealthResult`.
 
 ### Admin

@@ -21,6 +21,12 @@ model Resource {
   id           String        @id @default(cuid())
   name         String
   kind         String
+  purpose      String        @default("service")
+  workspaceId  String        @default("home")
+  collectionId String?
+  readingState String        @default("none")
+  deletedAt    DateTime?
+  importBatch  String?
   url          String?
   description  String?
   icon         String?
@@ -52,6 +58,7 @@ model HealthCheck {
   timeoutMs       Int            @default(3000)
   enabled         Boolean        @default(true)
   managed         Boolean        @default(false)
+  primary         Boolean        @default(false)
   latestStatus    String         @default("unknown")
   latestLatencyMs Int?
   latestCheckedAt DateTime?
@@ -224,4 +231,17 @@ model SystemConfig {
   value     String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Portable homepage state. Assets live in SQLite so restore is atomic with configuration.
+model HomepageState {
+  id       String @id @default("main")
+  revision Int    @default(0)
+  data     Json
+}
+
+model HomepageAsset {
+  id       String @id
+  mimeType String
+  body     Bytes
 }

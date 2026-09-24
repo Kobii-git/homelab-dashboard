@@ -1,9 +1,10 @@
-import type { DailyBriefingDto, HostMonitorDto } from "../shared/types.js";
+import type { DailyBriefingDto, HostMonitorDto, IntegrationSourceDto } from "../shared/types.js";
 
 type BriefingCheck = {
   id: string;
   target: string;
   enabled: boolean;
+  primary: boolean;
   intervalSeconds: number;
   latestStatus: string;
   latestError: string | null;
@@ -28,14 +29,15 @@ export function resourceStatus(resource: BriefingResource): "online" | "offline"
     return resource.manualStatus === "online" || resource.manualStatus === "offline" ? resource.manualStatus : "unknown";
   }
 
-  const enabledChecks = resource.healthChecks.filter((check) => check.enabled);
-  if (enabledChecks.length === 0) return "unknown";
-  if (enabledChecks.some((check) => check.latestStatus === "offline")) return "offline";
-  if (enabledChecks.some((check) => check.latestStatus === "online")) return "online";
-  return "unknown";
+  const status = resource.healthChecks.find((check) => check.enabled && check.primary)?.latestStatus;
+  return status === "online" || status === "offline" ? status : "unknown";
 }
 
-export function buildDailyBriefing(resources: BriefingResource[], hostMonitors: HostMonitorDto[]): DailyBriefingDto {
+export function buildDailyBriefing(
+  resources: BriefingResource[],
+  hostMonitors: HostMonitorDto[],
+  integrations: IntegrationSourceDto[] = []
+): DailyBriefingDto {
   const now = Date.now();
   const dayAgo = now - 24 * 60 * 60 * 1000;
   const statuses = resources.map((resource) => ({
@@ -46,7 +48,9 @@ export function buildDailyBriefing(resources: BriefingResource[], hostMonitors: 
   const offlineServices = statuses
     .filter((item) => item.status === "offline")
     .map(({ resource }) => {
-      const failed = resource.healthChecks.find((check) => check.enabled && check.latestStatus === "offline");
+      const failed = resource.healthChecks.find(
+        (check) => check.enabled && check.primary && check.latestStatus === "offline"
+      );
       return {
         id: resource.id,
         name: resource.name,
@@ -62,6 +66,7 @@ export function buildDailyBriefing(resources: BriefingResource[], hostMonitors: 
       resource.healthChecks
         .filter((check) =>
           check.enabled &&
+          check.primary &&
           (check.latestStatus === "online" || check.latestStatus === "offline") &&
           check.lastTransitionAt &&
           check.lastTransitionAt.getTime() >= dayAgo
@@ -100,12 +105,28 @@ export function buildDailyBriefing(resources: BriefingResource[], hostMonitors: 
     .sort((left, right) => right.value - left.value);
   const hostsUnderPressure = hostsUnderPressureAll.slice(0, 8);
 
+  const storageIssues: NonNullable<DailyBriefingDto["storageIssues"]> = integrations.flatMap((source) => {
+    const snapshot = source.latestSnapshot?.provider === "truenas" ? source.latestSnapshot : null;
+    if (!snapshot) return [];
+    const capacity = snapshot.dataset ?? snapshot.pool;
+    const usedPercent = capacity.sizeBytes > 0 ? Math.round((capacity.usedBytes / capacity.sizeBytes) * 1000) / 10 : 0;
+    const unhealthy = !["ONLINE", "HEALTHY"].includes(snapshot.pool.health.toUpperCase());
+    if (!unhealthy && usedPercent < 80) return [];
+    return [{
+      id: source.id,
+      name: source.name,
+      health: snapshot.pool.health,
+      usedPercent,
+      level: unhealthy || usedPercent >= 90 ? "critical" as const : "warning" as const
+    }];
+  });
+
   const staleChecksAll = resources
     .flatMap((resource) =>
       resource.monitoringMode === "auto"
         ? resource.healthChecks
           .filter((check) => {
-            if (!check.enabled) return false;
+            if (!check.enabled || !check.primary) return false;
             if (!check.latestCheckedAt) return true;
             const staleAfter = Math.max(check.intervalSeconds * 2 * 1000, 5 * 60 * 1000);
             return now - check.latestCheckedAt.getTime() > staleAfter;
@@ -124,7 +145,7 @@ export function buildDailyBriefing(resources: BriefingResource[], hostMonitors: 
   const unmonitoredServicesAll = resources
     .filter((resource) =>
       resource.monitoringMode === "auto" &&
-      resource.healthChecks.filter((check) => check.enabled).length === 0
+      resource.healthChecks.filter((check) => check.enabled && check.primary).length === 0
     )
     .map((resource) => ({ id: resource.id, name: resource.name }));
   const unmonitoredServices = unmonitoredServicesAll.slice(0, 8);
@@ -133,7 +154,7 @@ export function buildDailyBriefing(resources: BriefingResource[], hostMonitors: 
     .flatMap((resource) =>
       resource.monitoringMode === "auto"
         ? resource.healthChecks
-          .filter((check) => check.enabled)
+          .filter((check) => check.enabled && check.primary)
           .flatMap((check) => {
             const entries: DailyBriefingDto["watchlist"] = [];
 
@@ -200,11 +221,13 @@ export function buildDailyBriefing(resources: BriefingResource[], hostMonitors: 
       staleChecks: staleChecksAll.length,
       unmonitoredServices: unmonitoredServicesAll.length,
       pendingFailures: watchlistAll.filter((item) => item.direction === "failing").length,
-      pendingRecoveries: watchlistAll.filter((item) => item.direction === "recovering").length
+      pendingRecoveries: watchlistAll.filter((item) => item.direction === "recovering").length,
+      storageIssues: storageIssues.length
     },
     offlineServices,
     recentChanges,
     hostsUnderPressure,
+    storageIssues,
     staleChecks,
     unmonitoredServices,
     watchlist

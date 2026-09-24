@@ -118,6 +118,7 @@ export async function registerStatusRoutes({ app, prisma, env }: RouteContext): 
       return reply.code(404).send({ error: "Not found" });
     }
     const resources = await prisma.resource.findMany({
+      where: { purpose: "service", deletedAt: null },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: {
         name: true,
@@ -126,6 +127,7 @@ export async function registerStatusRoutes({ app, prisma, env }: RouteContext): 
         healthChecks: {
           select: {
             enabled: true,
+            primary: true,
             latestStatus: true,
             results: {
               orderBy: { checkedAt: "desc" },
@@ -141,15 +143,13 @@ export async function registerStatusRoutes({ app, prisma, env }: RouteContext): 
       if (resource.monitoringMode === "manual" || resource.monitoringMode === "disabled") {
         return resource.manualStatus === "online" || resource.manualStatus === "offline" ? resource.manualStatus : "unknown";
       }
-      const enabledChecks = resource.healthChecks.filter((check) => check.enabled);
-      if (enabledChecks.some((check) => check.latestStatus === "offline")) return "offline";
-      if (enabledChecks.some((check) => check.latestStatus === "online")) return "online";
-      return "unknown";
+      const status = resource.healthChecks.find((check) => check.enabled && check.primary)?.latestStatus;
+      return status === "online" || status === "offline" ? status : "unknown";
     }
 
     function resourceTicks(resource: (typeof resources)[number]): Array<"online" | "offline" | "unknown"> {
       if (resource.monitoringMode !== "auto") return [];
-      const primary = resource.healthChecks.find((check) => check.enabled && check.results.length > 0);
+      const primary = resource.healthChecks.find((check) => check.enabled && check.primary);
       if (!primary) return [];
       return [...primary.results].reverse().map((result) =>
         result.status === "online" || result.status === "offline" ? result.status : "unknown"
@@ -158,7 +158,7 @@ export async function registerStatusRoutes({ app, prisma, env }: RouteContext): 
 
     function resourceUptime(resource: (typeof resources)[number]): number | null {
       if (resource.monitoringMode !== "auto") return null;
-      const results = resource.healthChecks.filter((check) => check.enabled).flatMap((check) => check.results);
+      const results = resource.healthChecks.find((check) => check.enabled && check.primary)?.results ?? [];
       const counted = results.filter((result) => result.status === "online" || result.status === "offline");
       if (counted.length === 0) return null;
       return Math.round((counted.filter((result) => result.status === "online").length / counted.length) * 1000) / 10;

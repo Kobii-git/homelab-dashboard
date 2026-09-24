@@ -1,6 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 import {
+  assertIntegrationTransport,
   resolveOutboundTarget,
   withFixedProviderLimit
 } from "./outboundPolicy.js";
@@ -61,7 +62,15 @@ export function serverIconSlug(value: string): string {
 
 export async function fetchProxiedIcon(
   url: URL,
-  options: { fixedProvider?: boolean } = {}
+  options: {
+    fixedProvider?: boolean;
+    headers?: Record<string, string>;
+    tlsVerify?: boolean;
+    credentialed?: boolean;
+    cacheKey?: string;
+    maxBytes?: number;
+    cacheMs?: number;
+  } = {}
 ): Promise<{ body: Buffer; contentType: string }> {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("Icon URL must use HTTP or HTTPS");
@@ -69,7 +78,10 @@ export async function fetchProxiedIcon(
   if (url.username || url.password) {
     throw new Error("Icon URL must not contain embedded credentials");
   }
-  const cached = cache.get(url.toString());
+  assertIntegrationTransport(url, options);
+  const cacheKey = options.cacheKey ?? url.toString();
+  const maxBytes = Math.max(1, Math.min(options.maxBytes ?? MAX_ICON_BYTES, 3 * 1024 * 1024));
+  const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return { body: cached.body, contentType: cached.contentType };
   }
@@ -88,10 +100,10 @@ export async function fetchProxiedIcon(
       };
       const request = transport.request(url, {
         method: "GET",
-        headers: { Accept: "image/png,image/jpeg,image/webp,image/x-icon" },
+        headers: { Accept: "image/png,image/jpeg,image/webp,image/x-icon", ...(options.headers ?? {}) },
         lookup: resolved.lookup,
         maxHeaderSize: 16 * 1024,
-        rejectUnauthorized: true
+        rejectUnauthorized: options.tlsVerify ?? true
       }, (response) => {
         const status = response.statusCode ?? 0;
         if (status < 200 || status >= 300) {
@@ -106,7 +118,7 @@ export async function fetchProxiedIcon(
           return;
         }
         const declaredLength = Number(response.headers["content-length"] ?? 0);
-        if (declaredLength > MAX_ICON_BYTES) {
+        if (declaredLength > maxBytes) {
           response.destroy();
           finishReject(new Error("Icon exceeds the response size limit"));
           return;
@@ -116,7 +128,7 @@ export async function fetchProxiedIcon(
         response.on("data", (chunk: Buffer | string) => {
           const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
           size += buffer.length;
-          if (size > MAX_ICON_BYTES) {
+          if (size > maxBytes) {
             response.destroy();
             finishReject(new Error("Icon exceeds the response size limit"));
             return;
@@ -142,9 +154,9 @@ export async function fetchProxiedIcon(
     });
   });
 
-  cache.set(url.toString(), {
+  cache.set(cacheKey, {
     ...icon,
-    expiresAt: Date.now() + ICON_CACHE_MS
+    expiresAt: Date.now() + (options.cacheMs ?? ICON_CACHE_MS)
   });
   if (cache.size > 500) {
     const oldest = cache.keys().next().value as string | undefined;

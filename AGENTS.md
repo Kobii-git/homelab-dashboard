@@ -1,119 +1,112 @@
-# Homelab Dashboard Project Memory
+# Homelab Dashboard Repository Standard
 
-## Session Defaults
+Homelab Dashboard is a private, single-admin, self-hosted React and Fastify application for
+launching services and observing read-only homelab signals. Start with this file, then use
+[`.ai/INDEX.md`](.ai/INDEX.md) to load only the context relevant to the task.
 
-- Use GPT-5.5 with extra-high reasoning as the default for future Codex work on this project when model choice is available.
+## Authority and evidence
 
-## Current Shape
+- Executed behavior and tests outrank source comments and documentation.
+- Source and executable configuration outrank maintained documentation; maintained
+  documentation outranks historical notes and conventions.
+- Treat `package.json` as the application-version and command source of truth.
+- Treat `prisma/schema.prisma` as the data-schema source of truth.
+- When evidence conflicts, follow the implementation, report the drift, and update durable
+  documentation when the correction is in scope.
+- Label material claims `VERIFIED`, `DECLARED`, `INFERRED`, or `UNKNOWN`. Never present an
+  unexecuted command or inferred behavior as verified.
 
-- Homelab Dashboard is a private, single-admin, LAN/VPN/self-hosted service dashboard.
-- Treat `package.json` as the source of truth for the app version; docs, badges, lockfiles, tags, and release notes should be checked against it when preparing releases.
-- Main scope: adaptive Launchpad/Operations dashboard, grouped/favorited services, manual catalog, health checks, heartbeat history, optional Glances host metrics, optional read-only OPNsense integration, custom read-only JSON API widgets, optional Launchpad utilities, and deliberately enabled public status modes.
-- Explicitly out of scope: SSH/RDP/VNC, Guacamole, credential vaults, multi-user roles, incidents, alerts, script/plugin widgets, backup/restore, network/Docker/Hyper-V discovery, built-in HTTPS termination, mutating arbitrary integration API calls, and firewall-changing OPNsense actions.
+## Repository safety
 
-## Stack
+- Record the branch, HEAD, staged changes, modified files, and untracked files before editing.
+- All pre-existing changes are user-owned. Preserve them and keep unrelated work out of the diff.
+- Do not reset, clean, revert, overwrite, or delete user work. Never rewrite Git history.
+- Never expose real credentials, tokens, private keys, cookies, network inventories, or private
+  service data in output, fixtures, documentation, logs, or commits.
+- Use disposable local data for schema, migration, restore, and destructive-operation tests.
+- Do not weaken authentication, authorization, origin checks, outbound policy, TLS verification,
+  response bounds, security headers, tests, or scanners to obtain a passing result.
 
-- Frontend: React 19 + Vite + TypeScript in `src/client`.
-- Backend: Fastify 5 + Zod + TypeScript in `src/server`.
-- Database: SQLite through Prisma.
-- Deploy: Docker through a trusted TLS registry, app listens on port `4173` behind an existing HTTPS reverse proxy.
-- Dev: backend `4173`, Vite `5173`, API proxied from Vite to backend.
+## Risk classification
 
-## Data Model
+### SAFE
 
-Active Prisma models only:
+Focused documentation corrections, local inspection, tests, small helpers, narrow UI fixes,
+AI-document updates, and missing ignore rules may be implemented and validated locally.
 
-- `Resource`
-- `DashboardGroup`
-- `HealthCheck`
-- `HealthResult`
-- `HostMonitor`
-- `HostMetricSample`
-- `IntegrationSource`
-- `IntegrationSample`
-- `ApiWidget`
-- `ApiWidgetSample`
-- `AdminAccount`
-- `SystemConfig`
+### CAUTION
 
-Do not resurrect old pro-console models for widgets, vaults, sessions, alerts, incidents, tags, notes, audit events, or maintenance windows.
+Dependencies, public or API behavior, authentication, database schema, persistence, CI/CD,
+containers, deployment, external integrations, and security-sensitive configuration require a
+bounded plan, relevant tests, compatibility review, and an explicit diff self-review. If the
+change cannot be demonstrated safely and locally, document the gap instead.
 
-## Auth And Runtime
+### RESTRICTED
 
-- Single admin only.
-- `ADMIN_PASSWORD` can manage auth from env and skips DB account creation.
-- Otherwise first-run setup creates the `AdminAccount`.
-- Session cookie is `homelab_session`, signed from `COOKIE_SECRET`.
-- Production requires exact HTTPS `APP_ORIGIN`, `TRUST_PROXY_CIDRS`, a 32-character
-  `COOKIE_SECRET`, and explicit outbound CIDRs. Production cookies are always Secure.
-- Sessions default to seven days. Sensitive connector, target, secret-binding, and destructive
-  changes require a five-minute reauthentication cookie bound to the active session.
-- Public status defaults to disabled; aggregate and service-detail modes require deployment opt-in.
-- Public health/version/status responses omit Git SHA and build time; full build identity is authenticated.
+Do not access production data or secrets; perform production restore or destructive migration;
+weaken controls; add broad suppressions; change licensing; rewrite history; discard user work;
+commit, push, merge, tag, publish, release, deploy, or modify remote settings unless the user gives
+separate explicit authorization for that action.
 
-## Monitoring
+The highest applicable risk class governs a mixed task.
 
-- Check types: `http`, `tcp`, `ping`, `ssl`.
-- Health scheduler runs every 15s and executes due enabled checks for resources with `monitoringMode: "auto"`.
-- Glances host metrics are optional and stored in `HostMonitor`/`HostMetricSample`.
-- OPNsense polling is optional, read-only, env-backed, allowlisted, and stored in `IntegrationSource`/`IntegrationSample`.
-- API widgets are optional, read-only JSON GETs with env-var-backed secrets, stored in `ApiWidget`/`ApiWidgetSample`.
-- All admin-defined outbound targets pass the shared DNS-resolving, special-address-blocking,
-  allowlist, and pinned-connection policy. Credentialed integrations require verified HTTPS.
-- API widget suggestions match existing service catalog entries to built-in templates and create widgets only after admin action.
-- Resources support `monitoringMode`: `auto`, `manual`, `disabled`.
-- Manual/disabled resources use `manualStatus`; automatic resources derive status from checks.
-- Dashboard fetch includes recent health results, used for heartbeat bars, uptime %, and latency sparkline.
-- Health result retention is 300 samples per check.
-- Host and integration sample retention is 1440 samples per source.
-- API widget sample retention is 1440 samples per widget.
+## Standard workflow
 
-## OPNsense
+1. Read this file and route through `.ai/INDEX.md`; normally load no more than three deeper files.
+2. Inspect the relevant source, configuration, tests, and neighboring patterns before proposing a
+   change.
+3. Classify the task type and risk. For substantial work, state the objective, affected areas,
+   guardrails, compatibility, security, data, deployment, validation, documentation, and recovery
+   impact.
+4. Implement the smallest coherent change. Do not combine standardisation or a bug fix with broad
+   refactoring, dependency churn, mass formatting, or feature work.
+5. Run the verified commands mapped in `.ai/TESTING.md`. Inspect their output; silent or
+   suspiciously fast gates require investigation.
+6. Walk every applicable “touch X” rule in `.ai/GUARDRAILS.md`.
+7. Review the actual diff for correctness, scope, security, secrets, data integrity, compatibility,
+   tests, generated files, and documentation drift.
+8. Update durable documentation only when durable behavior or a maintained decision changed.
+9. Report exact commands and results, unexecuted validation and why, remaining uncertainty, risks,
+   and any deviation from the plan.
 
-- V1 targets one firewall configured only by env: `OPNSENSE_ENABLED`, `OPNSENSE_NAME`, `OPNSENSE_BASE_URL`, `OPNSENSE_API_KEY`, `OPNSENSE_API_SECRET`, `OPNSENSE_TLS_VERIFY`, `OPNSENSE_POLL_INTERVAL_SECONDS`.
-- Credentials must not be stored in SQLite or returned by runtime diagnostics.
-- The server may poll only allowlisted read endpoints for diagnostics/system, interfaces, routing/gateways, firmware info/running, and firewall PF/log summary.
-- OPNsense import suggestions can create resources only after explicit admin confirmation.
+## Planner, implementer, and reviewer behavior
 
-## API Widgets
+- A planner inspects first, separates facts from proposals, references real paths or symbols,
+  identifies approvals and guardrails, and produces an implementation-ready validation plan.
+- An implementer verifies inherited assumptions against current code, makes the smallest complete
+  change, validates it, and reports deviations.
+- A reviewer reads the request and actual diff, ranks only actionable findings by severity, and
+  evaluates correctness, architecture, security, compatibility, data, tests, deployment,
+  operations, and unnecessary scope. Do not manufacture findings.
 
-- Widgets perform read-only JSON polling only; no arbitrary code, POST/PUT/DELETE actions, or secret storage in SQLite.
-- Credentialed widgets are bound to a confirmed normalized origin in versioned non-secret
-  `SystemConfig` JSON and fail closed if direct database changes break the binding.
-- Supported auth modes: none, bearer token, custom header, basic auth from `username:password`, and Pi-hole v6 session auth.
-- Built-in templates cover Home Assistant, Proxmox VE, Portainer, AdGuard Home, Pi-hole v6, Jellyfin, Grafana, Prometheus, Sonarr, and Radarr.
-- Apps with complex session/WebSocket protocols, such as TrueNAS SCALE and qBittorrent, should become dedicated connectors rather than generic widgets.
+## Project scope and durable knowledge
 
-## UI Shape
+- Preserve the product boundary documented in the README. Do not reintroduce removed remote-access,
+  credential-vault, multi-user, alerting, incident, executable-widget, discovery, or mutating
+  integration scope without explicit product direction.
+- Keep the single-admin and private LAN/VPN deployment assumptions explicit. Public status remains
+  an opt-in deployment mode; direct internet exposure is unsupported.
+- Keep outbound integrations read-only and route admin-defined destinations through the shared
+  outbound policy and bounded request helpers.
+- Never store OPNsense, AI-provider, or API-widget credential values in SQLite or return them from
+  runtime diagnostics.
+- Do not copy session notes, chat history, temporary plans, credentials, or machine-specific paths
+  into committed AI documentation.
+- `.ai/local/` is ignored private context. It must never contain secrets or be copied into commits,
+  issues, releases, or public documentation.
 
-- `App.tsx` owns auth/setup/data loading and derives app data from `/api/dashboard`.
-- Views are Dashboard, Services, Admin.
-- Dashboard is the primary screen with device-local Launchpad and Operations presets.
-  Launchpad prioritizes universal search, favorites, grouped services, weather, and releases;
-  Operations preserves metrics, integrations, signal-only briefing, checks, and detail drawers.
-- Services is the catalog/editor for groups, resources, health checks, manual status, monitoring mode, and confirmed OPNsense imports.
-- Admin handles password, auto ping interval, host metrics, OPNsense integration state, API widgets/import suggestions, sync, runtime diagnostics, and public `/status`.
-- Icons are served through the authenticated same-origin bounded proxy using a fixed catalog
-  allowlist or the outbound policy, then fall back to initials.
-- Styling lives mainly in `src/client/styles/app.css`; dark/light token system, teal accent, compact operational UI.
+## Validation honesty
 
-## Important Commands
+- Commands and their current status live in `.ai/COMMANDS.md`; test selection lives in
+  `.ai/TESTING.md`. Do not duplicate command bodies here.
+- A passing test runner does not imply test TypeScript, accessibility, containers, audits, or
+  production behavior were checked unless those gates actually ran.
+- Never disable a failing gate. Identify the cause, fix it within scope, or report it as a gap.
+- Do not claim completion while temporary fixtures, generated test databases, or unexplained build
+  artifacts from the task remain.
 
-- `npm run dev:all`
-- `npm run build`
-- `npm run typecheck`
-- `npm test`
-- `npm run db:push`
-- `npm run seed:demo`
+## Documentation routing
 
-## Tests
-
-- Main tests are in `tests/routes.test.ts`.
-- Tests use Vitest node environment, fork pool, and `fileParallelism: false` because SQLite DB access is shared per test run.
-- Current coverage focuses on auth protection, setup, groups/resources, health checks, reorder, status uptime/history, manual/disabled monitoring, Glances host metrics, read-only OPNsense integration, and API widgets.
-
-## Drift Checks
-
-- When editing docs/config, check for stale references to old ports, removed Guacamole/vault/remote-access concepts, removed environment variables, and outdated OPNsense env/model lists.
-- Keep `README.md`, `HANDOVER.md`, `CONTRIBUTING.md`, `.env.example`, `package-lock.json`, Docker files, and release notes aligned with the current code.
-- Keep helper scripts aligned with current function signatures, especially seed/demo entry points.
+Use [`.ai/INDEX.md`](.ai/INDEX.md) as the canonical router. Human-facing deployment procedures remain
+in `docs/`, public vulnerability reporting remains in `SECURITY.md`, and contributor setup remains
+in `CONTRIBUTING.md`.

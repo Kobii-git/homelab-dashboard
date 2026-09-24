@@ -10,6 +10,8 @@ import type {
   ApiWidgetTemplateDto,
   DashboardUtilitiesConfigDto,
   DashboardUtilitiesSummaryDto,
+  DashboardHomeConfigDto,
+  DashboardHomeSummaryDto,
   HostMetricSampleDto,
   HostMonitorDto,
   IntegrationSourceDto,
@@ -25,6 +27,7 @@ export type HealthCheckDto = {
   timeoutMs: number;
   enabled: boolean;
   managed: boolean;
+  primary: boolean;
   latestStatus: "unknown" | "online" | "offline";
   latestLatencyMs: number | null;
   latestCheckedAt: string | null;
@@ -50,8 +53,10 @@ export type DashboardDto = {
 };
 
 export type SystemSettingsDto = {
+  revision?: number;
   autoPingIntervalSeconds: number;
   dashboardUtilities: DashboardUtilitiesConfigDto;
+  dashboardHome: DashboardHomeConfigDto;
 };
 
 export type RuntimeStatusDto = {
@@ -113,12 +118,28 @@ export type RuntimeStatusDto = {
       tlsVerify: boolean;
       pollIntervalSeconds: number;
     };
+    truenas: {
+      enabled: boolean;
+      configured: boolean;
+      name: string;
+      baseUrl: string | null;
+      poolName: string | null;
+      datasetName: string | null;
+      tlsVerify: boolean;
+      pollIntervalSeconds: number;
+    };
+    personalContext: {
+      googleConfigured: boolean;
+      todoistConfigured: boolean;
+      tmdbConfigured: boolean;
+    };
   };
   ai: AiRuntimeDto;
   schedulers: {
     health: SchedulerRuntimeDto;
     metrics: SchedulerRuntimeDto;
     integrations: SchedulerRuntimeDto;
+    truenas: SchedulerRuntimeDto;
     apiWidgets: SchedulerRuntimeDto;
     ai: SchedulerRuntimeDto;
   };
@@ -146,6 +167,8 @@ export type {
   DashboardResource,
   DashboardUtilitiesConfigDto,
   DashboardUtilitiesSummaryDto,
+  DashboardHomeConfigDto,
+  DashboardHomeSummaryDto,
   DailyBriefingDto,
   HostMetricSampleDto,
   HostMonitorDto,
