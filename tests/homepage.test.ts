@@ -70,6 +70,18 @@ afterAll(async () => {
 });
 
 describe("private homepage", () => {
+  it("serves overlapping homepage and settings refreshes without database timeouts", async () => {
+    const paths = ["/api/homepage", "/api/homepage", "/api/settings", "/api/config/revision", "/api/dashboard", "/api/home/summary"];
+    for (let round = 0; round < 3; round++) {
+      const responses = await Promise.all(paths.map(url => app.inject({ url, cookies })));
+      expect(responses.map((response, index) => ({ path: paths[index], status: response.statusCode }))).toEqual(
+        paths.map(path => ({ path, status: 200 })),
+      );
+      const snapshots = responses.slice(0, 2).map(response => response.json<HomepageSnapshot>());
+      expect(snapshots[0]).toEqual(snapshots[1]);
+    }
+  }, 20_000);
+
   it("authenticates new routes and enforces origin and reauthentication", async () => {
     expect((await app.inject({ url: "/api/homepage" })).statusCode).toBe(401);
     expect(

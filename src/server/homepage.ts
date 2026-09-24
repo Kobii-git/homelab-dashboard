@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { HomepageAsset, HomepageState, Prisma, PrismaClient, Resource } from "@prisma/client";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { parse, type DefaultTreeAdapterMap } from "parse5";
@@ -28,17 +28,17 @@ export async function claimRevision(tx: HomeDatabase, revision: number) {
   });
   if (!result.count) throw new HomeConflict();
 }
-export async function readHomepage(tx: HomeDatabase) {
-  const state = await tx.homepageState.findUniqueOrThrow({
-    where: { id: "main" },
-  });
-  const bookmarks = await tx.resource.findMany({
-    where: { purpose: "bookmark" },
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-  });
-  const assets = await tx.homepageAsset.findMany({
-    select: { id: true, mimeType: true },
-  });
+function homepageReads(tx: HomeDatabase) {
+  return [
+    tx.homepageState.findUniqueOrThrow({ where: { id: "main" } }),
+    tx.resource.findMany({
+      where: { purpose: "bookmark" },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    }),
+    tx.homepageAsset.findMany({ select: { id: true, mimeType: true } }),
+  ] as const;
+}
+function homepageSnapshot([state, bookmarks, assets]: readonly [HomepageState, Resource[], Pick<HomepageAsset, "id" | "mimeType">[]]) {
   return {
     revision: state.revision,
     data: homepageDataSchema.parse(state.data),
@@ -57,6 +57,14 @@ export async function readHomepage(tx: HomeDatabase) {
     })),
     assets,
   };
+}
+export async function readHomepage(tx: HomeDatabase) {
+  return homepageSnapshot(await Promise.all(homepageReads(tx)));
+}
+async function readHomepageSnapshot(prisma: PrismaClient) {
+  // Execute the whole read in the engine: overlapping interactive SQLite reads
+  // can block each other's callbacks until both transactions time out.
+  return homepageSnapshot(await prisma.$transaction([...homepageReads(prisma)]));
 }
 export async function initializeHomepage(prisma: PrismaClient) {
   await prisma.$transaction(async (tx) => {
@@ -260,7 +268,7 @@ export async function registerHomepageRoutes(
   prisma: PrismaClient,
   reauth: (req: FastifyRequest, reply: FastifyReply) => boolean,
 ) {
-  app.get("/api/homepage", () => prisma.$transaction((tx) => readHomepage(tx)));
+  app.get("/api/homepage", () => readHomepageSnapshot(prisma));
   app.get("/api/config/revision", async () => {
     const s = await prisma.homepageState.findUniqueOrThrow({
       where: { id: "main" },
@@ -547,7 +555,7 @@ export async function registerHomepageRoutes(
         format: z.enum(["html", "json"]),
       })
       .parse(request.query);
-    const snapshot = await prisma.$transaction((tx) => readHomepage(tx));
+    const snapshot = await readHomepageSnapshot(prisma);
     const items = snapshot.bookmarks.filter(
       (b) => b.workspaceId === workspaceId && !b.deletedAt,
     );

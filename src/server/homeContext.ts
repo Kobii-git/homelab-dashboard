@@ -21,7 +21,7 @@ import { fetchProxiedIcon } from "./iconProxy.js";
 import { boundedJsonRequest, type JsonRequestOptions } from "./httpJson.js";
 import { dashboardHomeConfigSchema } from "./validation.js";
 
-const DASHBOARD_HOME_CONFIG_KEY = "dashboard_home_v1";
+export const DASHBOARD_HOME_CONFIG_KEY = "dashboard_home_v1";
 const GOOGLE_CACHE_MS = 5 * 60_000;
 const TODOIST_CACHE_MS = 2 * 60_000;
 const MEDIA_SERVER_CACHE_MS = 2 * 60_000;
@@ -101,9 +101,13 @@ function cloneDefaultConfig(): DashboardHomeConfigDto {
 
 export async function getDashboardHomeConfig(prisma: Pick<PrismaClient, "systemConfig">): Promise<DashboardHomeConfigDto> {
   const entry = await prisma.systemConfig.findUnique({ where: { key: DASHBOARD_HOME_CONFIG_KEY } });
-  if (!entry) return cloneDefaultConfig();
+  return parseDashboardHomeConfig(entry?.value);
+}
+
+export function parseDashboardHomeConfig(value: string | undefined): DashboardHomeConfigDto {
+  if (value === undefined) return cloneDefaultConfig();
   try {
-    const parsed = dashboardHomeConfigSchema.safeParse(JSON.parse(entry.value));
+    const parsed = dashboardHomeConfigSchema.safeParse(JSON.parse(value));
     return parsed.success ? parsed.data : cloneDefaultConfig();
   } catch {
     return cloneDefaultConfig();

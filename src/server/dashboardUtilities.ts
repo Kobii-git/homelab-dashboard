@@ -11,7 +11,7 @@ import type {
 import { boundedJsonRequest, type JsonRequestOptions } from "./httpJson.js";
 import { dashboardUtilitiesConfigSchema } from "./validation.js";
 
-const DASHBOARD_UTILITIES_CONFIG_KEY = "dashboard_utilities_v1";
+export const DASHBOARD_UTILITIES_CONFIG_KEY = "dashboard_utilities_v1";
 const WEATHER_CACHE_MS = 15 * 60_000;
 const GEOCODING_CACHE_MS = 24 * 60 * 60_000;
 const RELEASE_CACHE_MS = 6 * 60 * 60_000;
@@ -93,10 +93,14 @@ function cloneDefaultConfig(): DashboardUtilitiesConfigDto {
 
 export async function getDashboardUtilitiesConfig(prisma: Pick<PrismaClient, "systemConfig">): Promise<DashboardUtilitiesConfigDto> {
   const entry = await prisma.systemConfig.findUnique({ where: { key: DASHBOARD_UTILITIES_CONFIG_KEY } });
-  if (!entry) return cloneDefaultConfig();
+  return parseDashboardUtilitiesConfig(entry?.value);
+}
+
+export function parseDashboardUtilitiesConfig(value: string | undefined): DashboardUtilitiesConfigDto {
+  if (value === undefined) return cloneDefaultConfig();
 
   try {
-    const parsed = dashboardUtilitiesConfigSchema.safeParse(JSON.parse(entry.value));
+    const parsed = dashboardUtilitiesConfigSchema.safeParse(JSON.parse(value));
     return parsed.success ? parsed.data : cloneDefaultConfig();
   } catch {
     return cloneDefaultConfig();

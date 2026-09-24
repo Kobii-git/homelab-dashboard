@@ -42,6 +42,11 @@ Background schedulers run due health, host, OPNsense, TrueNAS, API-widget, and o
 dashboard endpoint assembles persisted state and cached samples; fixed-provider weather/release data
 and authenticated home context are fetched separately so provider failure does not block the core dashboard.
 
+Homepage, bookmark-export, and settings read snapshots use Prisma batch transactions so their
+queries execute together without holding an interactive SQLite transaction across JavaScript
+callbacks. Keep each snapshot atomic with its configuration revision. Mutations retain interactive
+transactions for revision checks and dependent writes.
+
 ## Trust boundaries
 
 - **Browser to API:** same-origin cookies and server-side authorization are authoritative; client

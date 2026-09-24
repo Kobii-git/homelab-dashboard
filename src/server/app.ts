@@ -70,12 +70,16 @@ import {
 import { buildDailyBriefing } from "./dailyBriefing.js";
 import {
   DashboardUtilitiesService,
+  DASHBOARD_UTILITIES_CONFIG_KEY,
   getDashboardUtilitiesConfig,
+  parseDashboardUtilitiesConfig,
   setDashboardUtilitiesConfig
 } from "./dashboardUtilities.js";
 import {
   HomeContextService,
+  DASHBOARD_HOME_CONFIG_KEY,
   getDashboardHomeConfig,
+  parseDashboardHomeConfig,
   setDashboardHomeConfig
 } from "./homeContext.js";
 import {
@@ -1246,7 +1250,23 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     ]);
     return { autoPingIntervalSeconds, dashboardUtilities: utilities, dashboardHome, revision: state.revision };
   }
-  app.get("/api/settings", () => prisma.$transaction(tx => readSettings(tx)));
+  app.get("/api/settings", async () => {
+    // Batch the snapshot to avoid holding an interactive SQLite transaction
+    // across JavaScript callbacks during concurrent background refreshes.
+    const [interval, utilities, home, state] = await prisma.$transaction([
+      prisma.systemConfig.findUnique({ where: { key: AUTO_PING_INTERVAL_KEY } }),
+      prisma.systemConfig.findUnique({ where: { key: DASHBOARD_UTILITIES_CONFIG_KEY } }),
+      prisma.systemConfig.findUnique({ where: { key: DASHBOARD_HOME_CONFIG_KEY } }),
+      prisma.homepageState.findUniqueOrThrow({ where: { id: "main" } }),
+    ]);
+    const parsedInterval = Number.parseInt(interval?.value ?? "", 10);
+    return {
+      autoPingIntervalSeconds: clampAutoPingInterval(Number.isNaN(parsedInterval) ? null : parsedInterval),
+      dashboardUtilities: parseDashboardUtilitiesConfig(utilities?.value),
+      dashboardHome: parseDashboardHomeConfig(home?.value),
+      revision: state.revision,
+    };
+  });
   app.patch("/api/settings", async request => {
     const body = settingsSchema.parse(request.body);
     const { revision } = z.object({ revision: z.number().int().min(0).optional() }).parse(request.body);
