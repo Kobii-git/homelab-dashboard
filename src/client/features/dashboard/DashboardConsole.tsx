@@ -1,3 +1,4 @@
+import type { SettingsSection } from "../settings/SettingsHub";
 import { BrowserHomepage } from "../homepage/BrowserHomepage";
 import {
   Activity,
@@ -822,7 +823,7 @@ export function DashboardConsole({
   onPatchGroup: (id: string, body: Record<string, unknown>) => Promise<void>;
   onOpenServices: () => void;
   onAddServiceTemplate: (templateId: string) => void;
-  onOpenSettings: () => void;
+  onOpenSettings: (section?: SettingsSection) => void;
   onEditService: (resource: DashboardResource) => void;
   onReorder: (orderedIds: string[]) => Promise<void>;
 }) {
@@ -1136,7 +1137,7 @@ export function DashboardConsole({
 
   const serviceDirectory = (
     <>
-      <div className="dash-toolbar launchpad-service-toolbar">
+      <details className="hp-service-options"><summary>Service options{query || statusFilter !== "all" ? " · Filtered" : ""}</summary><div className="dash-toolbar launchpad-service-toolbar">
         <label className="search-box service-search">
           <Search size={16} />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter services" />
@@ -1184,8 +1185,10 @@ export function DashboardConsole({
         </div>
       </div>
 
+      </details>
       {checkError ? <div className="app-error">{checkError}</div> : null}
 
+      <div className="hp-service-groups">
       {filteredGroups.map((group) => {
         const groupTotals = summarizeResourceStatus(group.resources);
         return (
@@ -1217,6 +1220,7 @@ export function DashboardConsole({
           {renderCards("ungrouped", filteredUngrouped)}
         </section>
       ) : null}
+      </div>
 
       {directoryResources.length > 0 && visibleCount === 0 ? (
         <EmptyPanel icon={<Search size={36} />} title="No services match" body="Clear search or change the status filter." />
@@ -1324,7 +1328,7 @@ export function DashboardConsole({
         <section className="lab-vitals">
         <div className="section-heading compact-section-heading">
           <h3>Lab Vitals</h3>
-          <button className="icon-text-button" type="button" onClick={onOpenSettings}>
+          <button className="icon-text-button" type="button" onClick={() => onOpenSettings()}>
             <Plus size={14} /> Host monitor
           </button>
         </div>
@@ -1337,7 +1341,7 @@ export function DashboardConsole({
       ) : null}
 
       {hostMonitors.length === 0 && integrations.length === 0 && apiWidgets.length === 0 && !aiBriefing ? (
-        <button className="operations-connect-panel" type="button" onClick={onOpenSettings}>
+        <button className="operations-connect-panel" type="button" onClick={() => onOpenSettings()}>
           <span className="host-icon"><Server size={19} /></span>
           <span>
             <strong>Connect operations data</strong>
@@ -1351,7 +1355,7 @@ export function DashboardConsole({
         <section className="lab-vitals integration-vitals">
           <div className="section-heading compact-section-heading">
             <h3>OPNsense</h3>
-            <button className="icon-text-button" type="button" onClick={onOpenSettings}>
+            <button className="icon-text-button" type="button" onClick={() => onOpenSettings()}>
               <RefreshCw size={14} /> Integration
             </button>
           </div>
@@ -1371,7 +1375,7 @@ export function DashboardConsole({
         <section className="lab-vitals api-widget-vitals">
           <div className="section-heading compact-section-heading">
             <h3>API Widgets</h3>
-            <button className="icon-text-button" type="button" onClick={onOpenSettings}>
+            <button className="icon-text-button" type="button" onClick={() => onOpenSettings()}>
               <Plus size={14} /> Widget
             </button>
           </div>

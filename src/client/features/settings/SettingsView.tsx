@@ -1,4 +1,3 @@
-import { DataBackups } from "../homepage/DataBackups";
 import { Activity, CalendarDays, Clipboard, CloudSun, Cpu, ExternalLink, Film, Gauge, Github, HardDrive, Inbox, ListTodo, MapPin, PanelsTopLeft, Play, Plus, RefreshCw, Save, Search, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "../../components/Primitives";
@@ -597,13 +596,9 @@ export function SettingsView({
   const opnsenseSources = integrations.filter((source) => source.provider === "opnsense");
 
   return (
-    <main className="view-shell">
-      <PageHeader title="Admin" subtitle="Account, appearance, and system tools" />
+    <div className="system-settings">
+      <PageHeader title="Integrations & system" subtitle="Connected apps, account, and system tools" />
 
-      <DataBackups onRestored={async () => {
-        keepSettingsDraft.current = false;
-        await Promise.all([onRefresh(), onReloadSettings(), loadHostMonitors(), loadApiWidgets(), loadIntegrations(), loadRuntime()]);
-      }} />
       <FormErrorBanner message={actionError} />
       {actionError?.includes("Configuration changed") && <div className="hp-actions">
         <button disabled={submitting} onClick={() => void runFormAction(onReloadSettings, setActionError, setSubmitting)}>Reload saved settings</button>
@@ -1403,6 +1398,6 @@ export function SettingsView({
           </div>
         </section>
       </section>
-    </main>
+    </div>
   );
 }

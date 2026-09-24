@@ -556,4 +556,69 @@ describe("private homepage", () => {
       ).statusCode,
     ).toBe(409);
   });
+  it("preserves legacy scratchpads and round-trips saved notes with conflict and input validation", async () => {
+    const before = await snapshot();
+    const legacy = JSON.parse(JSON.stringify(before.data));
+    delete legacy.workspaces.home.savedNotes;
+    delete legacy.workspaces.work.savedNotes;
+    legacy.workspaces.home.notes = "Original scratchpad";
+    await prisma.homepageState.update({ where: { id: "main" }, data: { data: legacy } });
+    let state = await snapshot();
+    expect(state.data.workspaces.home.notes).toBe("Original scratchpad");
+    expect(state.data.workspaces.home.savedNotes).toEqual([]);
+    const note = { id: "saved-note", title: "A useful thought", text: "Keep this across browsers." };
+    state.data.workspaces.home.savedNotes.push(note);
+    const saved = await send("/api/homepage/state", { data: state.data, revision: state.revision });
+    expect(saved.statusCode).toBe(200);
+    expect((await send("/api/homepage/state", { data: state.data, revision: state.revision })).statusCode).toBe(409);
+    state = await snapshot();
+    expect(state.data.workspaces.home.savedNotes).toEqual([note]);
+    expect(state.data.workspaces.home.notes).toBe("Original scratchpad");
+    const invalid = structuredClone(state.data);
+    invalid.workspaces.home.savedNotes.push(note);
+    expect((await send("/api/homepage/state", { data: invalid, revision: state.revision })).statusCode).toBe(400);
+    invalid.workspaces.home.savedNotes = [{ ...note, text: "x".repeat(50_001) }];
+    expect((await send("/api/homepage/state", { data: invalid, revision: state.revision })).statusCode).toBe(400);
+    expect((await app.inject({ method: "POST", url: "/api/homepage/state", payload: { data: state.data, revision: state.revision } })).statusCode).toBe(401);
+    const archive = await prisma.$transaction(tx => exportConfiguration(tx));
+    const decoded = decodeBackup(encodeBackup(archive.manifest, archive.assets).toString("base64"));
+    expect(decoded.manifest.homepage.workspaces.home.savedNotes).toEqual([note]);
+    const empty = structuredClone(state.data);
+    empty.workspaces.home.savedNotes = [];
+    expect((await send("/api/homepage/state", { data: empty, revision: state.revision })).statusCode).toBe(200);
+    const latest = await snapshot();
+    await prisma.$transaction(tx => restoreConfiguration(tx, decoded.manifest, decoded.assets, latest.revision));
+    expect((await snapshot()).data.workspaces.home.savedNotes).toEqual([note]);
+  });
+
+  it("upgrades old layouts and preserves section/dropdown choices through saves and backup restore", async () => {
+    const before = await snapshot();
+    const legacy = JSON.parse(JSON.stringify(before.data));
+    for (const workspace of Object.values(legacy.workspaces) as { layout: { widgets: Record<string, unknown>[] } }[]) {
+      for (const widget of workspace.layout.widgets) delete widget.presentation;
+    }
+    await prisma.homepageState.update({ where: { id: "main" }, data: { data: legacy } });
+    let state = await snapshot();
+    expect(state.data.workspaces.home.layout.widgets.every(w => w.presentation === "section")).toBe(true);
+    state.data.workspaces.work.layout.widgets.find(w => w.id === "notes")!.presentation = "dropdown";
+    expect((await send("/api/homepage/state", { data: state.data, revision: state.revision })).statusCode).toBe(200);
+    expect((await send("/api/homepage/state", { data: state.data, revision: state.revision })).statusCode).toBe(409);
+    state = await snapshot();
+    expect(state.data.workspaces.work.layout.widgets.find(w => w.id === "notes")!.presentation).toBe("dropdown");
+    const invalid = JSON.parse(JSON.stringify(state.data));
+    invalid.workspaces.home.layout.widgets[0].presentation = "unknown";
+    expect((await send("/api/homepage/state", { data: invalid, revision: state.revision })).statusCode).toBe(400);
+    const archive = await prisma.$transaction(tx => exportConfiguration(tx));
+    const decoded = decodeBackup(encodeBackup(archive.manifest, archive.assets).toString("base64"));
+    state.data.workspaces.work.layout.widgets.find(w => w.id === "notes")!.presentation = "section";
+    expect((await send("/api/homepage/state", { data: state.data, revision: state.revision })).statusCode).toBe(200);
+    const latest = await snapshot();
+    await prisma.$transaction(tx => restoreConfiguration(tx, decoded.manifest, decoded.assets, latest.revision));
+    expect((await snapshot()).data.workspaces.work.layout.widgets.find(w => w.id === "notes")!.presentation).toBe("dropdown");
+    const oldManifest = JSON.parse(JSON.stringify(archive.manifest));
+    oldManifest.homepage = legacy;
+    const oldArchive = decodeBackup(encodeBackup(oldManifest, archive.assets).toString("base64"));
+    expect(oldArchive.manifest.homepage.workspaces.work.layout.widgets.every(w => w.presentation === "section")).toBe(true);
+  });
+
 });

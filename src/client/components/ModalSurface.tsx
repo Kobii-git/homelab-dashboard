@@ -20,6 +20,7 @@ const FOCUSABLE = [
   "input:not([disabled])",
   "select:not([disabled])",
   "textarea:not([disabled])",
+  "summary",
   "[tabindex]:not([tabindex='-1'])"
 ].join(",");
 
@@ -108,7 +109,10 @@ export function ModalSurface({
 
   return createPortal(
     <>
-      <div className={backdropClassName} onMouseDown={onClose} aria-hidden="true" />
+      <div className={backdropClassName} onMouseDown={(event) => {
+        event.preventDefault();
+        onClose();
+      }} aria-hidden="true" />
       <div
         ref={panelRef}
         className={className}

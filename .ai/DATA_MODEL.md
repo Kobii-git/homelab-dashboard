@@ -75,3 +75,13 @@ settings. They increment `HomepageState.revision` in the same transaction as leg
 telemetry updates are excluded. Homepage editors compare expected revisions transactionally and
 return 409 on stale writes. Background assets are stored in SQLite so restore cannot partially apply
 filesystem changes. The one-time bookmark backfill preserves resource IDs, groups and history.
+
+Workspace JSON includes bounded `savedNotes` arrays in addition to the legacy `notes` string. Missing
+arrays default to empty when read; the UI preserves legacy scratchpad text until explicitly saved
+as a note. The shared schema validates IDs and text limits, and normal revision checks guard edits.
+New archives include saved notes; older application versions reject the added field, so downgrade
+requires a pre-upgrade backup rather than dropping notes from the stored document.
+
+Each layout widget also stores `presentation` (`section` or `dropdown`). Older layouts and archives
+without the field read as `section`, preserving their existing display. New saves/exports include
+the field; older strict parsers reject it. No database table change is required.

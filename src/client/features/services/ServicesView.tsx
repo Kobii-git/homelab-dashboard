@@ -510,7 +510,7 @@ export function ServicesView({
   const checkDefaults = editCheck ?? checkDraft;
 
   return (
-    <main className="view-shell services-view">
+    <div className="service-management services-view">
       <PageHeader
         title="Services"
         subtitle={`${serviceResources.length} services · ${data.checks.length} checks`}
@@ -967,6 +967,6 @@ export function ServicesView({
           </div>
         </section>
       ) : null}
-    </main>
+    </div>
   );
 }

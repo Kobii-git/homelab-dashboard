@@ -9,6 +9,13 @@ test("bookmarks save without checks, survive reload, filter, and work with keybo
   await page.getByLabel("Password").fill("e2e-admin-password");
   await page.getByRole("button", { name: "Unlock" }).click();
   const library = page.getByRole("region", { name: "Bookmarks" });
+  const bookmarksButton = page.getByRole("button", { name: "Bookmarks", exact: true });
+  await expect(bookmarksButton).toHaveAttribute("aria-expanded", "false");
+  await expect(library).toHaveCount(0);
+  await bookmarksButton.focus();
+  await bookmarksButton.press("Enter");
+  await expect(page.getByRole("menu", { name: "Home bookmarks" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Manage bookmarks", exact: true }).click();
   await library.getByRole("button", { name: "Add bookmark" }).click();
   const form = page.getByRole("form", { name: "New bookmark" });
   await expect(form.getByLabel("Name", { exact: true })).toBeFocused();
@@ -28,8 +35,10 @@ test("bookmarks save without checks, survive reload, filter, and work with keybo
   const checks = await (await page.request.get("/api/health-checks")).json();
   expect(checks.filter((item: { resourceId: string }) => item.resourceId === saved.id)).toEqual([]);
   await page.reload();
-  await expect(library.getByRole("link", { name: new RegExp(bookmarkName) })).toBeVisible();
+  await bookmarksButton.click();
+  await expect(page.getByRole("menuitem", { name: bookmarkName, exact: true })).toBeVisible();
   await expect(page.locator(".launchpad-services").getByText(bookmarkName, { exact: true })).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "Manage bookmarks", exact: true }).click();
   await library.getByLabel("Collection", { exact: true }).selectOption({ label: "Unfiled" });
   await library.getByLabel("Filter bookmarks").fill("missing");
   await expect(library.getByRole("status")).toContainText("No matching bookmarks");
@@ -37,6 +46,7 @@ test("bookmarks save without checks, survive reload, filter, and work with keybo
   await expect(library.getByRole("link", { name: new RegExp(bookmarkName) })).toBeVisible();
   await library.getByRole("button", { name: `Unpin ${bookmarkName}` }).click();
   await expect(library.getByRole("button", { name: `Pin ${bookmarkName}` })).toHaveAttribute("aria-pressed", "false");
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Dashboard", exact: true }).click();
   await page.getByRole("button", { name: "My bookmarks", exact: true }).click();
   const search = page.getByRole("combobox", { name: "Search my bookmarks" });
   await search.fill(bookmarkName);
@@ -47,15 +57,30 @@ test("bookmarks save without checks, survive reload, filter, and work with keybo
   await expect(search).toHaveAttribute("aria-activedescendant", "hp-result-0");
   await search.press("Escape");
   await expect(search).toHaveAttribute("aria-expanded", "false");
-  await library.getByRole("button", { name: "Add bookmark" }).click();
-  await form.getByLabel("Name", { exact: true }).press("Escape");
-  await expect(library.getByRole("button", { name: "Add bookmark" })).toBeFocused();
+  await bookmarksButton.click();
+  const menu = page.getByRole("menu", { name: "Home bookmarks" });
+  await expect(page.locator("#root")).not.toHaveAttribute("inert");
+  await expect(page.locator(".modal-backdrop")).toHaveCount(0);
+  expect((await menu.boundingBox())!.width).toBeLessThanOrEqual(250);
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(bookmarksButton).toBeFocused();
+  await bookmarksButton.click();
+  await search.click();
+  await expect(menu).toHaveCount(0);
+  await expect(search).toBeFocused();
+  await bookmarksButton.click();
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? ""))).toEqual([]);
+  await page.keyboard.press("Tab");
+  await expect(menu).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
+  await bookmarksButton.click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await library.getByRole("button", { name: `Edit bookmark ${bookmarkName}` }).click();
+  await page.getByRole("menuitem", { name: "Manage bookmarks", exact: true }).click();
+  await library.getByRole("button", { name: `Edit bookmark ${bookmarkName}`, exact: true }).click();
   await expect(page.getByRole("heading", { name: "Edit bookmark" })).toBeVisible();
+
 });
 
 test("bookmark save errors preserve the draft and announce the failure", async ({ page }) => {
@@ -65,6 +90,8 @@ test("bookmark save errors preserve the draft and announce the failure", async (
   await page.getByRole("button", { name: "Unlock" }).click();
   await page.route("**/api/homepage/bookmarks", (route) => route.request().method() === "POST"
     ? route.fulfill({ status: 500, json: { error: "Could not save bookmark" } }) : route.continue());
+  await page.getByRole("button", { name: "Bookmarks", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Manage bookmarks", exact: true }).click();
   await page.getByRole("button", { name: "Add bookmark" }).click();
   const form = page.getByRole("form", { name: "New bookmark" });
   await form.getByLabel("Name", { exact: true }).fill("Keep this draft");
@@ -95,17 +122,17 @@ for (const unavailable of [false, true]) {
     await page.getByRole("button", { name: "Unlock" }).click();
     const today = page.getByRole("region", { name: "Weather", exact: true });
     await expect(today.getByText(unavailable ? /Weather unavailable/ : "22°C").first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Add bookmark", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Bookmarks", exact: true })).toBeVisible();
     if (!unavailable) {
       const grid = await page.getByRole("region", { name: "Weather", exact: true }).boundingBox();
       const card = await page.locator(".compact-weather-card").boundingBox();
       expect(grid && card && card.width <= grid.width).toBe(true);
     }
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole("button", { name: "Add bookmark", exact: true }).click();
-    await expect(page.getByRole("form", { name: "New bookmark" })).toBeVisible();
+    await page.getByRole("button", { name: "Bookmarks", exact: true }).click();
+    await expect(page.getByRole("menu", { name: "Home bookmarks" })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-    await page.getByRole("form", { name: "New bookmark" }).getByRole("button", { name: "Cancel" }).click();
+    await page.keyboard.press("Escape");
     await page.getByRole("button", { name: /Switch to light mode|Light mode/ }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
     await expect(page.getByRole("heading", { name: "Favorites", exact: true })).toHaveCSS("color", "rgb(21, 32, 38)");

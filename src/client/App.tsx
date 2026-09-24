@@ -1,3 +1,5 @@
+import { SettingsHub, type SettingsSection } from "./features/settings/SettingsHub";
+import { ServiceLauncher } from "./features/services/ServiceLauncher";
 import { ModalSurface } from "./components/ModalSurface";
 import { Gauge, LayoutDashboard, Server, Settings, Shield } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -45,7 +47,7 @@ const defaultSystemSettings: SystemSettingsDto = {
 const navItems: Array<{ id: AppView; label: string; icon: React.ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
   { id: "services", label: "Services", icon: <Server size={18} /> },
-  { id: "settings", label: "Admin", icon: <Settings size={18} /> }
+  { id: "settings", label: "Settings", icon: <Settings size={18} /> }
 ];
 
 function LoginView({ onLogin, message }: { onLogin: () => void; message: string | null }) {
@@ -304,6 +306,7 @@ export function App() {
   const [setupError, setSetupError] = useState<string | null>(null);
   const [view, setView] = useState<AppView>("dashboard");
   const [data, setData] = useState<AppData>(emptyAppData);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("homepage");
   const [systemSettings, setSystemSettings] = useState<SystemSettingsDto>(defaultSystemSettings);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -614,24 +617,22 @@ export function App() {
   }
 
   function openServicesForCreate() {
-    setView("services");
     setOpenAddServiceForm(true);
     setAddServiceTemplateId(null);
+    openSettings("services");
   }
-
   function openServicesForTemplate(templateId: string) {
     setOpenAddServiceForm(false);
     setAddServiceTemplateId(templateId);
-    setView("services");
+    openSettings("services");
   }
-
-  function openSettings() {
+  function openSettings(section: SettingsSection = "integrations") {
+    setSettingsSection(section);
     setView("settings");
   }
-
   function openServicesForEdit(resource: DashboardResource) {
     setEditServiceId(resource.id);
-    setView("services");
+    openSettings("services");
   }
 
   async function runResourceHealthCheck(resource: DashboardResource) {
@@ -657,7 +658,7 @@ export function App() {
   const paletteCommands: PaletteCommand[] = [
     { id: "nav-dashboard", label: "Go to Dashboard", run: () => setView("dashboard") },
     { id: "nav-services", label: "Go to Services", run: () => setView("services") },
-    { id: "nav-admin", label: "Go to Admin", run: () => setView("settings") },
+    { id: "nav-admin", label: "Go to Settings", run: () => setView("settings") },
     { id: "add-service", label: "Add a service", run: openServicesForCreate },
     { id: "add-host-monitor", label: "Add a host monitor", run: openSettings },
     { id: "refresh", label: "Refresh data", hint: "R", run: () => void loadData() },
@@ -729,12 +730,13 @@ export function App() {
   }
 
   return (
-    <div className={`app-shell pro-shell sidebar-${sidebarMode}`}>
+    <div className={`app-shell pro-shell bookmark-shell sidebar-${sidebarMode}`}>
       <AppSidebar
         navItems={navItems}
         view={view}
         onNavigate={(target) => {
           setView(target);
+          if (target === "settings") setSettingsSection("homepage");
           if (target !== "services") {
             setOpenAddServiceForm(false);
           }
@@ -744,6 +746,7 @@ export function App() {
         theme={theme}
         onToggleTheme={toggleTheme}
         onOpenPalette={() => setPaletteOpen(true)}
+        onManageBookmarks={() => openSettings("bookmarks")}
         onLogout={() => void logout()}
       />
 
@@ -769,7 +772,10 @@ export function App() {
             />
           ) : null}
 
-          {view === "services" ? (
+          {view === "services" && <ServiceLauncher data={data} onManage={() => openSettings("services")} />}
+          {view === "settings" && <SettingsHub section={settingsSection} onSection={setSettingsSection}
+            onRestored={async () => { await Promise.all([loadData(), loadSystemSettings()]); }}
+            services={
             <ServicesView
               data={data}
               onRefresh={loadData}
@@ -780,10 +786,7 @@ export function App() {
               onAddServiceTemplateHandled={() => setAddServiceTemplateId(null)}
               editServiceId={editServiceId}
               onEditServiceHandled={() => setEditServiceId(null)}
-            />
-          ) : null}
-
-          {view === "settings" ? (
+            />} system={
             <SettingsView
               username={username}
               authSource={authSource}
@@ -792,8 +795,7 @@ export function App() {
               systemSettings={systemSettings}
               onSaveSettings={patchSystemSettings}
               onReloadSettings={loadSystemSettings}
-            />
-          ) : null}
+            />} />}
         </div>
       </div>
 

@@ -95,3 +95,9 @@ export async function fileBase64(file: File) {
     text += String.fromCharCode(...bytes.subarray(i, i + 16_384));
   return btoa(text);
 }
+
+// getRandomValues remains available on the supported private HTTP origin.
+export function newHomepageId(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
+}

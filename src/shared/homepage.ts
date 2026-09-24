@@ -31,6 +31,7 @@ export const layoutSchema = z
             id: z.enum(widgetIds),
             enabled: z.boolean(),
             size: z.enum(["normal", "wide"]),
+            presentation: z.enum(["section", "dropdown"]).default("section"),
           })
           .strict(),
       )
@@ -56,19 +57,32 @@ export function defaultLayout(work: boolean): HomeLayout {
       size: ["favorites", "bookmarks", "services"].includes(id)
         ? "wide"
         : "normal",
+      presentation: "section",
     })),
   };
 }
+const workspaceSchema = z.object({
+  notes: z.string().max(50_000),
+  savedNotes: z.array(z.object({
+    id: homepageId,
+    title: z.string().trim().min(1).max(160),
+    text: z.string().min(1).max(50_000),
+  }).strict()).max(200).default([]),
+  layout: layoutSchema,
+}).strict().superRefine((value, ctx) => {
+  if (new Set(value.savedNotes.map(n => n.id)).size !== value.savedNotes.length)
+    ctx.addIssue({ code: "custom", message: "Duplicate note IDs" });
+  if (value.notes && value.savedNotes.some(n => n.id === "legacy-scratchpad"))
+    ctx.addIssue({ code: "custom", message: "Save the original scratchpad before reusing its ID" });
+  if (value.savedNotes.reduce((total, n) => total + n.text.length, 0) > 500_000)
+    ctx.addIssue({ code: "custom", message: "Notes exceed the workspace text limit" });
+});
 export const homepageDataSchema = z
   .object({
     workspaces: z
       .object({
-        home: z
-          .object({ notes: z.string().max(50_000), layout: layoutSchema })
-          .strict(),
-        work: z
-          .object({ notes: z.string().max(50_000), layout: layoutSchema })
-          .strict(),
+        home: workspaceSchema,
+        work: workspaceSchema,
       })
       .strict(),
     collections: z
@@ -130,8 +144,8 @@ export type HomepageData = z.infer<typeof homepageDataSchema>;
 export function defaultHomepage(): HomepageData {
   return {
     workspaces: {
-      home: { notes: "", layout: defaultLayout(false) },
-      work: { notes: "", layout: defaultLayout(true) },
+      home: { notes: "", savedNotes: [], layout: defaultLayout(false) },
+      work: { notes: "", savedNotes: [], layout: defaultLayout(true) },
     },
     collections: [],
     prompts: [],

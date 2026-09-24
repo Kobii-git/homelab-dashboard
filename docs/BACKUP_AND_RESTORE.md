@@ -2,7 +2,7 @@
 
 ## Portable configuration in the app
 
-**Admin → Data & backups** exports a versioned ZIP with workspaces, bookmarks, collections, reading
+**Settings → Data & backups** exports a versioned ZIP with workspaces, bookmarks, collections, reading
 states, notes, prompt templates, layouts, PNG backgrounds, service/check definitions, host/API widget
 definitions, and allowlisted utility/home preferences. Environment-variable names may be listed as
 requirements; values, credential bindings, authentication, operational history, and deployment/network
@@ -29,6 +29,15 @@ This archive contains private content and is not a full disaster-recovery backup
 by the app. Save it on protected/encrypted storage outside the server. There is no scheduled-backup
 service or full-database restore API. An application configuration export cannot recover passwords,
 monitoring history, certificates, environment files, or VPN/DNS settings.
+
+Saved-note lists are included alongside the original scratchpad text. Older archives without a
+saved-note list remain readable. Application versions from before saved-note lists were added reject
+the new workspace field; keep a pre-upgrade database backup if a downgrade is needed. Do not
+remove that field manually, as it contains saved notes.
+
+Layouts also include each section's always-open/dropdown choice. Older archives default to always
+open. Versions without this layout field reject new archives, so use a pre-upgrade backup when
+rolling back to an older application version.
 
 ## Full disaster recovery
 

@@ -150,7 +150,7 @@ export function DataBackups({
                   setExportToken(null);
                   setConfirmed(false);
                   setNotice(
-                    "Configuration restored. Review and re-enable monitoring and credential bindings in Admin.",
+                    "Configuration restored. Review and re-enable monitoring and credential bindings in Settings.",
                   );
                   window.dispatchEvent(new Event("homepage:changed"));
                   await onRestored();

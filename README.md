@@ -9,7 +9,7 @@ A private, self-hosted browser homepage and command center for your bookmarks, w
 
 ## Features
 
-- **Home, Work, and Operations** - shared personal/work layouts, Google-first search, favorites, bookmark collections, scratchpads, reading lists, prompt templates, and a browser-local focus timer; Operations retains the monitoring command center
+- **Home, Work, and Operations** - shared personal/work layouts, Google-first search, favorites, expandable bookmark folders, saved notes and scratchpads, reading lists, prompt templates, and a browser-local focus timer; Operations retains the monitoring command center
 - **Personal context** - optional read-only Google Calendar agenda, Gmail unread Inbox count, and Todoist overdue/today links with isolated provider failures and stale-cache fallback
 - **Calendar dates** - the Launchpad uses the device’s local time for timed events, keeps all-day dates on their intended day, and includes ongoing multi-day events; mail and storage cards flag cached data when providers are unavailable
 - **Media and storage** - optional Plex recently-added, Radarr upcoming, TMDB discovery, and TrueNAS capacity/health modules; TrueNAS health also appears in Operations
@@ -26,7 +26,7 @@ A private, self-hosted browser homepage and command center for your bookmarks, w
 - **Command palette** - `⌘K` (or `/`) to search and launch any service or action from anywhere
 - **Services** - manual catalog for apps, websites, Docker services, VMs, servers, and other devices, with common homelab templates, duplicate actions, and confirmed OPNsense imports
 - **Health checks** - one primary HTTP, TCP, ping, or SSL availability check per service, optional non-disruptive diagnostics, in-container testing, latency, failure reasons, thresholds, and history
-- **Admin** - password change, Launchpad search/weather/release settings, Glances host monitors, OPNsense integration status, AI briefing runtime state, API widgets, runtime health diagnostics, public status page, build info, and demo-data controls
+- **Settings** - homepage appearance, bookmark/folder management, service configuration, backups, password change, Launchpad search/weather/release settings, Glances host monitors, OPNsense integration status, AI briefing runtime state, API widgets, runtime health diagnostics, public status page, build info, and demo-data controls
 - **Optional status page** - disabled by default, with aggregate-only or service-detail modes when deliberately enabled
 
 Remote SSH/RDP/VNC access, Guacamole, saved credentials, vaults, alert channels, incidents, script/plugin widgets, scheduled backups or full-database restore through the UI, tags, AI control agents, and mutating integration actions are intentionally out of the current app scope.
@@ -123,7 +123,7 @@ Direct internet exposure is unsupported. Keep administration behind the LAN/VPN 
 
 ### Optional Host Metrics
 
-Run Glances on a trusted host, then add the endpoint in **Admin > Host metrics**:
+Run Glances on a trusted host, then add the endpoint in **Settings > Integrations & system > Host metrics**:
 
 ```sh
 glances -w --disable-webui --bind 0.0.0.0
@@ -137,7 +137,7 @@ Create an OPNsense API key for a least-privileged user with read access to diagn
 
 ### Optional Daily Cockpit
 
-Set the relevant environment variables, restart, and then enable modules in **Admin > Personal context**. Google access is manually provisioned—there is no in-app OAuth or token vault. Calendar requests use `calendar.events.readonly`; Gmail reads only the Inbox label count and never fetches subjects, senders, snippets, or bodies. Todoist returns at most six overdue/today tasks and only links to the service.
+Set the relevant environment variables, restart, and then enable modules in **Settings > Integrations & system > Personal context**. Google access is manually provisioned—there is no in-app OAuth or token vault. Calendar requests use `calendar.events.readonly`; Gmail reads only the Inbox label count and never fetches subjects, senders, snippets, or bodies. Todoist returns at most six overdue/today tasks and only links to the service.
 
 For media, add a Plex API widget using the built-in Plex template and `PLEX_TOKEN`, and optionally a Radarr widget using `RADARR_API_KEY`; select those widgets in the daily cockpit settings. TMDB supplies upcoming/trending discovery for the configured region and language. Each provider is cached independently, and provider failure does not block `/api/dashboard` or service launch.
 
@@ -158,7 +158,7 @@ below 500 count as reachable; 5xx responses and connection failures do not.
 
 TLS verification is always strict for health checks. For private/self-signed web interfaces such as
 OPNsense, either install the private CA with `NODE_EXTRA_CA_CERTS` or use a primary TCP check for the
-HTTPS port and keep certificate inspection diagnostic. **Services > Needs review** identifies
+HTTPS port and keep certificate inspection diagnostic. **Settings > Services & checks > Needs review** identifies
 existing Ping primaries and automatic services without an enabled primary; it never changes them
 without administrator action.
 
@@ -170,11 +170,11 @@ By default, service URLs, hosts, IP addresses, and check targets are redacted be
 
 ### Optional API Widgets
 
-API widgets are configured in **Admin > API widgets**. Widgets only perform read-only JSON requests, and secrets are read from environment variables by name instead of being stored in SQLite. Each credential is bound to its confirmed normalized origin in non-secret `SystemConfig` metadata, and changing that origin requires recent password confirmation. Only names used by built-in templates or explicitly listed in `API_WIDGET_SECRET_ALLOWLIST` can be attached to requests. Built-in templates currently cover Home Assistant, Proxmox VE, Portainer, AdGuard Home, Pi-hole v6, Jellyfin, Grafana, Prometheus, Sonarr, Radarr, and Plex.
+API widgets are configured in **Settings > Integrations & system > API widgets**. Widgets only perform read-only JSON requests, and secrets are read from environment variables by name instead of being stored in SQLite. Each credential is bound to its confirmed normalized origin in non-secret `SystemConfig` metadata, and changing that origin requires recent password confirmation. Only names used by built-in templates or explicitly listed in `API_WIDGET_SECRET_ALLOWLIST` can be attached to requests. Built-in templates currently cover Home Assistant, Proxmox VE, Portainer, AdGuard Home, Pi-hole v6, Jellyfin, Grafana, Prometheus, Sonarr, Radarr, and Plex.
 
 ### Optional Launchpad Utilities
 
-Configure Launchpad utilities in **Admin > Launchpad utilities**. Web search defaults to DuckDuckGo and can be changed to Google, Brave, Kagi, or Startpage. Weather uses a normalized Open-Meteo location and can display metric or imperial temperatures. Release tracking accepts up to 12 public GitHub repositories in `owner/repository` format; known service templates can suggest repositories, but additions are not persisted until you confirm with **Save utilities**.
+Configure Launchpad utilities in **Settings > Integrations & system > Launchpad utilities**. Web search defaults to DuckDuckGo and can be changed to Google, Brave, Kagi, or Startpage. Weather uses a normalized Open-Meteo location and can display metric or imperial temperatures. Release tracking accepts up to 12 public GitHub repositories in `owner/repository` format; known service templates can suggest repositories, but additions are not persisted until you confirm with **Save utilities**.
 
 Weather and release data are fetched separately from `/api/dashboard`, so provider outages never block service access. Requests use fixed provider hosts, concurrency limits, wall-clock timeouts, and response-size bounds. Location results are cached for 24 hours, forecasts for 15 minutes, and GitHub releases—including repository-level failures—for six hours. Stale cached data is returned when a refresh fails. Utility configuration is non-secret `SystemConfig` JSON and is never included on the public `/status` page.
 
@@ -202,7 +202,7 @@ The SQLite database is stored in the named Docker volume `homelab-dashboard-data
 
 Container startup applies the current Prisma schema without `--accept-data-loss`. Back up `/data/homelab.db` before upgrades that include documented destructive migrations.
 
-If a container is stuck restarting, check **Admin > Runtime Health** after it starts, or gather logs from the host:
+If a container is stuck restarting, check **Settings > Integrations & system > Runtime Health** after it starts, or gather logs from the host:
 
 ```sh
 docker logs --tail=200 homelab-dashboard

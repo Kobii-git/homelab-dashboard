@@ -77,10 +77,14 @@ test("setup uses labeled, keyboard-focusable account controls", async ({ page })
 test("mobile navigation and service rows remain visible without overflow", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
-  for (const name of ["Dashboard", "Services", "Admin"]) {
+  for (const name of ["Dashboard", "Services", "Settings"]) {
     await expect(page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name })).toBeVisible();
   }
-  await page.getByRole("button", { name: "Services" }).click();
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Services", exact: true }).click();
+  await expect(page.locator(".launcher-service").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Delete OPNsense Gateway" })).toHaveCount(0);
+  expect(await page.evaluate(() => document.querySelector(".workspace-scroll")!.scrollWidth <= document.querySelector(".workspace-scroll")!.clientWidth)).toBe(true);
+  await page.getByRole("button", { name: "Manage services" }).click();
   await expect(page.getByRole("button", { name: "Delete OPNsense Gateway" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   const row = page.locator(".service-data-row").first();
@@ -93,6 +97,7 @@ test("service setup makes TCP reachability and exact web endpoints primary", asy
   const suffix = testInfo.project.name;
   await login(page);
   await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Services", exact: true }).click();
+  await page.getByRole("button", { name: "Manage services" }).click();
 
   await page.getByRole("button", { name: "Service", exact: true }).click();
   let serviceForm = page.getByRole("heading", { name: "New service" }).locator("..");
@@ -131,7 +136,7 @@ test("Launchpad is the device default, ranks local search, and remembers the sel
   await expect(launchpad).toHaveClass(/active/);
 
   const search = page.getByRole("combobox", { name: "Search Google" });
-  await expect(page.getByRole("link", { name: /Open ChatGPT/ })).toHaveAttribute("href", "https://chatgpt.com/");
+  await expect(page.getByRole("link", { name: /^ChatGPT$/ })).toHaveAttribute("href", "https://chatgpt.com/");
 
   await page.evaluate(() => {
     (window as Window & { __openedUrl?: string }).open = ((url?: string | URL) => {
@@ -156,7 +161,7 @@ test("an empty Launchpad shows focused onboarding and Operations stays signal-on
   await login(page);
 
   await expect(page.getByRole("heading", { name: "Your day, one place." })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add bookmark", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Bookmarks", exact: true })).toBeVisible();
   await expect(page.getByText("Lab Vitals")).toHaveCount(0);
   await expect(page.getByText("Daily Briefing")).toHaveCount(0);
   await expect(page.getByRole("combobox", { name: "Search Google" })).toBeVisible();
@@ -395,6 +400,7 @@ test("sensitive administration prompts for reauthentication and retries once", a
   await page.context().clearCookies();
   await login(page);
   await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Services", exact: true }).click();
+  await page.getByRole("button", { name: "Manage services" }).click();
   const deleteButton = page.getByRole("button", { name: `Delete ${targetName}` });
   await expect(deleteButton).toBeVisible();
 
@@ -428,7 +434,8 @@ test("Runtime Health surfaces security warnings and disabled public-status polic
     }
   }));
 
-  await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Admin", exact: true }).click();
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Integrations & system", exact: true }).click();
   await expect(page.getByText("Security readiness")).toBeVisible();
   await expect(page.getByText("CRITICAL: Insecure integration transport override is enabled")).toBeVisible();
   await expect(page.getByText("Public status is disabled by deployment policy.")).toBeVisible();
@@ -445,7 +452,7 @@ test("authenticated views, palette, and drawer have no serious axe violations", 
   const navigation = page.getByRole("navigation", { name: "Primary" });
   await navigation.getByRole("button", { name: "Services", exact: true }).click();
   await expectNoSeriousAxeViolations(page);
-  await navigation.getByRole("button", { name: "Admin", exact: true }).click();
+  await navigation.getByRole("button", { name: "Settings", exact: true }).click();
   await expectNoSeriousAxeViolations(page);
   await page.getByTitle("Search (⌘K)").click();
   await expectNoSeriousAxeViolations(page);

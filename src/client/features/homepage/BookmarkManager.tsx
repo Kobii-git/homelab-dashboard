@@ -1,5 +1,6 @@
+import { BookmarkTree } from "./BookmarkTree";
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { ArrowDown, ArrowUp, Bookmark, Pencil, Plus, Star } from "lucide-react";
+import { ArrowDown, ArrowUp, Bookmark, Pencil, Plus, Star, Settings2, X } from "lucide-react";
 import {
   collectionLabel,
   type BookmarkInput,
@@ -10,7 +11,7 @@ import {
 import { apiGet, apiSend } from "../../lib/api";
 import { ModalSurface } from "../../components/ModalSurface";
 import { bookmarkHostname } from "../../lib/bookmarks";
-import { download, type HomepageController } from "./useHomepage";
+import { download, newHomepageId, type HomepageController } from "./useHomepage";
 
 export function CopyPreview({
   text,
@@ -65,9 +66,15 @@ export function CopyPreview({
 export function BookmarkManager({
   home,
   workspace,
+  manage = false,
+  onManage,
+  onClose,
 }: {
   home: HomepageController;
   workspace: WorkspaceId;
+  manage?: boolean;
+  onManage?: () => void;
+  onClose?: () => void;
 }) {
   const { snapshot, busy } = home;
   const [query, setQuery] = useState("");
@@ -167,6 +174,8 @@ export function BookmarkManager({
         <h3>
           <Bookmark size={18} /> Bookmarks <small>{visible.length}</small>
         </h3>
+        <div className="hp-actions">
+        {!manage && <button aria-label="Manage bookmarks" title="Manage bookmarks" onClick={onManage}><Settings2 size={16} /></button>}
         <button
           ref={addRef}
           type="button"
@@ -191,7 +200,10 @@ export function BookmarkManager({
         >
           <Plus size={16} /> Add bookmark
         </button>
+        {onClose && <button type="button" aria-label="Close bookmarks" title="Close bookmarks" onClick={onClose}><X size={16} /></button>}
+        </div>
       </div>
+      {manage ? <>
       <div className="hp-actions">
         <label className="hp-grow">
           Filter bookmarks
@@ -518,6 +530,12 @@ export function BookmarkManager({
           </button>
         </div>
       )}
+      </> : <BookmarkTree snapshot={snapshot} workspace={workspace} onEdit={(b) => setEditing({
+        id: b.id, revision: snapshot.revision, bookmark: {
+          name: b.name, url: b.url, notes: b.notes, favorite: b.favorite,
+          workspaceId: b.workspaceId, collectionId: b.collectionId, readingState: b.readingState,
+        },
+      })} />}
       {editing && (
         <ModalSurface
           ariaLabel={editing.id ? "Edit bookmark" : "New bookmark"}
@@ -763,7 +781,7 @@ function CollectionEditor({
     try {
       const data = structuredClone(base.data);
       const c = {
-        id: id ?? crypto.randomUUID(),
+        id: id ?? newHomepageId(),
         workspaceId: workspace,
         name,
         parentId: parentId || null,
