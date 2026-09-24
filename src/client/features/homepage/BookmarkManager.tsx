@@ -250,7 +250,7 @@ export function BookmarkManager({
           {trash ? "Back to bookmarks" : "Trash"}
         </button>
       </div>
-      <div className="hp-actions hp-subtle">
+      <details className="hp-transfer"><summary>Import &amp; export</summary><div className="hp-actions hp-subtle">
         <button type="button" onClick={() => void exportBookmarks("html")}>
           Export HTML
         </button>
@@ -300,6 +300,7 @@ export function BookmarkManager({
           </button>
         )}
       </div>
+      </details>
       {error && <p role="alert">{error}</p>}
       {selected.length > 0 && (
         <div className="hp-bulk">
@@ -393,7 +394,7 @@ export function BookmarkManager({
           </button>
         </div>
       )}
-      <label className="hp-check">
+      {shown.length > 0 && <label className="hp-check">
         <input
           type="checkbox"
           checked={
@@ -408,7 +409,7 @@ export function BookmarkManager({
           }
         />{" "}
         Select this page
-      </label>
+      </label>}
       <div className="hp-link-list">
         {shown.map((b: HomepageBookmark) => (
           <div

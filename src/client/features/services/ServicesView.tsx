@@ -889,7 +889,7 @@ export function ServicesView({
 
           <div className="row-list">
             {data.checks.map((check) => (
-              <div className="data-row data-row-wide service-data-row" key={check.id}>
+              <div className="data-row data-row-wide service-data-row check-data-row" key={check.id}>
                 <span>
                   <strong>{check.resource?.name ?? check.target}</strong>
                   <small>

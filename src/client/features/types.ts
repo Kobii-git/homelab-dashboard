@@ -1,7 +1,7 @@
 import type { DashboardGroupDto, DashboardResource } from "../lib/api";
 import type { DashboardDto, HealthCheckDto } from "../lib/api";
 
-export type AppView = "dashboard" | "services" | "settings";
+export type AppView = "dashboard" | "services" | "notes" | "settings";
 
 export type AppData = {
   dashboard: DashboardDto;

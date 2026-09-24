@@ -401,7 +401,7 @@ test("saved notes open, edit, and delete while scratchpad drafts stay separate",
   await page.getByRole("button", { name: /Switch to light mode|Light mode/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(notes).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-  await expect(notes.getByRole("heading", { name: /^Notes/ })).toHaveCSS("color", "rgb(21, 32, 38)");
+  await expect(notes.getByRole("heading", { name: /^Notes/ })).toHaveCSS("color", "rgb(37, 58, 54)");
   await page.screenshot({ path: testInfo.outputPath("notes-light.png"), fullPage: true });
   const result = await new AxeBuilder({ page }).analyze();
   expect(result.violations.filter(v => ["serious", "critical"].includes(v.impact ?? ""))).toEqual([]);

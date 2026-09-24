@@ -592,6 +592,7 @@ export function SettingsView({
     );
   }
 
+  const [category, setCategory] = useState("daily");
   const trueNasSource = integrations.find((source) => source.provider === "truenas") ?? null;
   const opnsenseSources = integrations.filter((source) => source.provider === "opnsense");
 
@@ -608,11 +609,16 @@ export function SettingsView({
         }, setActionError, setSubmitting, "Draft retained. Review your changes before saving again.")}>Keep draft against latest version</button>
       </div>}
 
+      <nav className="system-sections" aria-label="System settings sections">
+        {([
+          ["daily", "Daily tools"], ["connections", "Connections"], ["system", "Account & runtime"],
+        ] as const).map(([id, label]) => <button key={id} aria-pressed={category === id} className={category === id ? "active" : ""} onClick={() => setCategory(id)}>{label}</button>)}
+      </nav>
       <section className="settings-grid">
-        <section className="table-panel settings-wide-panel">
+        <section className="table-panel settings-wide-panel" hidden={category !== "daily"}>
           <h3><CloudSun size={16} /> Launchpad utilities</h3>
           <p className="muted-copy">
-            Configure optional, credential-free context for the Launchpad. Weather and release data are fetched by the dashboard server and cached.
+            Weather, search, and software updates for your daily dashboard.
           </p>
 
           <form className="dashboard-utility-settings" onSubmit={saveDashboardUtilities}>
@@ -821,10 +827,10 @@ export function SettingsView({
           </form>
         </section>
 
-        <section className="table-panel settings-wide-panel">
+        <section className="table-panel settings-wide-panel" hidden={category !== "daily"}>
           <h3><CalendarDays size={16} /> Personal context</h3>
           <p className="muted-copy">
-            Choose which read-only modules appear on Launchpad. Credentials are supplied only through environment variables; secrets are never shown or stored here.
+            Connect your calendar and Todoist to see your day in one place. Access is read-only; connection credentials stay on the server.
           </p>
           <form className="dashboard-home-settings" onSubmit={saveDashboardHome}>
             <div className="home-settings-grid">
@@ -891,7 +897,7 @@ export function SettingsView({
           </form>
         </section>
 
-        <section className="table-panel settings-wide-panel">
+        <section className="table-panel settings-wide-panel" hidden={category !== "connections"}>
           <h3><Cpu size={16} /> Host metrics</h3>
           <p className="muted-copy">
             Add Glances web endpoints from trusted LAN/VPN hosts. v1 does not store Glances credentials.
@@ -984,7 +990,7 @@ export function SettingsView({
           </div>
         </section>
 
-        <section className="table-panel settings-wide-panel">
+        <section className="table-panel settings-wide-panel" hidden={category !== "connections"}>
           <h3><ShieldCheck size={16} /> OPNsense integration</h3>
           <p className="muted-copy">
             Read-only API polling is configured with environment variables. API keys are never stored in SQLite.
@@ -1029,7 +1035,7 @@ export function SettingsView({
           </div>
         </section>
 
-        <section className="table-panel settings-wide-panel">
+        <section className="table-panel settings-wide-panel" hidden={category !== "connections"}>
           <h3><Sparkles size={16} /> AI briefing</h3>
           <p className="muted-copy">
             Read-only command briefings use sanitized dashboard evidence. Provider secrets stay in environment variables.
@@ -1059,7 +1065,7 @@ export function SettingsView({
           </div>
         </section>
 
-        <section className="table-panel settings-wide-panel">
+        <section className="table-panel settings-wide-panel" hidden={category !== "connections"}>
           <h3><PanelsTopLeft size={16} /> API widgets</h3>
           {apiWidgetSuggestions.length > 0 ? (
             <div className="host-monitor-list api-widget-suggestion-list">
@@ -1268,7 +1274,7 @@ export function SettingsView({
           </div>
         </section>
 
-        <section className="table-panel">
+        <section className="table-panel" hidden={category !== "system"}>
           <h3><RefreshCw size={16} /> Account</h3>
           <div className="key-value-grid">
             <span><span>Username</span><strong>{username}</strong></span>
@@ -1286,7 +1292,7 @@ export function SettingsView({
           )}
         </section>
 
-        <section className="table-panel">
+        <section className="table-panel" hidden={category !== "system"}>
           <h3><Film size={16} /> Credits</h3>
           <p className="muted-copy">Homelab Dashboard is MIT licensed. <a href="/third-party-licenses.txt" target="_blank" rel="noreferrer">Third-party software licenses and notices</a>.</p>
           <a className="tmdb-credit" href="https://www.themoviedb.org" target="_blank" rel="noreferrer">
@@ -1295,7 +1301,7 @@ export function SettingsView({
           <p className="muted-copy">This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
         </section>
 
-        <section className="table-panel">
+        <section className="table-panel" hidden={category !== "system"}>
           <h3><Gauge size={16} /> Data &amp; system</h3>
           <form className="inline-form settings-form-grid" onSubmit={updateSettings}>
             <label>
@@ -1329,7 +1335,7 @@ export function SettingsView({
           </div>
         </section>
 
-        <section className="table-panel settings-wide-panel">
+        <section className="table-panel settings-wide-panel" hidden={category !== "system"}>
           <h3><Gauge size={16} /> Runtime Health</h3>
           {runtime ? (
             <>

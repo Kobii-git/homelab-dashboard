@@ -436,6 +436,7 @@ test("Runtime Health surfaces security warnings and disabled public-status polic
 
   await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Integrations & system", exact: true }).click();
+  await page.getByRole("button", { name: "Account & runtime", exact: true }).click();
   await expect(page.getByText("Security readiness")).toBeVisible();
   await expect(page.getByText("CRITICAL: Insecure integration transport override is enabled")).toBeVisible();
   await expect(page.getByText("Public status is disabled by deployment policy.")).toBeVisible();

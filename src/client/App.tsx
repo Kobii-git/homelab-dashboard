@@ -1,7 +1,8 @@
 import { SettingsHub, type SettingsSection } from "./features/settings/SettingsHub";
 import { ServiceLauncher } from "./features/services/ServiceLauncher";
 import { ModalSurface } from "./components/ModalSurface";
-import { Gauge, LayoutDashboard, Server, Settings, Shield } from "lucide-react";
+import { Gauge, LayoutDashboard, Server, Settings, Shield, StickyNote } from "lucide-react";
+import { NotesPage } from "./features/homepage/NotesPage";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppSidebar } from "./components/AppSidebar";
@@ -47,6 +48,7 @@ const defaultSystemSettings: SystemSettingsDto = {
 const navItems: Array<{ id: AppView; label: string; icon: React.ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
   { id: "services", label: "Services", icon: <Server size={18} /> },
+  { id: "notes", label: "Notes", icon: <StickyNote size={18} /> },
   { id: "settings", label: "Settings", icon: <Settings size={18} /> }
 ];
 
@@ -658,6 +660,7 @@ export function App() {
   const paletteCommands: PaletteCommand[] = [
     { id: "nav-dashboard", label: "Go to Dashboard", run: () => setView("dashboard") },
     { id: "nav-services", label: "Go to Services", run: () => setView("services") },
+    { id: "nav-notes", label: "Go to Notes", run: () => setView("notes") },
     { id: "nav-admin", label: "Go to Settings", run: () => setView("settings") },
     { id: "add-service", label: "Add a service", run: openServicesForCreate },
     { id: "add-host-monitor", label: "Add a host monitor", run: openSettings },
@@ -773,6 +776,7 @@ export function App() {
           ) : null}
 
           {view === "services" && <ServiceLauncher data={data} onManage={() => openSettings("services")} />}
+          {view === "notes" && <NotesPage />}
           {view === "settings" && <SettingsHub section={settingsSection} onSection={setSettingsSection}
             onRestored={async () => { await Promise.all([loadData(), loadSystemSettings()]); }}
             services={

@@ -135,7 +135,7 @@ for (const unavailable of [false, true]) {
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: /Switch to light mode|Light mode/ }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-    await expect(page.getByRole("heading", { name: "Favorites", exact: true })).toHaveCSS("color", "rgb(21, 32, 38)");
+    await expect(page.getByRole("heading", { name: "Favorites", exact: true })).toHaveCSS("color", "rgb(37, 58, 54)");
     const results = await new AxeBuilder({ page }).analyze();
     expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? ""))).toEqual([]);
   });
