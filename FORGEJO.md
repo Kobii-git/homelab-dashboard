@@ -1,10 +1,10 @@
-# Legacy repository migration
+# Legacy repository
 
-GitHub is now the canonical project home:
+GitHub is now the canonical active-development repository:
 [Kobii-git/homelab-dashboard](https://github.com/Kobii-git/homelab-dashboard).
+See [GitHub operations](GITHUB.md) for cloning, images, CI, and signature verification.
 
-See [GitHub operations](GITHUB.md) for source access, GHCR images, CI, and signature verification.
-The old registry runner and plaintext-registry configuration are retired from the current tree.
-Historical Git commits and tags remain intact. Do not remove the old repository or registry until
-its server-side issues, releases, wiki, packages, and permissions have been inventoried and any
-remaining migration has been verified.
+The legacy container images, historical Actions runs, and administrative settings stay on Gitea.
+The old repository and registry remain intact. The current tree no longer uses the old registry
+runner or plaintext-registry builder configuration. Historical commits and tags are preserved.
+See the [migration record](docs/GITHUB_MIGRATION.md) for scope and verification.

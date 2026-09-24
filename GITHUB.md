@@ -76,7 +76,10 @@ image, then follow [secure deployment](docs/SECURE_DEPLOYMENT.md) and
 [backup and recovery](docs/BACKUP_AND_RESTORE.md). Repository migration does not deploy the application.
 LAN/VPN-only HTTPS, sign-in, proxy restrictions, and public-status defaults are unchanged.
 
-## Remaining source administration
+## Retained source administration
+
+This migration covers active development. Legacy images and source administrative settings stay on
+Gitea; see the [migration record](docs/GITHUB_MIGRATION.md).
 
 Git history does not contain repository permissions, webhooks, runner settings, registry contents,
 Actions logs, or secrets. Review those separately with a source administrator. Do not copy legacy
