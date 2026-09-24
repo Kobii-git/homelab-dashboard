@@ -28,17 +28,16 @@ changes. Priority reflects potential impact, not an instruction to expand the cu
   reconstruct, or missed/failed operator backups occur.
 - **Review point:** database, image, volume, deployment-user, or Prisma tooling changes.
 
-## P2 — Publication validation and registry write permission share one job
+## P2 — Public contribution and release governance requires remote controls
 
-- **Risk:** the publishing jobs grant package-write permission while dependency scripts, tests, and
-  scanners execute; validation and publication are not isolated jobs with separately scoped tokens.
-- **Rationale:** the private single-maintainer pipelines are currently monolithic and ordered so
-  publication happens only after gates pass.
-- **Compensating controls:** immutable action/scanner pins, secret and vulnerability scans, signed
-  digests, private repository/registry boundaries, and no pull-request publication trigger.
-- **Reconsider when:** outside contributions are accepted, more maintainers/runners are added, or a
-  workflow begins handling untrusted input.
-- **Review point:** the publishing workflow or repository permission model changes.
+- **Risk:** branch/tag protection, reviewer identity and private vulnerability reporting are remote
+  settings, not guaranteed by source. The publication job still needs package-write/OIDC authority.
+- **Controls:** PR and validation jobs have read-only tokens; checkout credentials are not persisted.
+  Publication depends on successful validation in a separate job. Dependency builds run inside
+  Docker without receiving the publishing token. Pinned actions/scanners and digest verification remain.
+- **Before publication:** configure protected branches/tags, review workflow/dependency changes, enable
+  private reporting and verify package visibility. Do not run contributor code in privileged jobs.
+- **Review point:** CI permissions, triggers, third-party actions, fork workflows and repository visibility.
 
 ## P2 — No primary-language lint or formatting gate
 

@@ -52,7 +52,7 @@ The workflow validates, scans, builds, smoke-tests, generates SBOM/provenance, s
 and signs/verifies it with its GitHub OIDC identity before success.
 
 Privileged actions and scanner images are pinned to immutable revisions/digests. Publishing uses GHCR, the job-scoped GitHub token, and OIDC; no legacy registry variable or
-long-lived signing secret is required. Workflow permission separation remains a tracked risk. Local implementation work must not push images, sign releases, create
+long-lived signing secret is required. Validation uses a read-only job; a dependent job holds publishing/OIDC permissions. Local implementation work must not push images, sign releases, create
 tags, or deploy without explicit separate authorization.
 
 The optional standalone `deploy/private-https/compose.yaml` supplies a pinned Caddy DNS-01 proxy.

@@ -24,6 +24,7 @@ COPY package.json package-lock.json ./
 COPY prisma ./prisma
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
+COPY LICENSE THIRD_PARTY_NOTICES.md ./
 ARG APP_GIT_SHA=unknown
 ARG APP_BUILD_TIME
 ENV APP_GIT_SHA=$APP_GIT_SHA

@@ -802,7 +802,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       if (
         request.method === "PATCH" &&
         collection.type === "api-widget" &&
-        !["baseUrl", "authType", "authHeaderName", "authEnvVar", "authValuePrefix", "tlsVerify", "enabled"].some((key) => key in body)
+        !["baseUrl", "endpointPath", "authType", "authHeaderName", "authEnvVar", "authValuePrefix", "tlsVerify", "enabled"].some((key) => key in body)
       ) {
         return null;
       }
@@ -1060,8 +1060,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   });
 
   app.post("/api/auth/reauth", async (request, reply) => {
-    const clientIp = request.ip || "unknown";
-    if (!reauthLimiter.allow(clientIp)) {
+    if (!reauthLimiter.allow("admin")) {
       securityLog(request, "auth.reauthenticate", "failure");
       return reply.code(429).send({ error: "Too many password confirmation attempts. Try again later." });
     }
@@ -1070,7 +1069,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       securityLog(request, "auth.reauthenticate", "failure");
       return reply.code(401).send({ error: "Password is incorrect" });
     }
-    reauthLimiter.reset(clientIp);
+    reauthLimiter.reset("admin");
     reply.setCookie(REAUTH_COOKIE, createReauthToken(request, env), {
       httpOnly: true,
       sameSite: "strict",
@@ -1106,7 +1105,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   app.post("/api/auth/password", async (request, reply) => {
     const body = z
       .object({
-        currentPassword: z.string().min(1),
+        currentPassword: z.string().min(1).max(256),
         newPassword: z.string().min(12).max(256)
       })
       .parse(request.body);
@@ -1124,12 +1123,18 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       return;
     }
 
+    if (!reauthLimiter.allow("admin")) {
+      securityLog(request, "auth.password_change", "failure", { type: "admin-account", id: "admin" });
+      return reply.code(429).send({ error: "Too many password confirmation attempts. Try again later." });
+    }
+
     if (!(await verifyAdminPassword(body.currentPassword, env, prisma))) {
       securityLog(request, "auth.password_change", "failure", { type: "admin-account", id: "admin" });
       reply.code(401).send({ error: "Current password is incorrect" });
       return;
     }
 
+    reauthLimiter.reset("admin");
     await prisma.adminAccount.update({
       where: { id: "admin" },
       data: { passwordHash: await hashPassword(body.newPassword) }

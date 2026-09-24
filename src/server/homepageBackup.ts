@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { inflateSync } from "node:zlib";
 import type { PrismaClient } from "@prisma/client";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
+import { zipSync, strToU8, strFromU8 } from "fflate";
 import { z } from "zod";
 import {
   bookmarkInputSchema,
@@ -291,38 +291,64 @@ export function encodeBackup(
   for (const a of assets) files[`assets/${a.id}.png`] = a.body;
   return Buffer.from(zipSync(files, { level: 0 }));
 }
+// Portable v1 archives use STORE (encodeBackup level 0). Parsing this bounded subset
+// avoids trusting decompressor size hints, overlapping entries, or ZIP64 structures.
+function readStoredBackupZip(bytes: Buffer): Record<string, Buffer> {
+  const files: Record<string, Buffer> = Object.create(null);
+  try {
+    const end = bytes.length - 22;
+    if (end < 0 || bytes.readUInt32LE(end) !== 0x06054b50 ||
+        bytes.readUInt16LE(end + 4) !== 0 || bytes.readUInt16LE(end + 6) !== 0 ||
+        bytes.readUInt16LE(end + 20) !== 0) throw new Error();
+    const count = bytes.readUInt16LE(end + 10);
+    const centralSize = bytes.readUInt32LE(end + 12);
+    const centralStart = bytes.readUInt32LE(end + 16);
+    if (!count || count > 33 || bytes.readUInt16LE(end + 8) !== count ||
+        centralStart + centralSize !== end) throw new Error();
+    let central = centralStart;
+    let local = 0;
+    let total = 0;
+    for (let i = 0; i < count; i++) {
+      if (central + 46 > end || bytes.readUInt32LE(central) !== 0x02014b50) throw new Error();
+      const flags = bytes.readUInt16LE(central + 8);
+      const method = bytes.readUInt16LE(central + 10);
+      const checksum = bytes.readUInt32LE(central + 16);
+      const size = bytes.readUInt32LE(central + 20);
+      const original = bytes.readUInt32LE(central + 24);
+      const nameSize = bytes.readUInt16LE(central + 28);
+      const next = central + 46 + nameSize + bytes.readUInt16LE(central + 30) + bytes.readUInt16LE(central + 32);
+      if (next > end || (flags & ~0x800) || method !== 0 || size !== original ||
+          bytes.readUInt16LE(central + 34) !== 0 || bytes.readUInt32LE(central + 42) !== local) throw new Error();
+      const nameBytes = bytes.subarray(central + 46, central + 46 + nameSize);
+      const name = nameBytes.toString("utf8");
+      if (!/^(manifest\.json|assets\/[a-f0-9]{64}\.png)$/.test(name) || files[name]) throw new Error();
+      total += size;
+      if (size > (name === "manifest.json" ? 8 * 1024 * 1024 : MAX_ASSET) || total > MAX_ARCHIVE) throw new Error();
+      if (local + 30 > centralStart || bytes.readUInt32LE(local) !== 0x04034b50 ||
+          bytes.readUInt16LE(local + 6) !== flags || bytes.readUInt16LE(local + 8) !== method ||
+          bytes.readUInt32LE(local + 14) !== checksum || bytes.readUInt32LE(local + 18) !== size ||
+          bytes.readUInt32LE(local + 22) !== original || bytes.readUInt16LE(local + 26) !== nameSize) throw new Error();
+      const dataStart = local + 30 + nameSize + bytes.readUInt16LE(local + 28);
+      if (dataStart + size > centralStart ||
+          !bytes.subarray(local + 30, local + 30 + nameSize).equals(nameBytes)) throw new Error();
+      const body = bytes.subarray(dataStart, dataStart + size);
+      if (pngChecksum(body) !== checksum) throw new Error();
+      files[name] = body;
+      local = dataStart + size;
+      central = next;
+    }
+    if (local !== centralStart || central !== end) throw new Error();
+    return files;
+  } catch {
+    bad("Invalid, unsafe, or oversized configuration archive; use an original v1 export without recompressing it");
+  }
+}
+
 export function decodeBackup(encoded: string) {
   const bytes = Buffer.from(encoded, "base64");
   if (!bytes.length || bytes.length > MAX_ARCHIVE + 64_000)
     bad("Archive exceeds 32 MiB");
-  let total = 0;
-  let count = 0;
-  const names = new Set<string>();
-  const files = (() => {
-    try {
-      return unzipSync(bytes, {
-        filter: (file) => {
-          if (
-            ++count > 33 ||
-            !/^(manifest\.json|assets\/[a-f0-9]{64}\.png)$/.test(file.name)
-          )
-            bad("Unexpected archive entry");
-          if (names.has(file.name)) bad("Duplicate archive entry");
-          names.add(file.name);
-          total += file.originalSize;
-          if (
-            file.originalSize >
-              (file.name === "manifest.json" ? 8 * 1024 * 1024 : MAX_ASSET) ||
-            total > MAX_ARCHIVE
-          )
-            bad("Archive expands beyond the allowed size");
-          return true;
-        },
-      });
-    } catch {
-      bad("Invalid, unsafe, or oversized configuration archive");
-    }
-  })();
+  const files = readStoredBackupZip(bytes);
   if (!files["manifest.json"]) bad("Archive manifest missing");
   let raw: unknown;
   try {

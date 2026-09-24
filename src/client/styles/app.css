@@ -5217,3 +5217,6 @@ label textarea {
 .hp-card textarea, .hp-modal textarea { resize:vertical; }
 .hp-actions .primary-button { width:auto; }
 @media(max-width:520px) { .hp-search form input:not([type="checkbox"]):not([type="file"]) { flex-basis:calc(100% - 45px); } .hp-search form .primary-button { width:100%; } }
+
+.weather-attribution { grid-column: 1 / -1; margin: 0; font-size: 0.75rem; color: var(--text-muted); overflow-wrap: anywhere; }
+.weather-attribution a { color: inherit; text-decoration: underline; }

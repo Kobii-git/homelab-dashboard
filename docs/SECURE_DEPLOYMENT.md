@@ -74,7 +74,8 @@ through but does not assume an operator-specific certificate location.
 
 GitHub is the canonical repository and GHCR is the image registry. Use authenticated GitHub
 HTTPS/SSH and `docker login ghcr.io` with a token limited to reading packages on deployment hosts.
-Keep the repository and container package private. See [GitHub operations](../GITHUB.md).
+A public source repository does not expose a running instance. Package visibility is a separate
+release decision; private packages require package-read credentials. See [GitHub operations](../GITHUB.md).
 
 The publishing workflow uses its short-lived GitHub token for GHCR and OIDC identity for Cosign.
 It signs the pushed digest and verifies the exact workflow identity and GitHub issuer before

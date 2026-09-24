@@ -1,3 +1,4 @@
+import { resolveEndpointUrl } from "./endpointUrl.js";
 import { Prisma, type ApiWidget, type ApiWidgetSample, type PrismaClient, type Resource } from "@prisma/client";
 import type {
   ApiWidgetDto,
@@ -469,8 +470,7 @@ function normalizeMappings(value: Prisma.JsonValue | unknown): ApiWidgetFieldMap
 }
 
 function buildUrl(baseUrl: string, endpointPath: string): URL {
-  const normalizedEndpoint = endpointPath.startsWith("/") ? endpointPath : `/${endpointPath}`;
-  return new URL(normalizedEndpoint, normalizedBaseUrl(baseUrl));
+  return resolveEndpointUrl(normalizedBaseUrl(baseUrl), endpointPath);
 }
 
 async function requestJson(baseUrl: string, endpointPath: string, options: RequestOptions = {}): Promise<unknown> {

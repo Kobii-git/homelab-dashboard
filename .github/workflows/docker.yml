@@ -18,18 +18,17 @@ env:
   COSIGN_IMAGE: gcr.io/projectsigstore/cosign@sha256:71b96f6405dd3c3f081ebf73099f18edac7a716699398660890a86c42bf5edfd
 
 jobs:
-  build-and-push:
+  validate:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
-      id-token: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Normalize registry image name
         run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
@@ -42,6 +41,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Verify dependency notices
+        run: npm run licenses:check
 
       - name: Reject stale duplicate files
         run: npm run check:stale-files
@@ -153,6 +155,21 @@ jobs:
           docker run --rm --network host "$ZAP_IMAGE" zap-baseline.py -t http://127.0.0.1:4175 -m 2 -I \
             -z "-config replacer.full_list(0).description=auth -config replacer.full_list(0).enabled=true -config replacer.full_list(0).matchtype=REQ_HEADER -config replacer.full_list(0).matchstr=Cookie -config replacer.full_list(0).regex=false -config replacer.full_list(0).replacement=${cookie}"
 
+  build-and-push:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Checkout validated source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Normalize registry image name
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -184,6 +201,10 @@ jobs:
 
       - name: Build and push
         id: build
+        env:
+          # Keep source/material provenance; omit event payloads and personal commit metadata.
+          BUILDX_METADATA_PROVENANCE: min
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
@@ -197,16 +218,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           sbom: true
-          provenance: mode=max
+          provenance: mode=min
 
       - name: Scan pushed image digest
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         run: |
           image="${REGISTRY}/${IMAGE_NAME}@${{ steps.build.outputs.digest }}"
           set -euo pipefail
           for platform in linux/amd64 linux/arm64; do
-            docker pull --platform "${platform}" "${image}"
-            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image \
-              --image-src docker --platform "${platform}" --severity HIGH,CRITICAL --exit-code 1 "${image}"
+            docker run --rm -e TRIVY_USERNAME -e TRIVY_PASSWORD "$TRIVY_IMAGE" image \
+              --image-src remote --platform "${platform}" --severity HIGH,CRITICAL --exit-code 1 "${image}"
           done
 
       - name: Sign and verify image digest with GitHub identity

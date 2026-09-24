@@ -4,6 +4,9 @@ about: Something is broken or behaving unexpectedly
 labels: bug
 ---
 
+Do not include credentials, private network details, personal content, databases or configuration exports. Redact logs and screenshots. Report vulnerabilities through SECURITY.md.
+
+
 **Describe the bug**
 A clear description of what is wrong.
 

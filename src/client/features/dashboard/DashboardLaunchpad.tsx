@@ -319,6 +319,7 @@ export function CompactWeatherCard({ data, stale }: { data: WeatherSummaryDto; s
       <span><strong>{Math.round(data.temperature)}{degree}</strong><small>{data.condition} · {data.location.name}</small></span>
       <small>{stale ? "Cached forecast" : `Feels ${Math.round(data.apparentTemperature ?? data.temperature)}°`}</small>
       <div className="hp-forecast">{(data.days ?? []).slice(0,3).map(day => <div key={day.date}><strong>{new Date(`${day.date}T12:00:00`).toLocaleDateString([], { weekday: "short" })}</strong><span>{day.condition}</span><small>{Math.round(day.high)}° / {Math.round(day.low)}°</small>{day.precipitationChance !== null && <small>{day.precipitationChance}% rain</small>}</div>)}</div>
+      <p className="weather-attribution">Weather by <a tabIndex={0} href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> · <a tabIndex={0} href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>. Rounded and summarized.</p>
     </article>
   );
 }

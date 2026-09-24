@@ -19,7 +19,9 @@ Replacement removes prior portable definitions and their derived monitoring hist
 credentials, sessions, server security settings, and environment-managed integrations remain intact.
 Restored services/checks/hosts/API widgets start disabled; API-widget credential bindings are cleared.
 Review destinations against the existing outbound policy and explicitly re-enable/rebind connections.
-The archive is limited to 32 MiB expanded with an 8 MiB manifest; each PNG is limited to 4 MiB.
+The archive is limited to 32 MiB with an 8 MiB manifest; each PNG is limited to 4 MiB.
+V1 restore accepts original, uncompressed STORE-format exports only. Do not recompress or edit the ZIP.
+Compressed, encrypted, ZIP64, overlapping, truncated, or checksum-invalid entries are rejected.
 Datastore and asset changes share one SQLite transaction, including rollback on failure. Assets are
 stored inside SQLite, so there are no filesystem asset moves that could partially commit.
 

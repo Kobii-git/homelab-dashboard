@@ -6,6 +6,7 @@
 | Intent | Canonical command | Source | Status | Important limitation |
 |---|---|---|---|---|
 | Reproducible install | `npm ci` | lockfile + CI | VERIFIED | Replaces `node_modules`; install scripts and the generated Prisma client must be reviewed as dependency code. |
+| Dependency notices | `npm run licenses:generate` / `npm run licenses:check` | installed lockfile + notices script | VERIFIED (2026-09-24) | Regenerate and review after dependency changes; does not establish ownership rights. |
 | Full local gate | `npm run validate` | `package.json` | VERIFIED | Includes browser tests and network-dependent audits; excludes Docker/security scanners. |
 | Stale duplicate check | `npm run check:stale-files` | `package.json` | VERIFIED | Rejects filenames matching the repository's stale-copy pattern, not arbitrary duplicate content. |
 | Type checking | `npm run typecheck` | `package.json` + TypeScript configs | VERIFIED | Covers server, shared, client, tests, scripts, and test/build configs after this pass. |

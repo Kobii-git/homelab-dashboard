@@ -9,6 +9,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## Unreleased
 
 ### Added
+- MIT license, production dependency notices, privacy/support/contribution guidance, and read-only PR validation.
 - Production security boundary with exact HTTPS origin/proxy validation, explicit
   outbound CIDR/host allowlists, pinned DNS connections, and metadata/special-address blocking.
 - Five-minute password reauthentication for sensitive connector, target, secret-binding,
@@ -26,7 +27,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Admin configuration stored as versioned non-secret `SystemConfig` JSON.
 - Reusable service-template metadata with confirmed GitHub repository suggestions,
   plus focused empty-Launchpad onboarding from the existing catalog.
-- Forgejo-native CI and container publishing with permanent `main` and `beta`
+- GitHub Actions and GHCR container publishing with permanent `main` and `beta`
   branches, stable `latest`/`main` image tags, and a `beta` image tag.
 - One-time bootstrap-code protection for database-backed first-run setup.
 - Managed default health checks and resource-level execution of every enabled check.
@@ -69,6 +70,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The runtime container is non-root with a read-only root filesystem and no Linux capabilities.
 
 ### Fixed
+- Credentialed endpoint/poster requests enforce their configured origin; endpoint changes require reauthentication.
+- Password changes share an account-wide confirmation-attempt budget with reauthentication.
+- Target-excluded AI evidence omits raw diagnostics and widget text.
+- Portable restore validates original STORE ZIP structure, checksums, sizes and entry boundaries before parsing.
+- Local source builds inherit hardened production Compose settings.
 - Paused/deleted generated checks no longer resume or reappear during edits or startup.
 - Mobile navigation, service-row action wrapping, nested interactive cards, modal focus handling,
   setup form accessibility, bootstrap failure recovery, session expiry, and unknown status rendering.

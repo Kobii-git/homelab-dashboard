@@ -243,6 +243,12 @@ test("Launchpad utilities render independently and move after services on mobile
   await login(page);
 
   await expect(page.getByText(/Cape Town/).first()).toBeVisible();
+  const weather = page.locator(".compact-weather-card");
+  await expect(weather.getByRole("link", { name: "Open-Meteo" })).toHaveAttribute("href", "https://open-meteo.com/");
+  await expect(weather.getByRole("link", { name: "CC BY 4.0" })).toBeVisible();
+  await weather.getByRole("link", { name: "Open-Meteo" }).focus();
+  await page.keyboard.press("Tab");
+  await expect(weather.getByRole("link", { name: "CC BY 4.0" })).toBeFocused();
   const release = page.getByRole("link", { name: /gethomepage\/homepage/ });
   await expect(release).toHaveAttribute("href", "https://github.com/gethomepage/homepage/releases/tag/v1.8.0");
   const servicesBox = await page.locator(".launchpad-services").boundingBox();

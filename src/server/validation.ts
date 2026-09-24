@@ -1,3 +1,4 @@
+import { isLocalEndpointPath } from "./endpointUrl.js";
 import { z } from "zod";
 import {
   DASHBOARD_SEARCH_ENGINES,
@@ -186,7 +187,7 @@ const endpointPath = z
   .trim()
   .min(1)
   .max(500)
-  .refine((value) => value.startsWith("/") && !value.startsWith("//"), "Must start with a single slash");
+  .refine(isLocalEndpointPath, "Must be a same-origin path without backslashes or whitespace");
 
 const envVarName = z
   .string()

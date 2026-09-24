@@ -22,7 +22,9 @@
     "audit:all": "npm audit --audit-level=low",
     "typecheck:tests": "tsc -p tsconfig.test.json --noEmit",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.json --noEmit && npm run typecheck:tests",
-    "validate": "npm run check:stale-files && npm run typecheck && npm test && npm run build && playwright test && npm run audit:production && npm run audit:all"
+    "validate": "npm run licenses:check && npm run check:stale-files && npm run typecheck && npm test && npm run build && playwright test && npm run audit:production && npm run audit:all",
+    "licenses:generate": "node scripts/third-party-notices.mjs",
+    "licenses:check": "node scripts/third-party-notices.mjs --check"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.2",
@@ -55,5 +57,13 @@
   },
   "overrides": {
     "deepmerge-ts": "8.0.2"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kobii-git/homelab-dashboard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Kobii-git/homelab-dashboard/issues"
   }
 }

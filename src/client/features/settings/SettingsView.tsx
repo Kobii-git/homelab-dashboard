@@ -1293,6 +1293,7 @@ export function SettingsView({
 
         <section className="table-panel">
           <h3><Film size={16} /> Credits</h3>
+          <p className="muted-copy">Homelab Dashboard is MIT licensed. <a href="/third-party-licenses.txt" target="_blank" rel="noreferrer">Third-party software licenses and notices</a>.</p>
           <a className="tmdb-credit" href="https://www.themoviedb.org" target="_blank" rel="noreferrer">
             <img src="/tmdb-logo.svg" alt="TMDB" />
           </a>

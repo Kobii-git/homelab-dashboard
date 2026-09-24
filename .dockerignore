@@ -24,3 +24,21 @@ backups
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Operator state and secret material, including files outside data/.
+.env.*
+!.env.example
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+secrets/
+.config/
+homelab-config-*.zip

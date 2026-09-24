@@ -2,8 +2,9 @@
 
 The canonical active-development repository is
 [Kobii-git/homelab-dashboard](https://github.com/Kobii-git/homelab-dashboard), with `main` as its
-default branch. The repository remains private. Hosting the source on GitHub does not make the
-application public; deployment remains private LAN/VPN access.
+default branch. The repository was private during migration; source visibility is now an owner
+decision separate from this historical record. Hosting public source does not make the application
+public; deployment remains private LAN/VPN access.
 
 ## Preserved repository data
 

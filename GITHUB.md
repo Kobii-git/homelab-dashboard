@@ -3,7 +3,7 @@
 ## Canonical repository and history
 
 [Kobii-git/homelab-dashboard](https://github.com/Kobii-git/homelab-dashboard) is the
-canonical private repository. Clone using authenticated HTTPS or SSH:
+canonical repository. Public source can be cloned over HTTPS; write access requires authentication:
 
 ```sh
 git clone https://github.com/Kobii-git/homelab-dashboard.git
@@ -24,23 +24,32 @@ data volume as part of changing Git hosting.
 
 `.github/workflows/docker.yml` is the canonical publication pipeline. Pushes to `main`, `beta`, and
 `v*` tags run the existing validation and security gates before publication. Actions and scanner
-images remain pinned. The workflow uses `GITHUB_TOKEN` with package-write permission; no old registry
+images remain pinned. A separate read-only validation job must pass before the publishing job starts. Fork pull requests
+use `.github/workflows/pull-request.yml` without secrets, package writes or OIDC. Checkout does not
+persist credentials. The publishing job uses `GITHUB_TOKEN` with package-write permission; no old registry
 password or signing private key is needed. OIDC requires `id-token: write`.
 
 Images support Linux AMD64 and ARM64 and are published to `ghcr.io/kobii-git/homelab-dashboard`.
-Both published platform variants are scanned before signing the image index:
+Both published platform variants are scanned before signing the image index. Minimal SLSA provenance
+retains source revision, build materials and platform while avoiding rich environment metadata. Build
+record uploads are disabled because they can retain complete GitHub event payloads, including contact
+information. SBOM generation, vulnerability scanning and digest signing remain enabled. See
+[Docker provenance modes](https://docs.docker.com/build/metadata/attestations/slsa-provenance/).
+
+Channels:
 
 - `main` publishes `latest` and `main`.
 - `beta` publishes `beta` after its workflow is updated and passes.
 - Release tags publish semantic-version tags; builds also publish `sha-*` references.
 - Production deployments should use the verified `sha256` digest, rather than a moving tag.
 
-Keep both the repository and GHCR package private. Verify package visibility and repository access
-in GitHub after the first successful publication. Newly created container packages default to private.
+Source visibility and container-package visibility are separate owner decisions. Complete the release review in `docs/OPEN_SOURCE_READINESS.md` before declaring public readiness. Public source never
+changes the supported private LAN/VPN application deployment. Verify package visibility separately;
+new container packages default to private.
 If an existing package is not connected to this repository, its owner must grant the repository
 Actions access before the job can publish.
 
-Deployment hosts need authenticated package-read access. Use a GitHub personal access token (classic)
+For a private GHCR package, deployment hosts need authenticated package-read access. Use a GitHub personal access token (classic)
 with `read:packages`, limited to an account authorized for this private package. Enter it at Docker's
 password prompt; do not put tokens in Compose, Git, shell command arguments, or documentation:
 

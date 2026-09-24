@@ -1,6 +1,6 @@
 # Homepage implementation validation
 
-Validation date: 2026-09-24. Reference environment: Apple M5, macOS arm64, Node 22.22.3.
+Validation date: 2026-09-24. Reference environment: Apple Silicon, macOS arm64, Node 22.22.3.
 All data used for the checks below was disposable. No production deployment, certificates, data,
 credentials, DNS records, or remote repository settings were changed.
 

@@ -1,3 +1,4 @@
+import { resolveEndpointUrl } from "./endpointUrl.js";
 import crypto from "node:crypto";
 import type { ApiWidget, Prisma, PrismaClient } from "@prisma/client";
 import type {
@@ -628,7 +629,7 @@ export class HomeContextService {
     if (!entry.target.path.startsWith("/") || entry.target.path.startsWith("//")) throw new Error("Poster path is invalid");
     const plexToken = widget.authEnvVar ? process.env[widget.authEnvVar] : null;
     if (!plexToken) throw new Error("Plex poster credentials are unavailable");
-    const url = new URL(entry.target.path, widget.baseUrl);
+    const url = resolveEndpointUrl(widget.baseUrl, entry.target.path);
     url.searchParams.delete("X-Plex-Token");
     url.searchParams.delete("token");
     return fetchProxiedIcon(url, {

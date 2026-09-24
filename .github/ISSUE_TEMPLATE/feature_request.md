@@ -4,6 +4,9 @@ about: Suggest an improvement or new capability
 labels: enhancement
 ---
 
+Do not include credentials, private network details, personal content, databases or configuration exports. Redact logs and screenshots. Report vulnerabilities through SECURITY.md.
+
+
 **What problem does this solve?**
 Describe the gap or pain point.
 

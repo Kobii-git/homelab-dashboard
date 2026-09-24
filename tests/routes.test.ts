@@ -847,12 +847,27 @@ describe("api routes", () => {
         payload: { username: "admin", password: "legacy-password-123" }
       });
       const reloginCookie = relogin.cookies.map((item) => `${item.name}=${item.value}`).join("; ");
+      const originalHash = (await prisma.adminAccount.findUniqueOrThrow({ where: { id: "admin" } })).passwordHash;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const response = await authApp.inject({ method: "POST", url: attempt % 2 ? "/api/auth/reauth" : "/api/auth/password",
+          headers: { cookie: reloginCookie }, remoteAddress: `192.0.2.${attempt + 1}`,
+          payload: attempt % 2 ? { password: "wrong" } : { currentPassword: "wrong", newPassword: "new-database-password" } });
+        expect(response.statusCode).toBe(401);
+      }
+      for (const url of ["/api/auth/password", "/api/auth/reauth"]) {
+        const response = await authApp.inject({ method: "POST", url, headers: { cookie: reloginCookie },
+          payload: url.endsWith("password") ? { currentPassword: "legacy-password-123", newPassword: "new-database-password" } : { password: "legacy-password-123" } });
+        expect(response.statusCode).toBe(429);
+      }
+      expect((await prisma.adminAccount.findUniqueOrThrow({ where: { id: "admin" } })).passwordHash).toBe(originalHash);
+      const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 16 * 60_000);
       const changed = await authApp.inject({
         method: "POST",
         url: "/api/auth/password",
         headers: { cookie: reloginCookie },
         payload: { currentPassword: "legacy-password-123", newPassword: "new-database-password" }
       });
+      clock.mockRestore();
       expect(changed.statusCode).toBe(200);
       expect((await authApp.inject({ method: "GET", url: "/api/resources", headers: { cookie: reloginCookie } })).statusCode).toBe(401);
     } finally {
@@ -1404,7 +1419,7 @@ describe("api routes", () => {
         type: "http",
         target: "http://192.168.50.10:8080/health",
         latestStatus: "offline",
-        latestError: "Timeout contacting http://192.168.50.10:8080 with Bearer super-secret-token",
+        latestError: "DNS for storage.internal.example (fd00::1234) failed at http://192.168.50.10:8080 with Bearer super-secret-token",
         consecutiveFailures: 2,
         failureThreshold: 3,
         enabled: true
@@ -1414,6 +1429,8 @@ describe("api routes", () => {
     const redactedEvidence = await buildAiBriefingEvidence(prisma, aiEnv);
     expect(JSON.stringify(redactedEvidence)).not.toContain("192.168.50.10");
     expect(JSON.stringify(redactedEvidence)).not.toContain("super-secret-token");
+    expect(JSON.stringify(redactedEvidence)).not.toContain("storage.internal.example");
+    expect(JSON.stringify(redactedEvidence)).not.toContain("fd00::1234");
     const targetEvidence = await buildAiBriefingEvidence(prisma, { ...aiEnv, includeTargets: true });
     expect(JSON.stringify(targetEvidence)).toContain("192.168.50.10");
     expect(JSON.stringify(targetEvidence)).not.toContain("super-secret-token");
@@ -1775,6 +1792,18 @@ describe("api routes", () => {
 
       const secureRun = await app.inject({ method: "POST", url: `/api/api-widgets/${secureId}/run`, headers: { cookie } });
       expect(secureRun.json<{ status: string }>().status).toBe("online");
+
+      const onlySession = await app.inject({ method: "POST", url: "/api/auth/login", payload: { password: "test-pass" } });
+      const sessionHeader = onlySession.cookies.map(c => `${c.name}=${c.value}`).join("; ");
+      expect((await app.inject({ method: "PATCH", url: `/api/api-widgets/${secureId}`, headers: { cookie: sessionHeader }, payload: { endpointPath: "/other" } })).statusCode).toBe(403);
+      for (const endpointPath of ["/\\attacker.example/secret", "/\n/attacker.example/secret", "//attacker.example/secret"]) {
+        expect((await app.inject({ method: "PATCH", url: `/api/api-widgets/${secureId}`, headers: { cookie }, payload: { endpointPath } })).statusCode).toBe(400);
+        await prisma.apiWidget.update({ where: { id: secureId }, data: { endpointPath } });
+        const blockedRun = await app.inject({ method: "POST", url: `/api/api-widgets/${secureId}/run`, headers: { cookie } });
+        expect(blockedRun.json()).toMatchObject({ status: "offline" });
+        expect(blockedRun.body).toContain("Endpoint path is not permitted");
+      }
+      await prisma.apiWidget.update({ where: { id: secureId }, data: { endpointPath: "/secure" } });
 
       const tamperedOrigin = new URL(baseUrl);
       tamperedOrigin.port = String(Number(tamperedOrigin.port) + 1);

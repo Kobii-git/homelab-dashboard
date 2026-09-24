@@ -432,6 +432,28 @@ describe("private homepage", () => {
         .statusCode,
     ).toBe(401);
   });
+  it("rejects forged ZIP sizes, overlapping entries, recompression and checksum corruption before restore", async () => {
+    const exported = await send("/api/config/export", undefined);
+    const original = Buffer.from(exported.json().archive, "base64");
+    const central = original.readUInt32LE(original.length - 6);
+    const forged = Buffer.from(original);
+    forged.writeUInt32LE(1, central + 24);
+    expect(() => decodeBackup(forged.toString("base64"))).toThrow(/Invalid, unsafe/);
+    const altered = Buffer.from(original);
+    altered[30 + altered.readUInt16LE(26)] ^= 1;
+    expect(() => decodeBackup(altered.toString("base64"))).toThrow(/Invalid, unsafe/);
+    const overlap = Buffer.from(original);
+    const second = central + 46 + overlap.readUInt16LE(central + 28) + overlap.readUInt16LE(central + 30) + overlap.readUInt16LE(central + 32);
+    expect(second).toBeLessThan(original.length - 22);
+    overlap.writeUInt32LE(0, second + 42);
+    expect(() => decodeBackup(overlap.toString("base64"))).toThrow(/Invalid, unsafe/);
+    const decoded = decodeBackup(original.toString("base64"));
+    const compressed = zipSync({ "manifest.json": strToU8(JSON.stringify(decoded.manifest)) }, { level: 6 });
+    expect(() => decodeBackup(Buffer.from(compressed).toString("base64"))).toThrow(/without recompressing/);
+    const before = await snapshot();
+    expect((await send("/api/config/import/preview", { archive: forged.toString("base64") })).statusCode).toBe(400);
+    expect(await snapshot()).toEqual(before);
+  });
   it("exports only allowlisted configuration, rejects unsafe archives and restores transactionally", async () => {
     await prisma.systemConfig.create({
       data: { key: "test_secret_do_not_export", value: "SENTINEL_SECRET" },

@@ -9,10 +9,10 @@ npm run db:push
 npm run dev:all        # API on :4173, Vite UI on :5173
 ```
 
-Optional demo data:
+Optional demo data, only in a disposable development database (never production):
 
 ```sh
-DATABASE_URL=file:../data/homelab.db npm run seed:demo
+DATABASE_URL=file:../data/demo.db npm run seed:demo
 ```
 
 ## Stack and scope
@@ -24,7 +24,7 @@ DATABASE_URL=file:../data/homelab.db npm run seed:demo
 | Database | SQLite via Prisma |
 | Deployment | Docker and GitHub Container Registry |
 
-The active product is a single-admin service dashboard. Remote desktop protocols, credential vaults, multi-user roles, mutating integration calls, incidents, alerts, and executable widgets are out of scope.
+The active product is a single-admin browser homepage, bookmark manager, and service dashboard. Remote desktop protocols, credential vaults, multi-user roles, mutating integration calls, incidents, alerts, and executable widgets are out of scope.
 
 ## Project layout
 
@@ -65,3 +65,20 @@ to the patched 4.1.11 release.
 To smoke-test an installed Microsoft Edge in a disposable profile, use `HOMEPAGE_EDGE=1 npx playwright test --project=edge`. This does not use your everyday browser profile.
 
 The optional browser matrix allocates private test servers on ports 4180 onward, with a separate temporary database for each browser. Keep those ports free; the runner will not reuse an existing app.
+
+## Pull requests and licensing
+
+Fork the repository, create a focused branch, and open a pull request against `main`. Describe the
+problem, tests, compatibility and recovery implications. Do not include production data or secrets.
+Use GitHub's private email setting and a GitHub-provided noreply Git identity if you do not want your
+email published in commits; changing a profile setting does not rewrite existing Git history.
+
+Submit only work you have the right to contribute under the project's MIT license. Preserve existing
+copyright and license notices. Identify copied code/assets and their sources; do not assume an image
+found online is redistributable. No contributor license agreement or copyright transfer is required.
+When dependencies change, run `npm run licenses:generate` after `npm ci`, inspect notices, then run
+`npm run validate`. The generated notices include production dependencies, including browser bundles.
+
+Fork pull requests use a read-only validation workflow without publishing credentials. Maintainers
+must review workflow and dependency changes before merging. Do not use `pull_request_target` to
+execute contributor code. Security reports belong in the private channel in `SECURITY.md`.

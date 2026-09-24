@@ -64,7 +64,7 @@ docker compose up -d --force-recreate
 ```sh
 cd ~/homelab-dashboard
 git pull --ff-only origin main
-docker compose -f docker-compose.build.yml up -d --build --force-recreate
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --force-recreate
 ```
 
 Data lives in the named Docker volume `homelab-dashboard-data`. It survives container removal, image updates, and rebuilds. It is only destroyed by `docker compose down -v` or deleting the volume.
@@ -77,13 +77,13 @@ Production requires an explicit `SETUP_CODE` when `ADMIN_PASSWORD` is absent and
 exists. The setup code is never printed to production logs. Remove it after creating the
 single database-backed administrator.
 
-Optional env vars:
+Required production settings (placeholders only; also configure `TRUST_PROXY_CIDRS`):
 
 ```yaml
 APP_ORIGIN: https://dashboard.home.arpa
-OUTBOUND_ALLOWED_CIDRS: 10.0.21.0/24
-COOKIE_SECRET: random-32-char-string
-SETUP_CODE: ABCDEFGH2345
+OUTBOUND_ALLOWED_CIDRS: 192.168.50.0/24
+COOKIE_SECRET: <at-least-32-random-characters>
+SETUP_CODE: <fresh-setup-code>
 # ADMIN_PASSWORD: your-password
 ```
 
@@ -136,7 +136,7 @@ API_WIDGET_SECRET_ALLOWLIST: MY_CUSTOM_WIDGET_TOKEN
 
 ### Dashboard
 
-- Dashboard remains one sidebar destination with an accessible Launchpad/Operations segmented switch. Mode and grid/list density are stored per device; new devices default to Launchpad.
+- Dashboard remains one sidebar destination with an accessible Launchpad/Operations segmented switch. Home/Work/Operations selection and grid/list density are stored per device; new devices default to Home.
 - Launchpad leads with greeting/time, compact health, ranked local service search, explicit web-search fallback, favorites, and compact service groups.
 - Empty Launchpads show one template-backed onboarding panel instead of empty monitoring sections.
 - Optional Open-Meteo weather and GitHub release cards form a narrow desktop utility rail and follow services on mobile.
@@ -245,7 +245,7 @@ API_WIDGET_SECRET_ALLOWLIST: MY_CUSTOM_WIDGET_TOKEN
 ## Local Development
 
 ```sh
-npm install
+npm ci
 npm run db:push
 npm run dev:all
 ```
@@ -258,7 +258,7 @@ npm test
 npm run build
 ```
 
-The test script creates a timestamped SQLite database under `data/` and runs Vitest sequentially (`fileParallelism: false` in `vitest.config.ts`) to avoid cross-test SQLite contention.
+The test script creates a temporary SQLite database in the operating system temporary directory and removes it on exit. It runs Vitest sequentially (`fileParallelism: false` in `vitest.config.ts`) to avoid cross-test SQLite contention.
 
 `npm run build` runs `npm run clean` first so stale compiled files from removed routes cannot linger in `dist`.
 
@@ -269,7 +269,7 @@ The test script creates a timestamped SQLite database under `data/` and runs Vit
 - Version lives in `package.json`.
 - `src/shared/version.ts` reads the package version and exposes it through the UI and `/api/version`.
 - `.github/workflows/docker.yml` validates, scans, builds, smoke-tests, and publishes signed images to GitHub Container Registry on pushes to `main`, `beta`, and `v*` tags.
-- `main` publishes `latest` and `main`; `beta` publishes `beta`; all builds publish an immutable `sha-*` tag and release tags publish semver tags.
+- `main` publishes `latest` and `main`; `beta` publishes `beta`; all builds publish a commit-labelled `sha-*` tag and release tags publish semver tags.
 - GitHub Actions uses an Ubuntu-hosted runner, its job-scoped token for package publishing, and OIDC for signing. See `GITHUB.md`.
 
 Release checklist:

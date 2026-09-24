@@ -211,6 +211,12 @@ function sanitizeAiText(value: string | null | undefined, includeTargets: boolea
   return sanitized.slice(0, 700);
 }
 
+// Network/provider diagnostics can contain arbitrary hostnames and credentials. Do not
+// try to infer all sensitive substrings when target disclosure is disabled.
+function aiDiagnostic(value: string | null | undefined, includeTargets: boolean): string | null {
+  return includeTargets ? sanitizeAiText(value, true) : value?.trim() ? "Details withheld by target privacy setting" : null;
+}
+
 export function sanitizeAiBriefingError(error: unknown): string {
   if (error instanceof Error && error.message.trim()) {
     return sanitizeAiText(error.message, false) ?? "AI briefing failed";
@@ -375,11 +381,11 @@ function sanitizeDailyBriefing(briefing: DailyBriefingDto, includeTargets: boole
   return {
     offlineServices: briefing.offlineServices.map((item) => ({
       ...item,
-      error: sanitizeAiText(item.error, includeTargets)
+      error: aiDiagnostic(item.error, includeTargets)
     })),
     recentChanges: briefing.recentChanges.map((item) => ({
       ...item,
-      error: sanitizeAiText(item.error, includeTargets)
+      error: aiDiagnostic(item.error, includeTargets)
     })),
     hostsUnderPressure: briefing.hostsUnderPressure,
     staleChecks: briefing.staleChecks.map((item) => ({
@@ -390,7 +396,7 @@ function sanitizeDailyBriefing(briefing: DailyBriefingDto, includeTargets: boole
     watchlist: briefing.watchlist.map((item) => ({
       ...item,
       target: includeTargets ? sanitizeAiText(item.target, true) : null,
-      error: sanitizeAiText(item.error, includeTargets)
+      error: aiDiagnostic(item.error, includeTargets)
     }))
   };
 }
@@ -411,9 +417,9 @@ function integrationEvidence(source: IntegrationSourceDto, includeTargets: boole
     name: source.name,
     baseUrl: includeTargets ? source.baseUrl : null,
     status: source.status,
-    error: sanitizeAiText(source.latestError, includeTargets),
+    error: aiDiagnostic(source.latestError, includeTargets),
     sampledAt: source.latestSampledAt,
-    warnings: (snapshot?.warnings ?? []).map((warning) => sanitizeAiText(warning, includeTargets)).filter((warning): warning is string => Boolean(warning)),
+    warnings: (snapshot?.warnings ?? []).map((warning) => aiDiagnostic(warning, includeTargets)).filter((warning): warning is string => Boolean(warning)),
     system: snapshot ? {
       cpuPercent: snapshot.system.cpuPercent,
       memoryPercent: snapshot.system.memoryPercent,
@@ -450,10 +456,10 @@ function apiWidgetEvidence(widget: ApiWidgetDto, includeTargets: boolean): AiBri
     templateId: widget.templateId,
     endpoint: includeTargets ? `${widget.baseUrl}${widget.endpointPath}` : null,
     status: widget.latestStatus,
-    error: sanitizeAiText(widget.latestError, includeTargets),
+    error: aiDiagnostic(widget.latestError, includeTargets),
     sampledAt: widget.latestSampledAt,
-    summary: sanitizeAiText(widget.latestSnapshot?.summary, includeTargets),
-    fields: (widget.latestSnapshot?.fields ?? []).slice(0, 8).map((field) => ({
+    summary: aiDiagnostic(widget.latestSnapshot?.summary, includeTargets),
+    fields: (includeTargets ? widget.latestSnapshot?.fields ?? [] : []).slice(0, 8).map((field) => ({
       label: sanitizeAiText(field.label, includeTargets) ?? "Field",
       value: sanitizeAiText(field.value, includeTargets) ?? "-",
       kind: field.kind
@@ -468,7 +474,7 @@ function hostEvidence(host: HostMonitorDto, includeTargets: boolean): AiBriefing
     name: host.name,
     baseUrl: includeTargets ? host.baseUrl : null,
     status: host.latestStatus,
-    error: sanitizeAiText(host.latestError, includeTargets),
+    error: aiDiagnostic(host.latestError, includeTargets),
     sampledAt: host.latestSampledAt,
     cpuPercent: host.latestCpuPercent,
     memoryPercent: host.latestMemoryPercent,
@@ -560,7 +566,7 @@ export async function buildAiBriefingEvidence(prisma: PrismaClient, config: AiEn
         status: check.latestStatus,
         latencyMs: check.latestLatencyMs,
         checkedAt: check.latestCheckedAt?.toISOString() ?? null,
-        error: sanitizeAiText(check.latestError, includeTargets),
+        error: aiDiagnostic(check.latestError, includeTargets),
         consecutiveFailures: check.consecutiveFailures,
         consecutiveSuccesses: check.consecutiveSuccesses,
         failureThreshold: check.failureThreshold,

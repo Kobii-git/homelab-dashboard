@@ -37,7 +37,7 @@ Remote SSH/RDP/VNC access, Guacamole, saved credentials, vaults, alert channels,
 
 Version `0.8.0` is a focused service launchpad and daily-operations command center with service health, lab vitals, threshold-aware monitoring, optional read-only utilities and AI briefings, and safe runtime diagnostics. The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles, network discovery, Docker discovery, Hyper-V discovery, or built-in HTTPS termination.
 
-The active database model is intentionally small: `Resource`, `DashboardGroup`, `HealthCheck`, `HealthResult`, `HostMonitor`, `HostMetricSample`, `IntegrationSource`, `IntegrationSample`, `ApiWidget`, `ApiWidgetSample`, `AdminAccount`, and `SystemConfig`.
+The active database models are `Resource`, `DashboardGroup`, `HealthCheck`, `HealthResult`, `HostMonitor`, `HostMetricSample`, `IntegrationSource`, `IntegrationSample`, `ApiWidget`, `ApiWidgetSample`, `AdminAccount`, `SystemConfig`, `HomepageState`, and `HomepageAsset`.
 
 ---
 
@@ -241,24 +241,11 @@ DATABASE_URL=file:../data/homelab.db npm run seed:demo
 
 The build override inherits the root Compose file's selected bind address, storage and container
 hardening. It does not publish an image.
-
-To publish multi-architecture images to the GitHub Container Registry from a workstation:
-
-```sh
-VERSION=$(node -p "require('./package.json').version")
-docker login ghcr.io
-docker buildx create --name homelab-builder --driver docker-container --use --bootstrap
-docker buildx build --builder homelab-builder --platform linux/amd64,linux/arm64 \
-  --build-arg APP_GIT_SHA="$(git rev-parse --short=12 HEAD)" \
-  --build-arg APP_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -t "ghcr.io/kobii-git/homelab-dashboard:${VERSION}" \
-  -t "ghcr.io/kobii-git/homelab-dashboard:latest" \
-  --push .
-```
+Maintainers publish through the validated GitHub Actions pipeline described in [GITHUB.md](GITHUB.md).
 
 See [GitHub operations](GITHUB.md) for private image access and signature verification. The
 `beta` branch publishes the `beta` image; `main` publishes `latest` and `main`.
-Every branch build also publishes a short immutable `sha-*` tag and signs the digest.
+Every branch build also publishes a commit-labelled `sha-*` tag and signs the digest.
 
 ---
 
@@ -285,3 +272,15 @@ curl -s "${APP_ORIGIN}/api/version"
 
 Public `/api/version` and the login UI expose only the package version. Authenticated Runtime
 Health contains the Git SHA and build time.
+
+## License, privacy, and contributions
+
+Project code is licensed under the [MIT License](LICENSE). Dependencies, service icons, provider
+logos and API data retain their own terms; see [third-party notices](THIRD_PARTY_NOTICES.md).
+The npm `private` flag prevents accidental package publication and does not restrict the MIT license.
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md), [SUPPORT.md](SUPPORT.md), [PRIVACY.md](PRIVACY.md), and
+[SECURITY.md](SECURITY.md) before contributing or reporting an issue. Never upload a real database,
+configuration export, environment file, or unredacted screenshot/log to an issue.
+Source publication readiness is tracked in [the release checklist](docs/OPEN_SOURCE_READINESS.md).
+Public source does not change the private, authenticated LAN/VPN deployment requirement.
