@@ -2,9 +2,11 @@
 
 ## Supported runtime
 
-The supported production shape is the prebuilt Docker image run by `docker-compose.yml`, bound to
+The normal production shape is the prebuilt Docker image run by `docker-compose.yml`, bound to
 loopback on port 4173 and reached through an existing HTTPS reverse proxy. The application does not
-terminate production TLS. Local development runs Fastify on 4173 and Vite on 5173.
+terminate production TLS. Initial private LAN setup may opt into direct HTTP bound to one private
+host IP; credentials and cookies are then unencrypted in transit. Local development runs Fastify on
+4173 and Vite on 5173.
 
 The runtime image:
 
@@ -26,8 +28,9 @@ startup requirements. `docker-compose.yml` owns the deployed environment mapping
 `docs/SECURE_DEPLOYMENT.md` owns the operator launch checklist, reverse-proxy requirements, private
 CA guidance, and image-trust procedure.
 `scripts/install-docker.sh` configures a local source build, generating missing first-boot secrets
-without replacing existing nonempty values. It still requires operator-specific HTTPS and network
-boundaries; the Compose build override retains the production hardening.
+without replacing existing nonempty values. The default first-run path asks for a private bind IP;
+`--https-proxy` switches to an HTTPS origin and trusted proxy CIDR. The Compose build override
+retains the production hardening.
 
 Configuration changes must be reconciled across those sources. Never bake secret values or a real
 network boundary into an image, Compose file, example, or AI document.

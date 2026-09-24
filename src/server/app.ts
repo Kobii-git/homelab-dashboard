@@ -1312,8 +1312,10 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     const outbound = outboundPolicySummary();
     const readinessWarnings = [
       ...(!env.appOrigin && env.nodeEnv === "production" ? ["APP_ORIGIN is not configured"] : []),
-      ...(env.nodeEnv === "production" && env.trustedProxyCidrs.length === 0 ? ["TRUST_PROXY_CIDRS is not configured"] : []),
-      ...(!env.cookieSecure ? ["Session cookies are not restricted to HTTPS"] : []),
+      ...(env.nodeEnv === "production" && env.cookieSecure && env.trustedProxyCidrs.length === 0 ? ["TRUST_PROXY_CIDRS is not configured"] : []),
+      ...(!env.cookieSecure ? [env.nodeEnv === "production"
+        ? "Private HTTP mode sends login credentials and session cookies without TLS; use only on a trusted LAN/VPN"
+        : "Session cookies are not restricted to HTTPS"] : []),
       ...(env.publicStatusMode !== "disabled" ? [`Public status is enabled in ${env.publicStatusMode} mode`] : []),
       ...(!outbound.configured ? ["Outbound monitoring allowlists are not configured"] : []),
       ...(outbound.allowInsecureIntegrations ? ["CRITICAL: Insecure integration transport override is enabled"] : [])

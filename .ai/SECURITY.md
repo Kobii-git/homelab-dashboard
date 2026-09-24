@@ -4,10 +4,12 @@ Root `SECURITY.md` owns public vulnerability reporting. This file guides impleme
 
 ## Deployment and threat model
 
-The supported product is a private, single-admin LAN/VPN application behind an existing HTTPS
-reverse proxy. Direct internet exposure and multi-user authorization are unsupported. Production
-startup requires an exact HTTPS `APP_ORIGIN`, explicit trusted-proxy CIDRs, a strong cookie secret,
-and an explicit outbound network boundary.
+The supported product is a private, single-admin LAN/VPN application. HTTPS behind an existing
+reverse proxy is the normal deployment. An explicit direct HTTP mode supports initial setup on one
+private host IP, with network-visible credentials/cookies until HTTPS is configured. Direct internet
+exposure and multi-user authorization are unsupported. Production startup requires an exact
+`APP_ORIGIN`, a strong cookie secret, and an explicit outbound network boundary. HTTPS mode requires
+trusted-proxy CIDRs; direct HTTP requires an exact private bind IP and disables proxy trust.
 
 ## Authentication and authorization
 
@@ -25,9 +27,9 @@ and an explicit outbound network boundary.
 
 ## Browser and response controls
 
-Production host/forwarded-protocol enforcement binds requests to `APP_ORIGIN`. Browser mutations
+Production host/protocol enforcement binds requests to `APP_ORIGIN`. Browser mutations
 enforce same-origin/fetch-site rules. Central hooks set CSP, frame, content-type, referrer,
-permissions, cross-origin isolation/resource, cache, and production HSTS headers. Central error
+permissions, cross-origin isolation/resource, cache, and HSTS headers in HTTPS mode. Central error
 handling avoids returning internal exceptions for server failures.
 
 Do not bypass these hooks, weaken headers, or add inline/script/network sources without a concrete

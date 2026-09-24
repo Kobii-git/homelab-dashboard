@@ -43,8 +43,7 @@ The active database model is intentionally small: `Resource`, `DashboardGroup`, 
 
 ## Quick Start With Docker
 
-Production deployment requires an existing HTTPS reverse proxy on a private LAN/VPN. After
-installing Docker with Compose and configuring that proxy, run:
+Install Docker with Compose, then run this on the Docker host:
 
 ```sh
 git clone https://github.com/Kobii-git/homelab-dashboard.git
@@ -52,10 +51,15 @@ cd homelab-dashboard
 ./scripts/install-docker.sh
 ```
 
-The installer asks for your HTTPS origin, exact proxy source CIDR, and monitoring CIDR. It creates
-an owner-readable `.env`, generates `COOKIE_SECRET` and (when needed) `SETUP_CODE`, checks Compose,
-and builds the image locally. Keep `.env` private. The Compose file binds `127.0.0.1:4173`; open
-`APP_ORIGIN` through the reverse proxy. For first-time setup, read `SETUP_CODE` from `.env`, create
+For a first run without a reverse proxy, the installer asks for this host's private LAN/VPN IPv4
+address and the monitoring CIDR. It binds only to that address and opens `http://<address>:4173`.
+HTTP sends login credentials and session cookies without encryption, so use this mode only on a
+trusted private network. Do not forward this port to the internet. To configure HTTPS later, run
+`./scripts/install-docker.sh --https-proxy`; the named data volume is retained.
+
+The installer creates an owner-readable `.env`, generates `COOKIE_SECRET` and (when needed)
+`SETUP_CODE`, checks Compose, and builds the image locally. Keep `.env` private. For first-time
+setup, read `SETUP_CODE` from `.env`, create
 the administrator, then clear `SETUP_CODE`. Later installer runs leave it empty. To prepare
 configuration without starting Docker, run `./scripts/install-docker.sh --configure-only`.
 
@@ -68,8 +72,10 @@ using real integration credentials. Backups follow the external
 
 | Variable | Required | Description |
 |---|---|---|
-| `APP_ORIGIN` | Production | Exact externally visible HTTPS origin |
-| `TRUST_PROXY_CIDRS` | Production | Exact reverse-proxy source CIDRs trusted for forwarded HTTPS/client information |
+| `APP_ORIGIN` | Production | Exact browser origin; private HTTP only with `DIRECT_HTTP_LAN=true` |
+| `TRUST_PROXY_CIDRS` | HTTPS mode | Exact reverse-proxy source CIDRs trusted for forwarded HTTPS/client information |
+| `DIRECT_HTTP_LAN` | No | Explicit private HTTP mode; installer sets `true` until an HTTPS proxy is configured |
+| `DASHBOARD_BIND_IP` | Compose/private HTTP | Exact private host IP to bind; default `127.0.0.1` for HTTPS proxy mode |
 | `OUTBOUND_ALLOWED_CIDRS` | Production | Smallest network CIDRs that monitoring may contact |
 | `OUTBOUND_ALLOWED_HOSTS` | No | Exact approved public DNS names for admin-defined monitoring |
 | `COOKIE_SECRET` | Production | At least 32 random characters; never stored in Git |
@@ -233,8 +239,8 @@ DATABASE_URL=file:../data/homelab.db npm run seed:demo
 ./scripts/install-docker.sh
 ```
 
-The build override inherits the root Compose file's loopback binding, HTTPS-proxy boundary,
-storage and container hardening. It does not publish an image.
+The build override inherits the root Compose file's selected bind address, storage and container
+hardening. It does not publish an image.
 
 To publish multi-architecture images to the GitHub Container Registry from a workstation:
 

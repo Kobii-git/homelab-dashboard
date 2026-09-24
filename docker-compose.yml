@@ -6,11 +6,13 @@ services:
     init: true
     environment:
       DATABASE_URL: file:/data/homelab.db
-      APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN to the externally visible HTTPS origin}
+      APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN to the exact URL used in the browser}
       COOKIE_SECRET: ${COOKIE_SECRET:?Set COOKIE_SECRET to at least 32 random characters}
       OUTBOUND_ALLOWED_CIDRS: ${OUTBOUND_ALLOWED_CIDRS:?Set the monitored network CIDRs}
       OUTBOUND_ALLOWED_HOSTS: ${OUTBOUND_ALLOWED_HOSTS:-}
-      TRUST_PROXY_CIDRS: ${TRUST_PROXY_CIDRS:?Set the exact CIDR used by the host reverse proxy}
+      TRUST_PROXY_CIDRS: ${TRUST_PROXY_CIDRS:-}
+      DIRECT_HTTP_LAN: ${DIRECT_HTTP_LAN:-false}
+      DASHBOARD_BIND_IP: ${DASHBOARD_BIND_IP:-127.0.0.1}
       SESSION_MAX_AGE_HOURS: ${SESSION_MAX_AGE_HOURS:-168}
       PUBLIC_STATUS_MODE: ${PUBLIC_STATUS_MODE:-disabled}
       ALLOW_INSECURE_INTEGRATIONS: ${ALLOW_INSECURE_INTEGRATIONS:-false}
@@ -58,7 +60,7 @@ services:
       # HOME_ASSISTANT_TOKEN: your-long-lived-token
       # SONARR_API_KEY: your-api-key
     ports:
-      - "127.0.0.1:4173:4173"
+      - "${DASHBOARD_BIND_IP:-127.0.0.1}:4173:4173"
     volumes:
       - homelab-dashboard-data:/data
     read_only: true

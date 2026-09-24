@@ -4,10 +4,16 @@ set -euo pipefail
 umask 077
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-if [[ ${1:-} != "" && ${1:-} != "--configure-only" ]]; then
-  echo "Usage: ./scripts/install-docker.sh [--configure-only]" >&2
-  exit 2
-fi
+configure_only=false
+requested_mode=""
+for option in "$@"; do
+  case "$option" in
+    --configure-only) configure_only=true ;;
+    --lan-http) requested_mode=lan ;;
+    --https-proxy) requested_mode=https ;;
+    *) echo "Usage: ./scripts/install-docker.sh [--configure-only] [--lan-http | --https-proxy]" >&2; exit 2 ;;
+  esac
+done
 
 for command in docker openssl awk; do
   if ! command -v "$command" >/dev/null 2>&1; then
@@ -42,9 +48,9 @@ set_setting() {
 }
 
 prompt_setting() {
-  local key=$1 description=$2 example=$3 value
+  local key=$1 description=$2 example=$3 prefix=${4:-} value
   value=$(get_setting "$key")
-  if [[ -n $value && $value != "$example" ]]; then
+  if [[ -n $value && $value != "$example" && ( -z $prefix || $value == "$prefix"* ) ]]; then
     return
   fi
   if [[ ! -t 0 ]]; then
@@ -61,12 +67,57 @@ prompt_setting() {
   done
 }
 
-prompt_setting APP_ORIGIN "HTTPS URL served by your reverse proxy" "https://dashboard.home.arpa"
-prompt_setting TRUST_PROXY_CIDRS "Exact proxy source CIDR as seen by the container" "172.17.0.1/32"
+private_bind_ip() {
+  local first second third fourth octet
+  [[ $1 =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+  IFS=. read -r first second third fourth <<< "$1"
+  for octet in "$first" "$second" "$third" "$fourth"; do
+    [[ $octet == 0 || $octet != 0* ]] || return 1
+    (( 10#$octet <= 255 )) || return 1
+  done
+  (( 10#$first == 10 ||
+     (10#$first == 172 && 10#$second >= 16 && 10#$second <= 31) ||
+     (10#$first == 192 && 10#$second == 168) ||
+     (10#$first == 100 && 10#$second >= 64 && 10#$second <= 127) )) || [[ $1 == 127.0.0.1 ]]
+}
+
+mode=$requested_mode
+if [[ -z $mode ]]; then
+  origin=$(get_setting APP_ORIGIN)
+  if [[ $(get_setting DIRECT_HTTP_LAN) == true || $origin == http://* || -z $origin || $origin == https://dashboard.home.arpa ]]; then
+    mode=lan
+  else
+    mode=https
+  fi
+fi
+
+if [[ $mode == lan ]]; then
+  bind_ip=$(get_setting DASHBOARD_BIND_IP)
+  if ! private_bind_ip "$bind_ip" || [[ $bind_ip == 127.0.0.1 && $(get_setting DIRECT_HTTP_LAN) != true ]]; then
+    if [[ ! -t 0 ]]; then
+      echo "Set DASHBOARD_BIND_IP to this host's private IPv4 address in .env, then rerun." >&2
+      exit 1
+    fi
+    while true; do
+      read -r -p "Private IPv4 address of this Docker host (example: 192.168.1.20): " bind_ip
+      if private_bind_ip "$bind_ip"; then break; fi
+      echo "Enter one private LAN/VPN IPv4 address, or 127.0.0.1 for host-only access." >&2
+    done
+  fi
+  set_setting DASHBOARD_BIND_IP "$bind_ip"
+  set_setting APP_ORIGIN "http://$bind_ip:4173"
+  set_setting TRUST_PROXY_CIDRS ""
+  set_setting DIRECT_HTTP_LAN true
+else
+  prompt_setting APP_ORIGIN "HTTPS URL served by your reverse proxy" "https://dashboard.home.arpa" "https://"
+  prompt_setting TRUST_PROXY_CIDRS "Exact proxy source CIDR as seen by the container" "172.17.0.1/32"
+  set_setting DASHBOARD_BIND_IP 127.0.0.1
+  set_setting DIRECT_HTTP_LAN false
+fi
 prompt_setting OUTBOUND_ALLOWED_CIDRS "Smallest CIDR your dashboard may monitor" "192.168.50.0/24"
 
-if [[ $(get_setting APP_ORIGIN) != https://* ]]; then
-  echo "APP_ORIGIN must be an HTTPS origin. Check .env." >&2
+if [[ $mode == https && $(get_setting APP_ORIGIN) != https://* ]]; then
+  echo "APP_ORIGIN must be an HTTPS origin in proxy mode. Check .env." >&2
   exit 1
 fi
 
@@ -98,14 +149,18 @@ fi
 echo "Checking Docker Compose configuration..."
 docker compose -f docker-compose.yml -f docker-compose.build.yml config --quiet
 
-if [[ ${1:-} == "--configure-only" ]]; then
+if [[ $configure_only == true ]]; then
   echo "Configuration saved to .env with owner-only permissions."
   exit 0
 fi
 
 echo "Building and starting Homelab Dashboard..."
 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --wait
-echo "Open $(get_setting APP_ORIGIN) through your HTTPS reverse proxy."
+if [[ $mode == lan ]]; then
+  echo "Open $(get_setting APP_ORIGIN) on your trusted LAN/VPN. Credentials and cookies travel over HTTP until you add HTTPS."
+else
+  echo "Open $(get_setting APP_ORIGIN) through your HTTPS reverse proxy."
+fi
 if [[ -z $(get_setting ADMIN_PASSWORD) && -n $(get_setting SETUP_CODE) ]]; then
   echo "For first-time account setup, read SETUP_CODE from the private .env file. Remove it after setup."
 fi

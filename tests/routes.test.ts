@@ -2829,6 +2829,41 @@ describe("api routes", () => {
     configureOutboundPolicy(env);
   });
 
+  it("keeps host and browser-origin checks in private HTTP mode", async () => {
+    const directApp = await createApp({
+      prisma,
+      env: {
+        ...env,
+        nodeEnv: "production",
+        appOrigin: "http://192.168.50.20:4173",
+        cookieSecure: false,
+        trustedProxyCidrs: [],
+        outboundAllowedCidrs: ["192.168.50.0/24"]
+      },
+      monitor: false,
+      logger: false
+    });
+    try {
+      const host = "192.168.50.20:4173";
+      expect((await directApp.inject({ method: "GET", url: "/api/version", headers: { host } })).statusCode).toBe(200);
+      expect((await directApp.inject({ method: "GET", url: "/api/version", headers: { host: "other.test" } })).statusCode).toBe(421);
+      const response = await directApp.inject({ method: "GET", url: "/api/version", headers: { host, "x-forwarded-proto": "https" } });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["strict-transport-security"]).toBeUndefined();
+      expect((await directApp.inject({
+        method: "POST", url: "/api/auth/login", headers: { host, origin: "http://other.test" }, payload: { password: "test-pass" }
+      })).statusCode).toBe(403);
+      const login = await directApp.inject({
+        method: "POST", url: "/api/auth/login", headers: { host, origin: `http://${host}` }, payload: { password: "test-pass" }
+      });
+      expect(login.statusCode).toBe(200);
+      expect(String(login.headers["set-cookie"])).not.toMatch(/;\s*Secure\b/i);
+    } finally {
+      await directApp.close();
+      configureOutboundPolicy(env);
+    }
+  });
+
   it("blocks special addresses, DNS rebinding, and insecure credential transport", async () => {
     expect(() => parseCidr("10.0.0.0/99")).toThrow("Invalid CIDR");
     configureOutboundPolicy({
@@ -3043,6 +3078,8 @@ describe("api routes", () => {
       "NODE_ENV",
       "APP_ORIGIN",
       "TRUST_PROXY_CIDRS",
+      "DIRECT_HTTP_LAN",
+      "DASHBOARD_BIND_IP",
       "OUTBOUND_ALLOWED_CIDRS",
       "OUTBOUND_ALLOWED_HOSTS",
       "COOKIE_SECRET",
@@ -3054,6 +3091,8 @@ describe("api routes", () => {
       process.env.NODE_ENV = "production";
       process.env.APP_ORIGIN = "https://dashboard.test";
       process.env.TRUST_PROXY_CIDRS = "172.17.0.1/32";
+      process.env.DIRECT_HTTP_LAN = "false";
+      process.env.DASHBOARD_BIND_IP = "127.0.0.1";
       process.env.OUTBOUND_ALLOWED_CIDRS = "10.0.21.0/24";
       process.env.OUTBOUND_ALLOWED_HOSTS = "Status.Example.com";
       process.env.COOKIE_SECRET = "production-cookie-secret-with-more-than-32-characters";
@@ -3073,6 +3112,26 @@ describe("api routes", () => {
       expect(() => getEnv()).toThrow("TRUST_PROXY_CIDRS");
       process.env.TRUST_PROXY_CIDRS = "172.17.0.1/32";
       process.env.APP_ORIGIN = "https://dashboard.test/path";
+      expect(() => getEnv()).toThrow("APP_ORIGIN");
+      process.env.APP_ORIGIN = "https://dashboard.test";
+      process.env.DASHBOARD_BIND_IP = "0.0.0.0";
+      expect(() => getEnv()).toThrow("DASHBOARD_BIND_IP must be 127.0.0.1");
+      process.env.DASHBOARD_BIND_IP = "127.0.0.1";
+      process.env.APP_ORIGIN = "http://192.168.50.20:4173";
+      expect(() => getEnv()).toThrow("APP_ORIGIN");
+      process.env.DIRECT_HTTP_LAN = "true";
+      process.env.DASHBOARD_BIND_IP = "192.168.50.20";
+      expect(() => getEnv()).toThrow("TRUST_PROXY_CIDRS must be empty");
+      process.env.TRUST_PROXY_CIDRS = "";
+      const direct = getEnv();
+      expect(direct.appOrigin).toBe("http://192.168.50.20:4173");
+      expect(direct.cookieSecure).toBe(false);
+      process.env.DASHBOARD_BIND_IP = "192.168.50.21";
+      expect(() => getEnv()).toThrow("private DASHBOARD_BIND_IP");
+      process.env.DASHBOARD_BIND_IP = "192.168.50.20";
+      process.env.APP_ORIGIN = "http://203.0.113.10:4173";
+      expect(() => getEnv()).toThrow("private DASHBOARD_BIND_IP");
+      process.env.APP_ORIGIN = "https://192.168.50.20:4173";
       expect(() => getEnv()).toThrow("APP_ORIGIN");
     } finally {
       for (const key of keys) {

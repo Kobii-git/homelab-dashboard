@@ -3,7 +3,10 @@
 ## Required Topology
 
 Run the dashboard only on a trusted LAN, VPN, or private mesh. The default Compose mapping
-binds `127.0.0.1:4173`; an existing reverse proxy must be the only network-facing entry point.
+binds `127.0.0.1:4173`; an existing reverse proxy is the normal network-facing entry point.
+For initial setup without a proxy, the installer offers direct HTTP on one private IPv4 address.
+In that mode, login credentials and session cookies cross the network without encryption. Keep the
+port restricted to your trusted network and never forward it to the internet.
 
 The proxy must:
 
@@ -18,8 +21,11 @@ through `NODE_EXTRA_CA_CERTS`; install the CA rather than disabling verification
 
 ## Required Configuration
 
-From a fresh clone, run `./scripts/install-docker.sh`. It prompts for the site-specific
-origin and network boundaries, generates the required secrets, and builds/starts the image locally.
+From a fresh clone, run `./scripts/install-docker.sh`. With the example `.env`, it prompts for
+the Docker host's private IPv4 address and monitoring boundary, then generates secrets and builds
+the image locally. Run `./scripts/install-docker.sh --https-proxy` when the proxy is ready; it asks
+for the exact HTTPS origin and proxy CIDR, switches the bind back to loopback, and keeps the data
+volume.
 Run it with `--configure-only` to write configuration and check Compose without starting a
 container. It preserves existing nonempty secrets in `.env` and does not recreate a cleared setup
 code after initial configuration; keep that file owner-readable and
@@ -35,9 +41,12 @@ SETUP_CODE=<12-base32-characters-for-first-boot>
 HOMELAB_IMAGE=ghcr.io/kobii-git/homelab-dashboard@sha256:<verified-digest>
 ```
 
-The proxy CIDR shown above is only an example. Determine the exact source address that the
+The proxy CIDR shown above is only an example for HTTPS mode. Determine the exact source address that the
 container observes for the host proxy; the application refuses production startup without
-this boundary and rejects requests unless the trusted forwarded protocol is `https`.
+this boundary in HTTPS mode and rejects requests unless the trusted forwarded protocol is `https`.
+Direct HTTP mode requires `DIRECT_HTTP_LAN=true`, `APP_ORIGIN=http://<private-host-IP>:4173`,
+`DASHBOARD_BIND_IP=<same-private-host-IP>`, and an empty `TRUST_PROXY_CIDRS`. The server rejects
+public bind addresses and mismatched origins.
 
 `OUTBOUND_ALLOWED_CIDRS` is deliberately required. Use the smallest real network boundary;
 `192.168.50.0/24` is an example, not an application default. Exact approved public monitoring

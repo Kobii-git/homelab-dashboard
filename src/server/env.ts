@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 export type AppEnv = {
   nodeEnv: string;
   host: string;
@@ -126,14 +128,24 @@ function allowedHostList(value: string | undefined): string[] {
   });
 }
 
-function normalizedAppOrigin(value: string | null, production: boolean): string | null {
+function privateBindIp(host: string): boolean {
+  if (isIP(host) !== 4) return false;
+  const [first, second] = host.split(".").map(Number);
+  return first === 10 ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168) ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    host === "127.0.0.1";
+}
+
+function normalizedAppOrigin(value: string | null, production: boolean, directHttpLan: boolean): string | null {
   if (!value) {
     if (production) throw new Error("APP_ORIGIN is required in production");
     return null;
   }
   const url = new URL(value);
   if (
-    (production && url.protocol !== "https:") ||
+    (production && url.protocol !== (directHttpLan ? "http:" : "https:")) ||
     (!production && url.protocol !== "https:" && url.protocol !== "http:") ||
     url.username ||
     url.password ||
@@ -141,7 +153,8 @@ function normalizedAppOrigin(value: string | null, production: boolean): string 
     url.search ||
     url.hash
   ) {
-    throw new Error("APP_ORIGIN must be an exact HTTPS origin without credentials, path, query, or fragment");
+    const scheme = production ? (directHttpLan ? "HTTP" : "HTTPS") : "HTTP or HTTPS";
+    throw new Error(`APP_ORIGIN must be an exact ${scheme} origin without credentials, path, query, or fragment`);
   }
   return url.origin;
 }
@@ -263,6 +276,7 @@ export function getEnv(): Omit<AppEnv, "cookieSecret"> & {
 } {
   const nodeEnv = process.env.NODE_ENV ?? "development";
   const production = nodeEnv === "production";
+  const directHttpLan = boolEnv(process.env.DIRECT_HTTP_LAN, false);
   const cookieSecret = textEnv(process.env.COOKIE_SECRET);
   const adminPassword = textEnv(process.env.ADMIN_PASSWORD);
   if (production && (!cookieSecret || cookieSecret.length < 32)) {
@@ -271,10 +285,23 @@ export function getEnv(): Omit<AppEnv, "cookieSecret"> & {
   if (production && adminPassword && adminPassword.length < 12) {
     throw new Error("ADMIN_PASSWORD must be at least 12 characters in production");
   }
-  const appOrigin = normalizedAppOrigin(textEnv(process.env.APP_ORIGIN), production);
+  const appOrigin = normalizedAppOrigin(textEnv(process.env.APP_ORIGIN), production, directHttpLan);
   const trustedProxyCidrs = listEnv(process.env.TRUST_PROXY_CIDRS);
-  if (production && trustedProxyCidrs.length === 0) {
+  const bindIp = textEnv(process.env.DASHBOARD_BIND_IP);
+  if (production && !directHttpLan && trustedProxyCidrs.length === 0) {
     throw new Error("TRUST_PROXY_CIDRS must identify the HTTPS reverse proxy in production");
+  }
+  if (production && !directHttpLan && bindIp && bindIp !== "127.0.0.1") {
+    throw new Error("DASHBOARD_BIND_IP must be 127.0.0.1 in HTTPS proxy mode");
+  }
+  if (production && directHttpLan) {
+    const origin = new URL(appOrigin!);
+    if (!privateBindIp(origin.hostname) || !bindIp || origin.hostname !== bindIp || origin.port !== String(process.env.PORT ?? 4173)) {
+      throw new Error("Direct HTTP requires APP_ORIGIN to use the private DASHBOARD_BIND_IP and application port");
+    }
+    if (trustedProxyCidrs.length > 0) {
+      throw new Error("TRUST_PROXY_CIDRS must be empty in direct HTTP mode");
+    }
   }
   const outboundAllowedCidrs = listEnv(process.env.OUTBOUND_ALLOWED_CIDRS);
   if (production && outboundAllowedCidrs.length === 0) {
@@ -290,7 +317,7 @@ export function getEnv(): Omit<AppEnv, "cookieSecret"> & {
     trustedProxyCidrs,
     adminPassword,
     cookieSecret,
-    cookieSecure: production || process.env.COOKIE_SECURE === "true",
+    cookieSecure: production ? !directHttpLan : process.env.COOKIE_SECURE === "true",
     sessionMaxAgeSeconds: intEnv(
       process.env.SESSION_MAX_AGE_HOURS,
       SESSION_MAX_AGE_HOURS_DEFAULT,
