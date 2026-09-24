@@ -213,10 +213,12 @@ jobs:
         run: |
           set -euo pipefail
           image="${REGISTRY}/${IMAGE_NAME}@${{ steps.build.outputs.digest }}"
-          docker run --rm -e GITHUB_ACTIONS=true \
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e DOCKER_CONFIG=/docker \
+            -e GITHUB_ACTIONS=true \
             -e ACTIONS_ID_TOKEN_REQUEST_URL -e ACTIONS_ID_TOKEN_REQUEST_TOKEN \
-            -v "${HOME}/.docker:/root/.docker:ro" "$COSIGN_IMAGE" \
+            -v "${HOME}/.docker:/docker:ro" "$COSIGN_IMAGE" \
             sign --yes "${image}"
-          docker run --rm -v "${HOME}/.docker:/root/.docker:ro" "$COSIGN_IMAGE" \
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e DOCKER_CONFIG=/docker \
+            -v "${HOME}/.docker:/docker:ro" "$COSIGN_IMAGE" \
             verify --certificate-identity "${GITHUB_SERVER_URL}/${GITHUB_WORKFLOW_REF}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com "${image}"
