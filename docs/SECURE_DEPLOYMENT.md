@@ -18,13 +18,18 @@ through `NODE_EXTRA_CA_CERTS`; install the CA rather than disabling verification
 
 ## Required Configuration
 
-Copy `.env.example` to an operator-owned environment file that is excluded from Git. At
-minimum configure:
+From a fresh clone, run `./scripts/install-docker.sh`. It prompts for the site-specific
+origin and network boundaries, generates the required secrets, and builds/starts the image locally.
+Run it with `--configure-only` to write configuration and check Compose without starting a
+container. It preserves existing nonempty secrets in `.env` and does not recreate a cleared setup
+code after initial configuration; keep that file owner-readable and
+outside Git. For a manually managed deployment, copy `.env.example` to `.env` and at minimum
+configure:
 
 ```env
 APP_ORIGIN=https://dashboard.home.arpa
 TRUST_PROXY_CIDRS=172.17.0.1/32
-OUTBOUND_ALLOWED_CIDRS=10.0.21.0/24
+OUTBOUND_ALLOWED_CIDRS=192.168.50.0/24
 COOKIE_SECRET=<at-least-32-random-characters>
 SETUP_CODE=<12-base32-characters-for-first-boot>
 HOMELAB_IMAGE=ghcr.io/kobii-git/homelab-dashboard@sha256:<verified-digest>
@@ -35,11 +40,11 @@ container observes for the host proxy; the application refuses production startu
 this boundary and rejects requests unless the trusted forwarded protocol is `https`.
 
 `OUTBOUND_ALLOWED_CIDRS` is deliberately required. Use the smallest real network boundary;
-`10.0.21.0/24` is an example, not an application default. Exact approved public monitoring
+`192.168.50.0/24` is an example, not an application default. Exact approved public monitoring
 names may be listed in `OUTBOUND_ALLOWED_HOSTS`.
 
-`SETUP_CODE` is required only until a database-backed administrator exists. Remove it from
-the environment after setup. `PUBLIC_STATUS_MODE` defaults to `disabled`; `aggregate` exposes
+`SETUP_CODE` is required only until a database-backed administrator exists. Clear it in
+`.env` after setup. `PUBLIC_STATUS_MODE` defaults to `disabled`; `aggregate` exposes
 counts only, and `services` additionally exposes service names and heartbeat history.
 
 Credentialed integrations require HTTPS and certificate verification. The emergency

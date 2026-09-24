@@ -25,6 +25,9 @@ environment files, reports, backups, logs, and private tooling context from the 
 startup requirements. `docker-compose.yml` owns the deployed environment mapping and hardening.
 `docs/SECURE_DEPLOYMENT.md` owns the operator launch checklist, reverse-proxy requirements, private
 CA guidance, and image-trust procedure.
+`scripts/install-docker.sh` configures a local source build, generating missing first-boot secrets
+without replacing existing nonempty values. It still requires operator-specific HTTPS and network
+boundaries; the Compose build override retains the production hardening.
 
 Configuration changes must be reconciled across those sources. Never bake secret values or a real
 network boundary into an image, Compose file, example, or AI document.

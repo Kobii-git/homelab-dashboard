@@ -43,17 +43,24 @@ The active database model is intentionally small: `Resource`, `DashboardGroup`, 
 
 ## Quick Start With Docker
 
-Production deployment requires an existing HTTPS reverse proxy, a TLS-enabled registry, and
-an explicit monitoring boundary. Copy `.env.example`, configure the required values, then:
+Production deployment requires an existing HTTPS reverse proxy on a private LAN/VPN. After
+installing Docker with Compose and configuring that proxy, run:
 
 ```sh
-docker compose pull
-docker compose up -d
+git clone https://github.com/Kobii-git/homelab-dashboard.git
+cd homelab-dashboard
+./scripts/install-docker.sh
 ```
 
-The Compose file binds `127.0.0.1:4173`; open the HTTPS `APP_ORIGIN` through the reverse
-proxy. On the first database-backed boot, enter the explicit `SETUP_CODE`, create the
-administrator, then remove `SETUP_CODE` from the environment.
+The installer asks for your HTTPS origin, exact proxy source CIDR, and monitoring CIDR. It creates
+an owner-readable `.env`, generates `COOKIE_SECRET` and (when needed) `SETUP_CODE`, checks Compose,
+and builds the image locally. Keep `.env` private. The Compose file binds `127.0.0.1:4173`; open
+`APP_ORIGIN` through the reverse proxy. For first-time setup, read `SETUP_CODE` from `.env`, create
+the administrator, then clear `SETUP_CODE`. Later installer runs leave it empty. To prepare
+configuration without starting Docker, run `./scripts/install-docker.sh --configure-only`.
+
+If you already copied `.env.example` and saw `COOKIE_SECRET is missing a value`, run the installer
+from that checkout. It fills empty secrets without replacing an existing nonempty secret or account.
 
 Read [Secure Deployment](docs/SECURE_DEPLOYMENT.md) and complete its launch checklist before
 using real integration credentials. Backups follow the external
@@ -223,8 +230,11 @@ DATABASE_URL=file:../data/homelab.db npm run seed:demo
 ### Build The Docker Image Locally
 
 ```sh
-docker compose -f docker-compose.build.yml up -d --build
+./scripts/install-docker.sh
 ```
+
+The build override inherits the root Compose file's loopback binding, HTTPS-proxy boundary,
+storage and container hardening. It does not publish an image.
 
 To publish multi-architecture images to the GitHub Container Registry from a workstation:
 

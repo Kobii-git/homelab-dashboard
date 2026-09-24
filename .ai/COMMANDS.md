@@ -19,7 +19,8 @@
 | Prisma Studio | `npm run db:studio` | `package.json` | DECLARED | Interactive and data-mutating; do not use against production during ordinary work. |
 | Dependency audits | `npm run audit:production` and `npm run audit:all` | `package.json` | VERIFIED | Depend on registry advisory availability and are point-in-time results. |
 | Local image build | `docker build -t <local-tag> .` | `Dockerfile` | VERIFIED | Mutates local Docker cache/image state; the task-created image was removed after its smoke test. |
-| Local image build/run | `docker compose -f docker-compose.build.yml up -d --build` | Compose | DECLARED | Mutates local Docker state and starts a service; not part of the npm local gate. |
+| Local image build/run | `docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build` | Compose | DECLARED | Mutates local Docker state and starts a service; not part of the npm local gate. |
+| Docker first-run installer | `./scripts/install-docker.sh` (`--configure-only` for configuration) | `scripts/install-docker.sh` | DECLARED | Writes private `.env`; default mode builds and starts a local image. |
 | Published deployment | `docker compose pull` / `docker compose up -d` | operator docs | DECLARED | External/production mutation; restricted without explicit instruction. |
 | Backup/restore | runbook commands in `docs/BACKUP_AND_RESTORE.md` | operator runbook | DECLARED | Stop/start, copy, and restore real state; never run as routine validation. |
 | Formatting | none | repository | MISSING | Do not mass-format or claim formatting enforcement. |
