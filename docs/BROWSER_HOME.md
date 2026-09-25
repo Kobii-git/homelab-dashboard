@@ -55,7 +55,7 @@ supported; use HTML for browser migration or the configuration archive for a com
 ## Customize and plan
 
 **Settings → Appearance & widgets → Customize home/work** controls widget visibility, order, width,
-accent, clock, and backgrounds.
+accent, clock, and backgrounds. Choose **Tidal**, **Aurora**, **Blue hour**, or **Graphite** from the thumbnail picker, or keep Plain, Dawn, Ocean, or an uploaded PNG. The large preview follows the current light/dark theme. Home and Work save their choices separately. These built-ins are bundled static images with no animation or remote image service; artwork provenance is documented in [Background assets](BACKGROUND_ASSETS.md).
 Homepage modules use flat sections with subtle dividers in a responsive one-, two-, or three-column grid. Content and workspace backgrounds extend across the available screen width, including wide monitors. Wide modules span the full row. Existing widget order, widths, visibility, and presentation are preserved.
 Choose **Always open** or **Dropdown** for each section:
 dedicated content stays visible, while a dropdown opens when you click its title (or press Enter/Space).

@@ -1,3 +1,4 @@
+import { builtInBackgrounds } from "../src/shared/backgrounds";
 import { deflateSync } from "node:zlib";
 import { PrismaClient } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
@@ -70,6 +71,36 @@ afterAll(async () => {
 });
 
 describe("private homepage", () => {
+  it("persists bundled background choices per workspace and preserves them through backup restore", async () => {
+    const original = await snapshot();
+    try {
+      for (const preset of builtInBackgrounds) {
+        const current = await snapshot();
+        current.data.workspaces.home.layout.background = preset.id;
+        const saved = await send("/api/homepage/state", { revision: current.revision, data: current.data });
+        expect(saved.statusCode).toBe(200);
+        const next = await snapshot();
+        expect(next.data.workspaces.home.layout.background).toBe(preset.id);
+        expect(next.data.workspaces.work).toEqual(original.data.workspaces.work);
+      }
+      const exported = await send("/api/config/export", undefined);
+      const decoded = decodeBackup(exported.json().archive);
+      expect(decoded.manifest.homepage.workspaces.home.layout.background).toBe("wallpaper:graphite");
+      expect(decoded.assets).toHaveLength(0);
+      const current = await snapshot();
+      current.data.workspaces.home.layout.background = "none";
+      expect((await send("/api/homepage/state", { revision: current.revision, data: current.data })).statusCode).toBe(200);
+      const latest = await snapshot();
+      await prisma.$transaction(tx => restoreConfiguration(tx, decoded.manifest, decoded.assets, latest.revision));
+      expect((await snapshot()).data.workspaces.home.layout.background).toBe("wallpaper:graphite");
+      const invalid = await snapshot();
+      invalid.data.workspaces.home.layout.background = "wallpaper:unknown";
+      expect((await send("/api/homepage/state", { revision: invalid.revision, data: invalid.data })).statusCode).toBe(400);
+      expect((await snapshot()).revision).toBe(invalid.revision);
+    } finally {
+      expect((await send("/api/homepage/state", { revision: (await snapshot()).revision, data: original.data })).statusCode).toBe(200);
+    }
+  });
   it("serves overlapping homepage and settings refreshes without database timeouts", async () => {
     const paths = ["/api/homepage", "/api/homepage", "/api/settings", "/api/config/revision", "/api/dashboard", "/api/home/summary"];
     for (let round = 0; round < 3; round++) {

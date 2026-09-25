@@ -6,6 +6,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.8.2] - 2026-09-25
+
+### Added
+- Four bundled static backgrounds: Tidal, Aurora, Blue hour, and Graphite, selectable with previews in workspace appearance settings.
+- Theme-aware background shading, compressed local images, and small picker thumbnails; no animation or third-party image requests.
+
 ## [0.8.1] - 2026-09-25
 
 ### Added

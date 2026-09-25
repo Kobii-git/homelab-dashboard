@@ -40,10 +40,15 @@ open. Versions without this layout field reject new archives, so use a pre-upgra
 rolling back to an older application version.
 
 Independent homepage/sidebar shortcut selections and appearance choices are included in layouts.
-Older archives without these fields use automatic favorites in the center, top-level sidebar
-items, comfortable spacing, and shortcut tiles. Retired colorful theme choices are accepted and
+Older archives without these fields use top-level folders in the homepage bar, top-level sidebar
+items, and comfortable spacing. Retired colorful theme choices are accepted and
 normalized to the original defaults without changing shortcut selections. Versions without these fields
 reject new layouts and archives; retain a pre-upgrade backup for downgrade.
+
+Built-in Tidal, Aurora, Blue hour, and Graphite backgrounds are stored as named choices in layouts.
+Their artwork ships with the app and is not duplicated into the archive. Uploaded PNGs remain included.
+Versions before v0.8.2 reject the new `wallpaper:` IDs. Before downgrading, save Plain as the background
+in both Home and Work, or restore a backup from before the new backgrounds were selected.
 
 ## Full disaster recovery
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { builtInBackgrounds } from "./backgrounds.js";
 
 export const workspaceIdSchema = z.enum(["home", "work"]);
 export type WorkspaceId = z.infer<typeof workspaceIdSchema>;
@@ -28,7 +29,7 @@ export const layoutSchema = z
     // Accept retired theme choices so existing saves and archives remain readable.
     accent: z.enum(["blue", "green", "violet", "amber", "rose", "cyan"])
       .transform(value => value === "rose" || value === "cyan" ? "blue" : value),
-    background: z.string().regex(/^(none|dawn|ocean|aurora|sunset|asset:[a-f0-9]{64})$/)
+    background: z.string().refine(value => /^(none|dawn|ocean|aurora|sunset|asset:[a-f0-9]{64})$/.test(value) || builtInBackgrounds.some(item => item.id === value), "Choose a supported background")
       .transform(value => value === "aurora" || value === "sunset" ? "none" : value),
     colorStyle: z.enum(["vivid", "soft", "minimal"]).transform(() => "minimal" as const).default("minimal"),
     spacing: z.enum(["comfortable", "compact"]).default("comfortable"),

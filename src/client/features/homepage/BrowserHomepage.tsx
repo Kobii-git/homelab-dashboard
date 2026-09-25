@@ -20,6 +20,7 @@ import type {
   DashboardUtilitiesSummaryDto,
 } from "../../../shared/types";
 import { SiteIcon } from "../../components/SiteIcon";
+import { backgroundImage } from "./backgrounds";
 import { ServiceIcon } from "../../components/ServiceIcon";
 import { HealthStrip, StatusIndicator, type HealthItem } from "../../components/HealthStrip";
 import { serviceHealth, utilityHealth, utilityPresentation } from "../../lib/healthPresentation";
@@ -145,9 +146,7 @@ export function BrowserHomepage({
   const favorites = snapshot.bookmarks.filter(
     (b) => b.workspaceId === workspace && b.favorite && !b.deletedAt,
   );
-  const background = layout.background.startsWith("asset:")
-    ? `linear-gradient(var(--hp-overlay),var(--hp-overlay)),url(/api/homepage/assets/${layout.background.slice(6)})`
-    : undefined;
+  const background = backgroundImage(layout.background);
   const enabledWidgets = layout.widgets.filter(widget => widget.enabled);
   const statusItems: HealthItem[] = [serviceHealth(services, onInspectService)];
   const disabled = { state: "disabled", data: null, stale: false, error: null, fetchedAt: null } as const;

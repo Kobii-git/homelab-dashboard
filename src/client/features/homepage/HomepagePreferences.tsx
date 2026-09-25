@@ -6,6 +6,8 @@ import { fileBase64, type HomepageController } from "./useHomepage";
 import { widgetTitles as titles } from "./widgetTitles";
 import { balancedLayout } from "./balancedLayout";
 import { ShortcutPicker } from "./ShortcutPicker";
+import { BackgroundPicker } from "./BackgroundPicker";
+import { backgroundImage } from "./backgrounds";
 export function HomepagePreferences({ home, workspace }: { home: HomepageController; workspace: WorkspaceId }) {
   const [customize, setCustomize] = useState<{ data: HomepageData; revision: number } | null>(null);
   const [customError, setCustomError] = useState("");
@@ -38,8 +40,7 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
       setCustomError(e instanceof Error ? e.message : "Could not save layout");
     }
   }
-  const backgroundImage = layout.background.startsWith("asset:") ? `linear-gradient(var(--hp-overlay),var(--hp-overlay)),url(/api/homepage/assets/${layout.background.slice(6)})` : undefined;
-  return <div style={{ backgroundImage }} className={`homepage-preferences hp-accent-${layout.accent} hp-bg-${layout.background.split(":")[0]}`}>
+  return <div style={{ backgroundImage: backgroundImage(layout.background) }} className={`homepage-preferences hp-accent-${layout.accent} hp-bg-${layout.background.split(":")[0]}`}>
     {!customize && <section className="hp-card"><h3>Make this space yours</h3><p className="muted-copy">Choose your colors, background, and the widgets you want in this workspace.</p><button className="primary-button" onClick={() => { setCustomError(""); setCustomize({ data: structuredClone(snapshot.data), revision: snapshot.revision }); }}>Customize {workspace}</button></section>}
       {customize && (
         <section
@@ -68,25 +69,6 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
               </select>
             </label>
             <label>
-              Background
-              <select
-                aria-label="Background"
-                value={layout.background}
-                onChange={(e) =>
-                  updateLayout({ ...layout, background: e.target.value })
-                }
-              >
-                <option value="none">Plain</option>
-                <option value="dawn">Dawn</option>
-                <option value="ocean">Ocean</option>
-                {snapshot.assets.map((a, i) => (
-                  <option key={a.id} value={`asset:${a.id}`}>
-                    Uploaded background {i + 1}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
               Clock
               <select
                 aria-label="Clock"
@@ -106,6 +88,7 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
               <option value="comfortable">Comfortable</option><option value="compact">Compact</option>
             </select></label>
           </div>
+          <BackgroundPicker value={layout.background} assets={snapshot.assets} onChange={background => updateLayout({ ...layout, background })} />
           <label className="hp-file">
             Upload PNG background (up to 4 MiB / 4 megapixels)
             <input

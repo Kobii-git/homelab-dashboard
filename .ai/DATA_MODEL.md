@@ -88,11 +88,17 @@ the field; older strict parsers reject it. No database table change is required.
 
 Layouts also store spacing, shortcut presentation, and separate `centerShortcuts` and
 `sidebarShortcuts` selections of bookmark/collection IDs. Missing selections default to `null`:
-the center follows favorites and the sidebar follows top-level items. Explicit empty arrays mean
+the top bar follows top-level folders and the sidebar follows top-level items. Explicit empty arrays mean
 no shortcuts. Rendering omits deleted, missing, or other-workspace IDs. Older layouts receive
 defaults on read; new exports retain selections. Older strict parsers require a pre-upgrade backup
 for downgrade. No Prisma schema change is needed.
 
-Retired rose/cyan accents and aurora/sunset backgrounds normalize to blue/plain on read.
+Built-in backgrounds use the allowlisted `wallpaper:tidal`, `wallpaper:aurora`,
+`wallpaper:blue-hour`, and `wallpaper:graphite` values in the existing background string.
+Artwork ships with the app; archives contain the selected ID without copying built-in images.
+Older parsers reject these IDs: select Plain for both workspaces before a downgrade, or use a
+pre-change backup. No Prisma migration is required.
+
+Retired rose/cyan accents and unprefixed aurora/sunset backgrounds still normalize to blue/plain on read.
 The retired `colorStyle` field remains accepted for compatibility and normalizes to `minimal`;
 it no longer controls the UI. Shortcut selections and existing accent/background choices are preserved.
