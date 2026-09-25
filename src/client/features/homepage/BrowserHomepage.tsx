@@ -157,6 +157,8 @@ export function BrowserHomepage({
   ];
   const background = backgroundImage(layout.background);
   const enabledWidgets = layout.widgets.filter(widget => widget.enabled);
+  const contentWidgets = enabledWidgets.filter(widget => !["bookmarks", "favorites", "weather"].includes(widget.id));
+  if (workspace === "home") contentWidgets.sort((a, b) => Number(b.id === "services") - Number(a.id === "services"));
   const statusItems: HealthItem[] = [serviceHealth(services, onInspectService)];
   const disabled = { state: "disabled", data: null, stale: false, error: null, fetchedAt: null } as const;
   const contextConfigured = { agenda: settings.dashboardHome.agendaEnabled, tasks: settings.dashboardHome.tasksEnabled,
@@ -306,11 +308,9 @@ export function BrowserHomepage({
       )}
       {workspace === "work" && <WorkTimesheet home={home} now={now} />}
       <div className="hp-grid">
-        {layout.widgets
-          .filter((w) => w.enabled && !["bookmarks", "favorites", "weather"].includes(w.id))
-          .map((w) => (
-            <div key={`${workspace}-${w.id}`} id={`widget-${w.id}`} className={`hp-widget hp-widget-${w.id} ${w.size === "wide" ? "hp-wide" : ""}`}>
-              {w.presentation === "dropdown" ? <details className="hp-widget-dropdown">
+        {contentWidgets.map((w) => (
+            <div key={`${workspace}-${w.id}`} id={`widget-${w.id}`} className={`hp-widget hp-widget-${w.id} ${w.size === "wide" || (workspace === "home" && w.id === "services") ? "hp-wide" : ""}`}>
+              {w.presentation === "dropdown" && !(workspace === "home" && w.id === "services") ? <details className="hp-widget-dropdown">
                 <summary><ChevronRight size={16} /><span>{widgetTitles[w.id]}</span></summary>
                 <div className="hp-dropdown-content">{blocks[w.id]}</div>
               </details> : blocks[w.id]}

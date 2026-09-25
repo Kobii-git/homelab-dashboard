@@ -6,6 +6,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.8.5] - 2026-09-25
+
+### Changed
+- Home puts enabled Services first below Google search, always open and spanning the full content width.
+- Service entries wrap side by side within each group instead of forming a single vertical list. Saved Home order, width, and presentation values remain stored for compatibility; Work keeps its existing arrangement controls.
+
 ## [0.8.4] - 2026-09-25
 
 ### Changed

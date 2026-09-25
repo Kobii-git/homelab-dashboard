@@ -5319,11 +5319,11 @@ summary:focus-visible, .settings-hub button:focus-visible, .service-launcher a:f
 .hp-widget :is(.hp-card-title h3,.home-module-header strong) { font-size:16px; }
 .hp-widget .module-state { display:grid; justify-items:start; gap:12px; }
 .hp-widget .module-state h3 { margin:0; }
-.hp-service-groups { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr)); gap:20px; margin-top:8px; }
+.hp-service-groups { display:grid; grid-template-columns:minmax(0,1fr); gap:20px; margin-top:8px; }
 .browser-home .service-group { align-content:start; }
 .browser-home .service-group-header { border:0; padding-bottom:0; }
 .browser-home .service-group-header h3 { font-size:13px; }
-.browser-home .svc-collection.density-grid { grid-template-columns:minmax(0,1fr); gap:2px; }
+.browser-home .svc-collection:is(.density-grid,.density-list) { grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr)); gap:4px 24px; }
 .browser-home .svc-card {
   display:grid;
   grid-template-columns:minmax(0,1fr) auto;

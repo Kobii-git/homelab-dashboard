@@ -14,7 +14,7 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
   const snapshot = home.snapshot;
   if (!snapshot) return <p role="status">{home.error || "Loading preferences…"}</p>;
   const layout = customize?.data.workspaces[workspace].layout ?? snapshot.data.workspaces[workspace].layout;
-  const movableWidgets = layout.widgets.filter(w => !["favorites", "weather", "bookmarks"].includes(w.id));
+  const movableWidgets = layout.widgets.filter(w => !["favorites", "weather", "bookmarks"].includes(w.id) && !(workspace === "home" && w.id === "services"));
   function updateLayout(next: HomeLayout) {
     if (customize)
       setCustomize({
@@ -144,6 +144,11 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
           <div className="hp-card-title"><h3>Arrange your widgets</h3><button type="button" onClick={() => updateLayout(balancedLayout(layout))}>Balanced arrangement</button></div>
           <p className="muted-copy">Balanced arrangement previews new order and widths while preserving enabled widgets and other preferences. Save layout applies the preview.</p>
           <div className="hp-widget-options">
+            {workspace === "home" && <div>
+              <label className="hp-check"><input type="checkbox" checked={layout.widgets.find(w => w.id === "services")!.enabled}
+                onChange={event => updateLayout({ ...layout, widgets: layout.widgets.map(w => w.id === "services" ? { ...w, enabled: event.target.checked } : w) })} />Services</label>
+              <span className="muted-copy">Opens below Google search, across the full width.</span>
+            </div>}
             {movableWidgets.map((w, i) => (
               <div key={w.id}>
                 <label className="hp-check">

@@ -106,3 +106,86 @@ test.describe("Launchpad in the device time zone", () => {
     await expect(page.locator(".launchpad-services .svc-card").first()).toBeVisible();
   });
 });
+
+test("Home services lead below search and wrap side by side without rewriting saved layouts", async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  await page.addInitScript(() => localStorage.setItem("homelab-density", "list"));
+  await page.route("**/api/resources/*/icon", route => route.fulfill({ status: 404, body: "" }));
+  await page.route("**/api/homepage", async route => {
+    const snapshot = await (await route.fetch()).json();
+    for (const workspace of ["home", "work"]) {
+      const layout = snapshot.data.workspaces[workspace].layout;
+      for (const widget of layout.widgets) {
+        widget.enabled = ["services", "notes"].includes(widget.id);
+        widget.size = "normal";
+        widget.presentation = widget.id === "services" ? "dropdown" : "section";
+      }
+      // A saved narrow, collapsed Services section placed last must still lead on Home.
+      layout.widgets.sort((a: { id: string }, b: { id: string }) => Number(a.id === "services") - Number(b.id === "services"));
+    }
+    await route.fulfill({ json: snapshot });
+  });
+  await page.goto("/");
+  await page.getByLabel("Username").fill("admin");
+  await page.getByLabel("Password").fill("e2e-admin-password");
+  await page.getByRole("button", { name: "Unlock" }).click();
+  const services = page.locator(".hp-widget-services");
+  await expect(services.locator(".svc-collection").first()).toHaveClass(/density-grid/);
+  await expect(page.locator(".hp-grid > .hp-widget").first()).toHaveAttribute("id", "widget-services");
+  await expect(services.locator("details")).toHaveCount(0);
+  for (const theme of ["dark", "light"]) {
+    if (await page.locator("html").getAttribute("data-theme") !== theme) await page.getByRole("button", { name: `Switch to ${theme} mode` }).click();
+    for (const width of [320, 390, 768, 1440, 1920]) {
+      await page.setViewportSize({ width, height: 1100 });
+      await page.locator(".workspace-scroll").evaluate(el => { el.scrollTop = 0; });
+      const searchBox = (await page.getByRole("search", { name: "Google", exact: true }).boundingBox())!;
+      const sectionBox = (await services.boundingBox())!;
+      const gridBox = (await page.locator(".hp-grid").boundingBox())!;
+      expect(sectionBox.y).toBeGreaterThanOrEqual(searchBox.y + searchBox.height);
+      expect(Math.abs(sectionBox.width - gridBox.width)).toBeLessThan(1);
+      const cards = services.locator(".service-group .svc-collection").first().locator(".svc-card");
+      const first = (await cards.nth(0).boundingBox())!;
+      const second = (await cards.nth(1).boundingBox())!;
+      if (width >= 768) {
+        expect(Math.abs(first.y - second.y)).toBeLessThan(1);
+        expect(second.x).toBeGreaterThanOrEqual(first.x + first.width);
+      } else expect(second.y).toBeGreaterThanOrEqual(first.y + first.height);
+      expect(await page.locator(".workspace-scroll").evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`services-${theme}-${width}.png`) });
+      if (width === 1440) {
+        const axe = await new AxeBuilder({ page }).include(".hp-widget-services").analyze();
+        expect(axe.violations).toEqual([]);
+      }
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.locator("html").evaluate(el => { el.style.zoom = "2"; });
+  expect(await page.locator(".workspace-scroll").evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await page.locator("html").evaluate(el => { el.style.zoom = ""; });
+  const inspect = services.getByRole("button", { name: /^Show details for/ }).first();
+  await inspect.focus(); await inspect.press("Enter");
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape"); await expect(inspect).toBeFocused();
+  const nav = page.getByRole("navigation", { name: "Primary" });
+  await nav.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Customize home", exact: true }).click();
+  const panel = page.getByRole("region", { name: "Customize homepage" });
+  await expect(panel.getByRole("checkbox", { name: "Services", exact: true })).toBeChecked();
+  await expect(panel.getByLabel("Services width", { exact: true })).toHaveCount(0);
+  await expect(panel.getByLabel("Services display", { exact: true })).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "Move Services up", exact: true })).toHaveCount(0);
+  await panel.getByRole("button", { name: "Cancel preview" }).click();
+  await nav.getByRole("button", { name: "Dashboard", exact: true }).click();
+  await page.getByRole("navigation", { name: "Dashboard view" }).getByRole("button", { name: "Work", exact: true }).click();
+  await expect(page.locator(".hp-grid > .hp-widget").last()).toHaveAttribute("id", "widget-services");
+  await expect(services).not.toHaveClass(/hp-wide/);
+  await expect(services.locator("details")).not.toHaveAttribute("open", "");
+  await nav.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Customize work", exact: true }).click();
+  await expect(panel.getByLabel("Services width", { exact: true })).toHaveValue("normal");
+  await expect(panel.getByLabel("Services display", { exact: true })).toHaveValue("dropdown");
+  await panel.getByRole("button", { name: "Cancel preview" }).click();
+  await nav.getByRole("button", { name: "Dashboard", exact: true }).click();
+  await page.getByRole("navigation", { name: "Dashboard view" }).getByRole("button", { name: "Operations", exact: true }).click();
+  await expect(page.getByRole("group", { name: "Layout density" }).getByRole("button", { name: "List view", exact: true })).toHaveClass(/active/);
+});

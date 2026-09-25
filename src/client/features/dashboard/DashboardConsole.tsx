@@ -833,6 +833,7 @@ export function DashboardConsole({
   const [mode, setMode] = useState<DashboardMode>(readDashboardMode);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [density, setDensity] = useState<Density>(readDensity);
+  const serviceDensity = mode === "launchpad" ? "grid" : density;
   const [checkingResourceId, setCheckingResourceId] = useState<string | null>(null);
   const [checkError, setCheckError] = useState<string | null>(null);
   const [inspectedId, setInspectedId] = useState<string | null>(null);
@@ -1081,7 +1082,7 @@ export function DashboardConsole({
       insertAt = withoutDragged.length;
     } else if (targetId) {
       const target = (event.currentTarget as HTMLElement).getBoundingClientRect();
-      const isAfter = density === "list"
+      const isAfter = serviceDensity === "list"
         ? event.clientY > target.top + target.height / 2
         : event.clientX > target.left + target.width / 2;
       if (isAfter) insertAt += 1;
@@ -1101,7 +1102,7 @@ export function DashboardConsole({
 
     return (
       <div
-        className={`svc-collection density-${density}`}
+        className={`svc-collection density-${serviceDensity}`}
         onDragOver={(event) => {
           if (drag?.container === containerKey) event.preventDefault();
         }}
@@ -1111,7 +1112,7 @@ export function DashboardConsole({
           <ServiceCard
             key={resource.id}
             resource={resource}
-            density={density}
+            density={serviceDensity}
             checking={checkingResourceId === resource.id}
             draggable={reorderEnabled}
             dragging={drag?.id === resource.id}
