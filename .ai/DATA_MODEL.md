@@ -102,3 +102,10 @@ pre-change backup. No Prisma migration is required.
 Retired rose/cyan accents and unprefixed aurora/sunset backgrounds still normalize to blue/plain on read.
 The retired `colorStyle` field remains accepted for compatibility and normalizes to `minimal`;
 it no longer controls the UI. Shortcut selections and existing accent/background choices are preserved.
+
+Work also stores bounded `timesheetWeeks` in its existing homepage JSON: a unique Monday calendar
+date and five weekday strings per entry. Missing fields default to an empty array without a backfill
+or layout change. Normal configuration revisions protect saves; client merges preserve untouched
+days and require explicit recovery for same-day conflicts. Archives include this field. Pre-v0.8.3
+strict parsers reject it, so downgrade requires a pre-upgrade backup. See the backup runbook; do not
+strip stored timesheet entries to make an older build start.

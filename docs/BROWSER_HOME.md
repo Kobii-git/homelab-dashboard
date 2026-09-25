@@ -101,6 +101,29 @@ Visible pages refresh saved state every 30 seconds and on focus or reconnection.
 polling. Concurrent edits produce a conflict, preserve the draft, and offer reload plus deliberate
 resubmission against the latest version. The app is not an offline editor or native browser sync tool.
 
+## Work timesheet notes
+
+The Work dashboard includes **Timesheet notes** beneath the bookmark area: a small box for each day,
+Monday through Friday. The current week follows your browser’s local date. Notes save automatically
+after a short typing pause; **Save now** or **⌘/Ctrl + Enter** saves immediately. Wait for
+**All changes saved** before closing the app. Previous/next arrows revisit saved weeks; **This week**
+returns to the current one. A new week starts empty without removing earlier entries. Clearing all five
+boxes removes only that week’s saved entry. This section is always present in Work and does not change
+your widget layout or regular notes.
+
+**Copy week** opens a dated text preview to paste into your timesheet. If clipboard access is unavailable
+on a private HTTP origin, select the preview text and copy manually. Nothing is submitted to an external
+timesheet service, and the feature does not track hours or run a timer.
+
+Failed saves keep the draft in memory across in-app navigation and sign-in recovery. The browser warns
+before closing or reloading while a draft is pending; drafts are not an offline backup. Week navigation
+waits until edits are saved or deliberately discarded. When devices edit different days, the latest
+untouched days are retained. Conflicting edits to the same day show the saved text for review before
+**Keep my edits** or **Discard edits**. A stale configuration revision requires **Retry save** after refresh.
+Saved weeks sync across devices and are included in configuration backups. Up to 520 weeks and 500,000
+characters total are supported, with 5,000 characters per day; reaching a limit reports an error and never
+silently deletes old entries.
+
 ## Browser setup
 
 Use the deployed `https://home.example.com` address after completing [private HTTPS](PRIVATE_HTTPS.md).

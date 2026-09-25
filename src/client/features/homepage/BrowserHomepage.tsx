@@ -36,6 +36,7 @@ import {
   ReleasesCard,
 } from "../dashboard/DashboardLaunchpad";
 import { Notes } from "./Notes";
+import { WorkTimesheet } from "./WorkTimesheet";
 import { CopyPreview } from "./BookmarkManager";
 import { widgetTitles } from "./widgetTitles";
 import { useHomepageWorkspace } from "./useHomepageWorkspace";
@@ -343,6 +344,7 @@ export function BrowserHomepage({
           </small>
         </div>
       )}
+      {workspace === "work" && <WorkTimesheet home={home} now={now} />}
       <div className="hp-grid">
         {layout.widgets
           .filter((w) => w.enabled && w.id !== "bookmarks")

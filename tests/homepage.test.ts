@@ -71,6 +71,46 @@ afterAll(async () => {
 });
 
 describe("private homepage", () => {
+  it("upgrades legacy Work data and protects timesheet saves, privacy, and backup restore", async () => {
+    const original = await snapshot();
+    try {
+      const legacy = JSON.parse(JSON.stringify(original.data));
+      delete legacy.workspaces.work.timesheetWeeks;
+      await prisma.homepageState.update({ where: { id: "main" }, data: { data: legacy } });
+      await initializeHomepage(prisma);
+      await initializeHomepage(prisma);
+      const state = await snapshot();
+      expect(state.data.workspaces.work.timesheetWeeks).toEqual([]);
+      expect(state.data.workspaces.work.layout).toEqual(original.data.workspaces.work.layout);
+      const week = { weekStart: "2026-09-21", days: ["Reviewed sample tickets", "Wrote test cases", "", "", ""] as [string, string, string, string, string] };
+      state.data.workspaces.work.timesheetWeeks = [week];
+      expect((await send("/api/homepage/state", { revision: state.revision, data: state.data })).statusCode).toBe(200);
+      expect((await send("/api/homepage/state", { revision: state.revision, data: state.data })).statusCode).toBe(409);
+      const saved = await snapshot();
+      expect(saved.data.workspaces.work.timesheetWeeks).toEqual([week]);
+      expect(saved.data.workspaces.home).toEqual(original.data.workspaces.home);
+      expect(saved.data.workspaces.work.savedNotes).toEqual(original.data.workspaces.work.savedNotes);
+      const invalid = structuredClone(saved.data);
+      invalid.workspaces.work.timesheetWeeks.push(week);
+      expect((await send("/api/homepage/state", { revision: saved.revision, data: invalid })).statusCode).toBe(400);
+      expect((await snapshot()).revision).toBe(saved.revision);
+      expect((await app.inject({ method: "POST", url: "/api/homepage/state", payload: { revision: saved.revision, data: saved.data } })).statusCode).toBe(401);
+      expect((await app.inject({ url: "/api/status" })).body).not.toContain(week.days[0]);
+      const exported = await send("/api/config/export", undefined);
+      const decoded = decodeBackup(exported.json().archive);
+      expect(decoded.manifest.homepage.workspaces.work.timesheetWeeks).toEqual([week]);
+      const oldManifest = JSON.parse(JSON.stringify(decoded.manifest));
+      delete oldManifest.homepage.workspaces.work.timesheetWeeks;
+      expect(decodeBackup(encodeBackup(oldManifest, decoded.assets).toString("base64")).manifest.homepage.workspaces.work.timesheetWeeks).toEqual([]);
+      saved.data.workspaces.work.timesheetWeeks = [];
+      expect((await send("/api/homepage/state", { revision: saved.revision, data: saved.data })).statusCode).toBe(200);
+      const latest = await snapshot();
+      await prisma.$transaction(tx => restoreConfiguration(tx, decoded.manifest, decoded.assets, latest.revision));
+      expect((await snapshot()).data.workspaces.work.timesheetWeeks).toEqual([week]);
+    } finally {
+      expect((await send("/api/homepage/state", { revision: (await snapshot()).revision, data: original.data })).statusCode).toBe(200);
+    }
+  });
   it("persists bundled background choices per workspace and preserves them through backup restore", async () => {
     const original = await snapshot();
     try {

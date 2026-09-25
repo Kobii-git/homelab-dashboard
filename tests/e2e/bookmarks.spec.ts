@@ -8,7 +8,7 @@ test("bookmarks save without checks, survive reload, filter, and open in a keybo
   await page.getByLabel("Username").fill("admin");
   await page.getByLabel("Password").fill("e2e-admin-password");
   await page.getByRole("button", { name: "Unlock" }).click();
-  const library = page.getByRole("region", { name: "Bookmarks" });
+  const library = page.getByRole("region", { name: "Bookmarks", exact: true });
   const bookmarksButton = page.getByRole("button", { name: "Bookmarks", exact: true });
   await expect(bookmarksButton).toHaveAttribute("aria-expanded", "false");
   await expect(library).toHaveCount(0);

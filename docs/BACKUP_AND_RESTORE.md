@@ -3,7 +3,7 @@
 ## Portable configuration in the app
 
 **Settings → Data & backups** exports a versioned ZIP with workspaces, bookmarks, collections, reading
-states, notes, prompt templates, layouts, PNG backgrounds, service/check definitions, host/API widget
+states, notes, Work timesheet weeks, prompt templates, layouts, PNG backgrounds, service/check definitions, host/API widget
 definitions, and allowlisted utility/home preferences. Environment-variable names may be listed as
 requirements; values, credential bindings, authentication, operational history, and deployment/network
 security settings are excluded. Environment-managed integrations remain configured on the destination
@@ -49,6 +49,11 @@ Built-in Tidal, Aurora, Blue hour, and Graphite backgrounds are stored as named 
 Their artwork ships with the app and is not duplicated into the archive. Uploaded PNGs remain included.
 Versions before v0.8.2 reject the new `wallpaper:` IDs. Before downgrading, save Plain as the background
 in both Home and Work, or restore a backup from before the new backgrounds were selected.
+
+Work timesheet weeks are included from v0.8.3. Older workspaces and archives default to an empty
+timesheet without changing layouts or saved notes. Versions before v0.8.3 reject the new Work field
+after it has been saved or exported. Retain a pre-upgrade database backup for downgrade; export or copy
+new timesheet notes before restoring an older backup. No database table migration is needed.
 
 ## Full disaster recovery
 

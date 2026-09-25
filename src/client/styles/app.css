@@ -5126,6 +5126,23 @@ label textarea {
 .hp-card-title { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
 .hp-card-title h3 { margin:0; }
 .hp-card-title h3 small { color:var(--text-muted); font-weight:400; }
+.hp-timesheet { margin:8px 0 28px; padding-top:20px; border-top:1px solid var(--line-soft); }
+.hp-timesheet h3 { display:flex; align-items:center; gap:8px; font-size:16px; }
+.hp-timesheet .muted-copy { margin:6px 0 0; font-size:12px; }
+.hp-timesheet-range { font-size:12px; font-variant-numeric:tabular-nums; }
+.hp-timesheet-days { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; }
+.hp-timesheet-day { min-width:0; padding:12px; border:1px solid var(--border); border-radius:10px; background:var(--surface); }
+.hp-timesheet-day.is-today { border-color:var(--hp-accent); }
+.hp-timesheet-day label { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px; margin-bottom:8px; font-size:12px; }
+.hp-timesheet-day label span { color:var(--text-muted); }
+.browser-home .hp-timesheet-day textarea { display:block; width:100%; min-width:0; min-height:100px; padding:0; border:0; border-radius:2px; background:transparent; resize:vertical; font-size:14px; line-height:1.6; }
+.browser-home .hp-timesheet-day textarea:focus-visible { outline:2px solid var(--hp-accent); outline-offset:4px; }
+.hp-timesheet-footer { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-top:10px; }
+.hp-timesheet-footer p { margin:0; color:var(--text-muted); font-size:12px; }
+.hp-timesheet-conflict { max-height:120px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--text); font-size:12px; border-top:1px solid var(--border); padding-top:8px; }
+.hp-timesheet button { min-width:36px; min-height:36px; }
+@container (min-width:550px) { .hp-timesheet-days { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@container (min-width:1000px) { .hp-timesheet-days { grid-template-columns:repeat(5,minmax(0,1fr)); } }
 .hp-card input:not([type="checkbox"]), .hp-card select, .hp-card textarea, .hp-modal input:not([type="checkbox"]), .hp-modal textarea, .hp-modal select { width:100%; min-width:0; }
 .hp-card label, .hp-modal label { display:grid; gap:6px; font-size:12px; color:var(--text-muted); }
 .hp-grow { flex:1; }

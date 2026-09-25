@@ -17,20 +17,26 @@ import { download, newHomepageId, type HomepageController } from "./useHomepage"
 export function CopyPreview({
   text,
   onClose,
+  title = "Copy selected items",
+  description = "Review this text before copying. Nothing is sent to ChatGPT.",
+  copiedMessage = "Copied. Paste into ChatGPT when you are ready.",
 }: {
   text: string;
   onClose: () => void;
+  title?: string;
+  description?: string;
+  copiedMessage?: string;
 }) {
   const [notice, setNotice] = useState("");
   return (
     <ModalSurface
-      ariaLabel="Copy selected items"
+      ariaLabel={title}
       backdropClassName="modal-backdrop"
       className="hp-modal"
       onClose={onClose}
     >
-      <h2>Copy selected items</h2>
-      <p>Review this text before copying. Nothing is sent to ChatGPT.</p>
+      <h2>{title}</h2>
+      <p>{description}</p>
       <label>
         Text to copy
         <textarea
@@ -47,7 +53,7 @@ export function CopyPreview({
           onClick={async () => {
             try {
               await navigator.clipboard.writeText(text);
-              setNotice("Copied. Paste into ChatGPT when you are ready.");
+              setNotice(copiedMessage);
             } catch {
               setNotice(
                 "Clipboard unavailable. Select the text above and copy it manually.",

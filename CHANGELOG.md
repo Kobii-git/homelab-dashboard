@@ -6,6 +6,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.8.3] - 2026-09-25
+
+### Added
+- Work-only weekly timesheet notes with Monday–Friday boxes, automatic saving, week history, and a copy-week preview.
+- Day-level conflict recovery, in-memory draft protection, and timesheet notes in configuration backups. Existing layouts and notes are preserved.
+
 ## [0.8.2] - 2026-09-25
 
 ### Added

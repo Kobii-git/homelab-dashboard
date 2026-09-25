@@ -2,14 +2,14 @@
 
 A private, self-hosted browser homepage and command center for your bookmarks, work, and home services. Home and Work organize everyday browsing and planning; Operations monitors lab health and useful read-only signals over LAN/VPN.
 
-![Version](https://img.shields.io/badge/version-0.8.2-2dd4bf)
+![Version](https://img.shields.io/badge/version-0.8.3-2dd4bf)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
 
 ## Features
 
-- **Home, Work, and Operations** - shared personal/work layouts, Google search, independently selected homepage and sidebar bookmark shortcuts, folder dropdowns, favorites, saved notes and scratchpads, reading lists, prompt templates, and a browser-local focus timer; Operations retains the monitoring command center
+- **Home, Work, and Operations** - shared personal/work layouts, Google search, independently selected homepage and sidebar bookmark shortcuts, folder dropdowns, favorites, saved notes and scratchpads, weekly Work timesheet notes, reading lists, prompt templates, and a browser-local focus timer; Operations retains the monitoring command center
 - **Personal context** - optional read-only Google Calendar agenda, Gmail unread Inbox count, and Todoist overdue/today links with isolated provider failures and stale-cache fallback
 - **Calendar dates** - the Launchpad uses the device’s local time for timed events, keeps all-day dates on their intended day, and includes ongoing multi-day events; mail and storage cards flag cached data when providers are unavailable
 - **Media and storage** - optional Plex recently-added, Radarr upcoming, TMDB discovery, and TrueNAS capacity/health modules; TrueNAS health also appears in Operations
@@ -36,7 +36,7 @@ Remote SSH/RDP/VNC access, Guacamole, saved credentials, vaults, alert channels,
 
 ## Current Scope
 
-Version `0.8.2` is a focused service launchpad and daily-operations command center with service health, lab vitals, threshold-aware monitoring, optional read-only utilities and AI briefings, and safe runtime diagnostics. The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles, network discovery, Docker discovery, Hyper-V discovery, or built-in HTTPS termination.
+Version `0.8.3` is a focused service launchpad and daily-operations command center with service health, lab vitals, threshold-aware monitoring, optional read-only utilities and AI briefings, and safe runtime diagnostics. The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles, network discovery, Docker discovery, Hyper-V discovery, or built-in HTTPS termination.
 
 The active database models are `Resource`, `DashboardGroup`, `HealthCheck`, `HealthResult`, `HostMonitor`, `HostMetricSample`, `IntegrationSource`, `IntegrationSample`, `ApiWidget`, `ApiWidgetSample`, `AdminAccount`, `SystemConfig`, `HomepageState`, and `HomepageAsset`.
 
@@ -275,7 +275,7 @@ Every branch build also publishes a commit-labelled `sha-*` tag and signs the di
 
 ## Versioning
 
-Current: **v0.8.2**
+Current: **v0.8.3**
 
 Verify the running build:
 

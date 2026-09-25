@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { builtInBackgrounds } from "./backgrounds.js";
+import { timesheetWeeksSchema } from "./timesheet.js";
 
 export const workspaceIdSchema = z.enum(["home", "work"]);
 export type WorkspaceId = z.infer<typeof workspaceIdSchema>;
@@ -100,7 +101,7 @@ export const homepageDataSchema = z
     workspaces: z
       .object({
         home: workspaceSchema,
-        work: workspaceSchema,
+        work: workspaceSchema.safeExtend({ timesheetWeeks: timesheetWeeksSchema }),
       })
       .strict(),
     collections: z
@@ -163,7 +164,7 @@ export function defaultHomepage(): HomepageData {
   return {
     workspaces: {
       home: { notes: "", savedNotes: [], layout: defaultLayout(false) },
-      work: { notes: "", savedNotes: [], layout: defaultLayout(true) },
+      work: { notes: "", savedNotes: [], layout: defaultLayout(true), timesheetWeeks: [] },
     },
     collections: [],
     prompts: [],

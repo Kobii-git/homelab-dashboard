@@ -3,6 +3,7 @@ import { ServiceLauncher } from "./features/services/ServiceLauncher";
 import { ModalSurface } from "./components/ModalSurface";
 import { Gauge, LayoutDashboard, Server, Settings, Shield, StickyNote } from "lucide-react";
 import { NotesPage } from "./features/homepage/NotesPage";
+import { TimesheetDraftProvider, useTimesheetDraftState } from "./features/homepage/TimesheetDrafts";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppSidebar } from "./components/AppSidebar";
@@ -302,6 +303,7 @@ function applyLocalOrder(current: AppData, orderedIds: string[]): AppData {
 }
 
 export function App() {
+  const timesheetDrafts = useTimesheetDraftState();
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [setupStatus, setSetupStatus] = useState<{ firstRun: boolean; needsAccount: boolean; needsSetupCode: boolean } | null>(null);
   const [setupLoading, setSetupLoading] = useState(false);
@@ -733,7 +735,7 @@ export function App() {
   }
 
   return (
-    <div className={`app-shell pro-shell bookmark-shell sidebar-${sidebarMode}`}>
+    <TimesheetDraftProvider value={timesheetDrafts}><div className={`app-shell pro-shell bookmark-shell sidebar-${sidebarMode}`}>
       <AppSidebar
         navItems={navItems}
         view={view}
@@ -859,6 +861,6 @@ export function App() {
             </form>
         </ModalSurface>
       ) : null}
-    </div>
+    </div></TimesheetDraftProvider>
   );
 }
