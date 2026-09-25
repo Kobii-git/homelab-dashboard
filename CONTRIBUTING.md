@@ -47,7 +47,7 @@ tests/        Vitest routes and Playwright UI/accessibility tests
 
 ## Versioning
 
-This project uses [Semantic Versioning](https://semver.org). Tag releases as `vMAJOR.MINOR.PATCH` on `main`.
+This project uses [Semantic Versioning](https://semver.org). Bump `package.json` and the root lockfile versions for shipped app changes, and update the README and changelog. The signed-in header displays that version so operators can verify updates. Tag releases as `vMAJOR.MINOR.PATCH` on `main`.
 
 The canonical repository is [Kobii-git/homelab-dashboard on GitHub](https://github.com/Kobii-git/homelab-dashboard). Use authenticated HTTPS or SSH. Keep both long-lived branches available:
 

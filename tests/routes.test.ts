@@ -1,3 +1,4 @@
+import { APP_VERSION } from "../src/shared/version";
 import http from "node:http";
 import tls from "node:tls";
 import crypto from "node:crypto";
@@ -1879,7 +1880,7 @@ describe("api routes", () => {
       database: { ok: boolean; counts: { resources: number } };
       schedulers: { health: { enabled: boolean }; metrics: { enabled: boolean } };
     }>();
-    expect(body.build.version).toBe("0.8.0");
+    expect(body.build.version).toBe(APP_VERSION);
     expect(body.auth.source).toBe("env");
     expect(body.database.ok).toBe(true);
     expect(body.database.counts.resources).toBeGreaterThanOrEqual(0);

@@ -2,7 +2,7 @@
 
 A private, self-hosted browser homepage and command center for your bookmarks, work, and home services. Home and Work organize everyday browsing and planning; Operations monitors lab health and useful read-only signals over LAN/VPN.
 
-![Version](https://img.shields.io/badge/version-0.8.0-2dd4bf)
+![Version](https://img.shields.io/badge/version-0.8.1-2dd4bf)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -14,7 +14,7 @@ A private, self-hosted browser homepage and command center for your bookmarks, w
 - **Calendar dates** - the Launchpad uses the device’s local time for timed events, keeps all-day dates on their intended day, and includes ongoing multi-day events; mail and storage cards flag cached data when providers are unavailable
 - **Media and storage** - optional Plex recently-added, Radarr upcoming, TMDB discovery, and TrueNAS capacity/health modules; TrueNAS health also appears in Operations
 - **Browser home and bookmarks** - dedicated bookmark management, nested collections, browser HTML import with preview, HTML/JSON export, bulk moves, trash/restore, and cross-device conflict protection; see [Browser home](docs/BROWSER_HOME.md)
-- **Homepage utilities** - responsive module cards, an optional balanced layout preset, three-day Open-Meteo forecasts with condition icons, cached releases, configurable widgets/backgrounds, and normal ChatGPT links using your existing account without new AI API usage
+- **Homepage utilities** - full-width, flat homepage sections, an optional balanced layout preset, three-day Open-Meteo forecasts with condition icons, cached releases, configurable widgets/backgrounds, and normal ChatGPT links using your existing account without new AI API usage
 - **Status summaries** - compact service/integration health strips with expandable details, neutral unknown states, and cached values retained in their modules
 - **Portable configuration** - validated ZIP export/restore with uploaded assets, safety-download confirmation, authentication exclusion, and disabled restored monitoring; see [Backups](docs/BACKUP_AND_RESTORE.md)
 - **Private HTTPS option** - pinned Caddy/Cloudflare DNS-01 deployment for LAN/VPN use without public app exposure; see [Private HTTPS](docs/PRIVATE_HTTPS.md)
@@ -36,7 +36,7 @@ Remote SSH/RDP/VNC access, Guacamole, saved credentials, vaults, alert channels,
 
 ## Current Scope
 
-Version `0.8.0` is a focused service launchpad and daily-operations command center with service health, lab vitals, threshold-aware monitoring, optional read-only utilities and AI briefings, and safe runtime diagnostics. The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles, network discovery, Docker discovery, Hyper-V discovery, or built-in HTTPS termination.
+Version `0.8.1` is a focused service launchpad and daily-operations command center with service health, lab vitals, threshold-aware monitoring, optional read-only utilities and AI briefings, and safe runtime diagnostics. The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles, network discovery, Docker discovery, Hyper-V discovery, or built-in HTTPS termination.
 
 The active database models are `Resource`, `DashboardGroup`, `HealthCheck`, `HealthResult`, `HostMonitor`, `HostMetricSample`, `IntegrationSource`, `IntegrationSample`, `ApiWidget`, `ApiWidgetSample`, `AdminAccount`, `SystemConfig`, `HomepageState`, and `HomepageAsset`.
 
@@ -175,7 +175,7 @@ API widgets are configured in **Settings > Integrations & system > API widgets**
 
 ### Optional Launchpad Utilities
 
-Home and Work search always opens Google. In **Settings > Appearance & widgets**, choose homepage shortcuts and sidebar shortcuts independently: select individual links or entire folders, which open as dropdowns. You can also choose accent colors, backgrounds, spacing, and shortcut tiles or compact buttons. The homepage Services section displays ungrouped services directly and adds headings only for named groups.
+Home and Work search always opens Google. The top bookmark bar shows compact folder dropdowns, including nested folders. It defaults to your workspace’s top-level folders; individual bookmarks stay inside the menus, Favorites, or the sidebar. In **Settings > Appearance & widgets**, choose top bookmark folders separately from sidebar links and folders. Older link-only homepage selections display the top-level folders without changing saved bookmarks. You can also choose accent colors, full-width backgrounds, and spacing. The homepage Services section displays ungrouped services directly and adds headings only for named groups.
 
 Configure weather and release tracking in **Settings > Integrations & system > Launchpad utilities**. Weather uses a normalized Open-Meteo location and can display metric or imperial temperatures. Release tracking accepts up to 12 public GitHub repositories in `owner/repository` format; known service templates can suggest repositories, but additions are not persisted until you confirm with **Save utilities**.
 
@@ -275,13 +275,15 @@ Every branch build also publishes a commit-labelled `sha-*` tag and signs the di
 
 ## Versioning
 
-Current: **v0.8.0**
+Current: **v0.8.1**
 
 Verify the running build:
 
 ```sh
 curl -s "${APP_ORIGIN}/api/version"
 ```
+
+The signed-in app displays the loaded UI version in the top bar, with its short commit ID when supplied by the build. If `/api/version` reports a different server version, a reload action appears. This avoids displaying a newer server version over an older cached UI.
 
 Public `/api/version` and the login UI expose only the package version. Authenticated Runtime
 Health contains the Git SHA and build time.

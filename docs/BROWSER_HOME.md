@@ -5,10 +5,7 @@ monitoring view. The selected workspace is remembered separately in each browser
 
 ## Search and ChatGPT
 
-The central box defaults to Google. Enter opens current Google results in a new tab, even when a
-bookmark suggestion matches. Choose **My bookmarks** to search locally; switch between the current
-workspace and all workspaces. Arrow keys select local results, Enter opens them in bookmark mode,
-and Escape dismisses suggestions. Typing does not send partial queries to a search provider.
+The central search box opens Google results in a new tab when you press Enter. Typing does not send partial queries to a search provider. To search saved links, open **Bookmarks → Manage bookmarks** and use **Find a saved site…**.
 
 The **ChatGPT** shortcut in Favorites opens your normal ChatGPT account in another tab. Pin conversation URLs as bookmarks.
 Work's prompt library stores reusable text with edit, delete, and copy controls. **Copy selected items**
@@ -23,7 +20,9 @@ collection, favorite status, notes, and a reading state. The pencil opens a dedi
 Bookmarks have explicit classification and cannot be monitored. Existing disabled websites are
 classified once during upgrade; existing service IDs, groups, and monitoring history are retained.
 
-The slim vertical bookmarks bar shows top-level folders and unfiled links for the selected workspace.
+The top bar on Home and Work shows compact folder buttons, each opening a dropdown list of bookmarks. Nested folders open submenus. By default it follows the workspace’s top-level folders; select specific folders under **Settings → Appearance & widgets → Customize home/work → Top bookmark folders**. The bar contains folders, while individual favorites remain in Favorites. Older saved link-only selections display top-level folders without rewriting saved bookmarks. An explicitly empty selection stays empty.
+
+The slim vertical bookmarks bar independently shows top-level folders and unfiled links for the selected workspace.
 Click a folder to open its small side menu, or click a link to open it in a new tab. It shows the first
 24 shortcuts; **Bookmarks** (and **More bookmarks** for larger libraries) opens the complete library.
 Dashboard, Services, and Notes sit above the shortcuts, with Settings below. Collapse the bar to icons or hide it;
@@ -33,7 +32,7 @@ The bar opens a compact bookmark menu without a backdrop. Hover or click a folde
 submenu to the side. Use Up/Down to move, Right or Enter to open a folder, and Left or Escape to go
 back. Escape at the root closes the menu and returns focus to its button; clicking elsewhere dismisses
 it and lets you use that control immediately. On narrow screens, folders replace the menu's contents
-and a **Back** row returns to the parent folder. Search saved links using **My bookmarks** on the homepage.
+and a **Back** row returns to the parent folder. Search saved links in **Manage bookmarks**.
 The menu is available from every signed-in page. **Switch to Home/Work bookmarks** follows
 the same selected workspace as the homepage and Settings. Adding and editing stay in the manager.
 
@@ -57,13 +56,12 @@ supported; use HTML for browser migration or the configuration archive for a com
 
 **Settings → Appearance & widgets → Customize home/work** controls widget visibility, order, width,
 accent, clock, and backgrounds.
-Homepage modules use bordered cards in a responsive one-, two-, or three-column grid. Wide modules
-span the full row. Existing widget order, widths, visibility, and presentation are preserved.
+Homepage modules use flat sections with subtle dividers in a responsive one-, two-, or three-column grid. Content and workspace backgrounds extend across the available screen width, including wide monitors. Wide modules span the full row. Existing widget order, widths, visibility, and presentation are preserved.
 Choose **Always open** or **Dropdown** for each section:
 dedicated content stays visible, while a dropdown opens when you click its title (or press Enter/Space).
 You can mix both styles. Collapsing a section preserves its unsaved draft while you stay in that workspace.
 Display choices sync with the saved layout; dropdowns start closed when the workspace opens.
-**Balanced arrangement** previews a compact ordering with normal-width cards, except wide Notes and
+**Balanced arrangement** previews a compact ordering with normal-width sections, except wide Notes and
 Media. It preserves enabled widgets, dropdown choices, shortcut selections, accents, and backgrounds.
 Choose **Save layout** to apply it, or **Cancel preview** to keep the saved layout.
 **Bookmarks in sidebar** controls the shortcut's visibility;
@@ -135,7 +133,7 @@ See [configuration backups](BACKUP_AND_RESTORE.md) and the [optional feature bac
 
 The strip beneath the dashboard header summarizes service health and the integrations enabled in the
 current workspace. **View details** expands provider errors and links to service details or Settings.
-Cached values remain visible in their cards. Unknown or unconfigured signals remain neutral rather
+Cached values remain visible in their sections. Unknown or unconfigured signals remain neutral rather
 than appearing healthy. Operations puts its attention briefing before metrics and the service directory.
 The optional public status page uses the same surfaces and follows the device's light/dark preference.
 
@@ -143,3 +141,7 @@ Favorites, shortcuts, and services share consistent icon frames. Service logos u
 same-origin proxy; ChatGPT and YouTube bookmark logos are bundled locally. Other bookmarks and failed
 images use two-letter initials. No arbitrary bookmark favicon lookup is performed. Logo sources and
 notices are linked from **Settings → Integrations & system → Account & runtime → Credits**.
+
+## Verify an update
+
+The top app bar keeps the loaded UI version visible on every signed-in page, alongside the commit ID when supplied by the build. The version is read from `package.json`. When the server reports a different version on load or browser focus, **Reload for v…** refreshes the page. Runtime Health retains the full authenticated build diagnostics.

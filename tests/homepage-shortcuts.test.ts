@@ -20,12 +20,12 @@ function fixture(): HomepageSnapshot {
 }
 
 describe("independent bookmark shortcuts", () => {
-  it("uses favorites centrally and top-level items in the sidebar for older layouts", () => {
+  it("uses top-level folder dropdowns centrally and keeps sidebar links for older layouts", () => {
     const state = fixture();
     const center = workspaceShortcuts(state, "home", null, "center");
     const sidebar = workspaceShortcuts(state, "home", null, "sidebar");
-    expect(center.links.map(b => b.id)).toEqual(["favorite"]);
-    expect(center.folders).toEqual([]);
+    expect(center.links).toEqual([]);
+    expect(center.folders.map(c => c.id)).toEqual(["folder"]);
     expect(sidebar.links.map(b => b.id)).toEqual(["root"]);
     expect(sidebar.folders.map(c => c.id)).toEqual(["folder"]);
   });
@@ -33,8 +33,17 @@ describe("independent bookmark shortcuts", () => {
     const state = fixture();
     const selection = { bookmarkIds: ["root", "work", "trashed", "missing"], collectionIds: ["nested", "work", "missing"] };
     const selected = workspaceShortcuts(state, "home", selection, "center");
-    expect(selected.links.map(b => b.id)).toEqual(["root"]);
+    expect(selected.links).toEqual([]);
     expect(selected.folders.map(c => c.id)).toEqual(["nested"]);
     expect(workspaceShortcuts(state, "home", { bookmarkIds: [], collectionIds: [] }, "sidebar")).toEqual({ links: [], folders: [] });
+  });
+  it("shows folders for old link-only selections without mutating saved data, and honors an explicitly empty bar", () => {
+    const state = fixture();
+    const selection = { bookmarkIds: ["favorite"], collectionIds: [] };
+    const original = structuredClone(selection);
+    expect(workspaceShortcuts(state, "home", selection, "center").folders.map(c => c.id)).toEqual(["folder"]);
+    expect(selection).toEqual(original);
+    expect(workspaceShortcuts(state, "home", { bookmarkIds: [], collectionIds: [] }, "center")).toEqual({ links: [], folders: [] });
+    expect(workspaceShortcuts(state, "work", null, "center").folders.map(c => c.id)).toEqual(["work"]);
   });
 });

@@ -38,23 +38,23 @@ test("homepage and sidebar shortcuts stay independent, with neutral styling and 
       ids.push(state.bookmarks.find(b => b.name === name)!.id);
     }
     await page.reload();
-    await page.getByRole("button", { name: "Choose shortcuts", exact: true }).click();
+    await page.getByRole("button", { name: "Choose bookmark folders", exact: true }).click();
     await page.getByRole("button", { name: "Customize home", exact: true }).click();
     const panel = page.getByRole("region", { name: "Customize homepage" });
-    const center = panel.getByRole("group", { name: "Homepage shortcuts", exact: true });
+    const center = panel.getByRole("group", { name: "Top bookmark folders", exact: true });
     const sidebar = panel.getByRole("group", { name: "Sidebar shortcuts", exact: true });
     await center.getByRole("button", { name: "Clear selection" }).click();
     await sidebar.getByRole("button", { name: "Clear selection" }).click();
-    await center.getByRole("checkbox", { name: /YouTube/ }).check();
+    await expect(center.getByRole("checkbox", { name: /YouTube/ })).toHaveCount(0);
     await center.getByRole("checkbox", { name: /Daily reading/ }).first().check();
     await sidebar.getByRole("checkbox", { name: /Reference desk/ }).check();
     await expect(sidebar.getByRole("checkbox", { name: /YouTube/ })).not.toBeChecked();
-    await expect(center.getByRole("checkbox", { name: /Reference desk/ })).not.toBeChecked();
+    await expect(center.getByRole("checkbox", { name: /Reference desk/ })).toHaveCount(0);
     await panel.getByLabel("Accent", { exact: true }).selectOption("blue");
     await panel.getByLabel("Background", { exact: true }).selectOption("none");
     await expect(panel.getByLabel("Card color", { exact: true })).toHaveCount(0);
     await panel.getByLabel("Spacing", { exact: true }).selectOption("compact");
-    await panel.getByLabel("Shortcut style", { exact: true }).selectOption("compact");
+    await expect(panel.getByLabel("Shortcut style", { exact: true })).toHaveCount(0);
     const preview = await new AxeBuilder({ page }).analyze();
     expect(preview.violations.filter(v => ["serious", "critical"].includes(v.impact ?? ""))).toEqual([]);
     await panel.getByRole("button", { name: "Save layout", exact: true }).click();
@@ -62,14 +62,14 @@ test("homepage and sidebar shortcuts stay independent, with neutral styling and 
     const primary = page.getByRole("navigation", { name: "Primary" });
     await primary.getByRole("button", { name: "Dashboard", exact: true }).click();
     await page.reload();
-    const shortcuts = page.getByRole("navigation", { name: "Homepage shortcuts" });
+    const shortcuts = page.getByRole("navigation", { name: "Bookmark folders" });
     const rail = page.getByRole("group", { name: "Bookmark shortcuts" });
-    await expect(shortcuts.getByRole("link", { name: "YouTube", exact: true })).toHaveAttribute("href", "https://www.youtube.com/");
+    await expect(shortcuts.getByRole("link")).toHaveCount(0);
     await expect(shortcuts.getByRole("link", { name: "Reference desk", exact: true })).toHaveCount(0);
     await expect(rail.getByRole("link", { name: "Reference desk", exact: true })).toHaveAttribute("href", "https://example.com/reference");
     await expect(rail.getByRole("link", { name: "YouTube", exact: true })).toHaveCount(0);
     await expect(page.locator(".browser-home")).toHaveClass(/hp-accent-blue hp-bg-none hp-spacing-compact/);
-    await expect(page.locator(".hp-start")).toHaveClass(/hp-shortcuts-compact/);
+    expect((await getState()).bookmarks.some(b => b.name === "YouTube")).toBe(true);
     const folder = shortcuts.getByRole("button", { name: "Daily reading", exact: true });
     await folder.focus();
     await folder.press("ArrowDown");
@@ -102,7 +102,7 @@ test("homepage and sidebar shortcuts stay independent, with neutral styling and 
     await save(state.data);
     await page.reload();
     await expect(shortcuts.getByRole("link")).toHaveCount(0);
-    await expect(shortcuts.getByRole("button", { name: /Keep your go-to places here/ })).toBeVisible();
+    await expect(shortcuts.getByRole("button", { name: "Add bookmark folders" })).toBeVisible();
     await expect(rail.getByRole("link", { name: "Reference desk", exact: true })).toBeHidden(); // Mobile uses the library menu.
     await page.setViewportSize({ width: 1440, height: 1000 });
     await expect(rail.getByRole("link", { name: "Reference desk", exact: true })).toBeVisible();

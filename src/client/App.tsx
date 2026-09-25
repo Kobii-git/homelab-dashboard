@@ -754,6 +754,10 @@ export function App() {
       />
 
       <div className="content-shell">
+        <div className="app-build-bar">
+          <span>Homelab Dashboard</span>
+          <BuildBadge showBuild />
+        </div>
         <div className="workspace-scroll">
           {error ? <div className="app-error">{error}</div> : null}
           {refreshing ? <div className="loading-strip" role="status"><InlineSpinner size={12} /> Refreshing</div> : null}

@@ -1210,7 +1210,7 @@ export function DashboardConsole({
 
   if (mode === "launchpad") {
     return (
-      <main className="view-shell dashboard-view launchpad-view">
+      <main className="view-shell dashboard-view launchpad-view homepage-shell">
         <BrowserHomepage username={username} now={now} settings={systemSettings} onOperations={() => setMode("operations")} onSettings={onOpenSettings} services={resources.filter(r => !isBookmark(r))} serviceDirectory={serviceDirectory} onInspectService={resource => setInspectedId(resource.id)} />
         {overlays}
       </main>

@@ -6,9 +6,10 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## Unreleased
+## [0.8.1] - 2026-09-25
 
 ### Added
+- Visible app version throughout the signed-in UI, plus the build commit when available and a reload action when the server version differs.
 - MIT license, production dependency notices, privacy/support/contribution guidance, and read-only PR validation.
 - Production security boundary with exact HTTPS origin/proxy validation, explicit
   outbound CIDR/host allowlists, pinned DNS connections, and metadata/special-address blocking.
@@ -70,6 +71,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The runtime container is non-root with a read-only root filesystem and no Linux capabilities.
 
 ### Fixed
+- Homepage colors and uploaded backgrounds fill the workspace, with flat sections instead of boxed widget tiles.
+- Compact top bookmark-folder dropdowns replace loose link tiles; individual favorites and sidebar selections stay separate.
 - Credentialed endpoint/poster requests enforce their configured origin; endpoint changes require reauthentication.
 - Password changes share an account-wide confirmation-attempt budget with reauthentication.
 - Target-excluded AI evidence omits raw diagnostics and widget text.

@@ -1,6 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { defaultLayout, type HomepageSnapshot } from "../../src/shared/homepage";
+import { APP_VERSION } from "../../src/shared/version";
 
 async function login(page: Page) {
   await page.goto("/");
@@ -18,16 +19,22 @@ async function visualFixture(page: Page) {
     const snapshot = await response.json() as HomepageSnapshot;
     const order = ["favorites", "weather", "prompts", "tasks", "services"];
     snapshot.data.workspaces.work.layout = defaultLayout(true);
-    snapshot.data.collections = [];
+    snapshot.data.collections = [
+      { id: "daily", name: "Everyday", parentId: null, workspaceId: "home", sortOrder: 0 },
+      { id: "reference", name: "Reference", parentId: "daily", workspaceId: "home", sortOrder: 0 },
+      { id: "projects", name: "Projects", parentId: null, workspaceId: "home", sortOrder: 1 },
+      { id: "work-tools", name: "Work tools", parentId: null, workspaceId: "work", sortOrder: 0 },
+    ];
     const layout = snapshot.data.workspaces.home.layout;
     layout.background = "none";
     layout.accent = "green";
+    layout.centerShortcuts = null;
     layout.widgets = layout.widgets.map(widget => ({ ...widget, enabled: order.includes(widget.id) || widget.id === "bookmarks", size: "normal", presentation: "section" }));
     layout.widgets.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
     snapshot.data.prompts = [{ id: "sample-prompt", title: "Plan the week", text: "Help me plan my week.", workspaceId: "home" }];
     snapshot.bookmarks = [
       { id: "sample-video", name: "YouTube", url: "https://www.youtube.com/", notes: "", favorite: true, workspaceId: "home", collectionId: null, readingState: "none", sortOrder: 0, deletedAt: null, updatedAt: "2026-09-25T10:00:00Z" },
-      { id: "sample-reference", name: "Reference desk", url: "https://example.com/", notes: "", favorite: true, workspaceId: "home", collectionId: null, readingState: "none", sortOrder: 1, deletedAt: null, updatedAt: "2026-09-25T10:00:00Z" },
+      { id: "sample-reference", name: "Reference desk", url: "https://example.com/", notes: "", favorite: true, workspaceId: "home", collectionId: "reference", readingState: "none", sortOrder: 1, deletedAt: null, updatedAt: "2026-09-25T10:00:00Z" },
     ];
     await route.fulfill({ json: snapshot });
   });
@@ -104,7 +111,7 @@ test("dashboard status, forecast icons, logo fallbacks, and container columns re
   await expect(favorites.getByRole("link", { name: "YouTube", exact: true }).locator(".site-icon")).toHaveText("YO");
   for (const width of [390, 768, 1440, 1920]) {
     await page.setViewportSize({ width, height: 1000 });
-    const available = await page.locator(".browser-home").evaluate(el => el.clientWidth);
+    const available = await page.locator(".hp-grid").evaluate(el => el.clientWidth);
     const columns = await page.locator(".hp-grid").evaluate(el => getComputedStyle(el).gridTemplateColumns.split(" ").length);
     expect(columns).toBe(available >= 1120 ? 3 : available >= 720 ? 2 : 1);
   }
@@ -262,4 +269,86 @@ test("login, setup, and public status use readable surfaces at all review sizes"
       }
     }
   }
+});
+
+test("folder dropdowns and workspace backgrounds fill large screens without restoring loose tiles", async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  await visualFixture(page);
+  await login(page);
+  const bar = page.getByRole("navigation", { name: "Bookmark folders" });
+  await expect(bar.getByRole("link")).toHaveCount(0);
+  const everyday = bar.getByRole("button", { name: "Everyday", exact: true });
+  await everyday.focus();
+  await everyday.press("ArrowDown");
+  const reference = page.getByRole("menuitem", { name: "Reference", exact: true });
+  await expect(reference).toBeFocused();
+  await reference.press("ArrowRight");
+  const link = page.getByRole("menuitem", { name: "Reference desk", exact: true });
+  await expect(link).toBeFocused();
+  await expect(link).toHaveAttribute("href", "https://example.com/");
+  await page.screenshot({ path: testInfo.outputPath("nested-folder-dropdown.png") });
+  await page.keyboard.press("Escape");
+  await expect(reference).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(everyday).toBeFocused();
+  await bar.getByRole("button", { name: "Projects", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "No bookmarks here yet" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByRole("navigation", { name: "Dashboard view" }).getByRole("button", { name: "Work", exact: true }).click();
+  await expect(bar.getByRole("button", { name: "Work tools", exact: true })).toBeVisible();
+  await expect(everyday).toHaveCount(0);
+  await page.getByRole("navigation", { name: "Dashboard view" }).getByRole("button", { name: "Home", exact: true }).click();
+
+  const home = page.locator(".browser-home");
+  for (const theme of ["dark", "light"]) {
+    if (await page.locator("html").getAttribute("data-theme") !== theme) await page.getByRole("button", { name: `Switch to ${theme} mode` }).click();
+    for (const width of [390, 1920, 2560]) {
+      await page.setViewportSize({ width, height: 1080 });
+      for (const background of ["dawn", "ocean", "asset"] as const) {
+        // Exercise the actual page background styles without writing user data.
+        await home.evaluate((el, preset) => {
+          el.classList.remove("hp-bg-none", "hp-bg-dawn", "hp-bg-ocean", "hp-bg-asset");
+          el.classList.add(`hp-bg-${preset}`);
+          (el as HTMLElement).style.backgroundImage = preset === "asset" ? 'linear-gradient(var(--hp-overlay),var(--hp-overlay)),url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=")' : "";
+        }, background);
+        const bounds = (await home.boundingBox())!;
+        const viewport = (await page.locator(".workspace-scroll").boundingBox())!;
+        expect(Math.abs(bounds.x - viewport.x)).toBeLessThan(1);
+        expect(Math.abs(bounds.width - viewport.width)).toBeLessThan(1);
+        expect(bounds.height).toBeGreaterThanOrEqual(viewport.height);
+        await expect(home).not.toHaveCSS("background-image", "none");
+        await expect(page.locator(".hp-widget").first()).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+        expect(await page.locator(".workspace-scroll").evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+        await page.screenshot({ path: testInfo.outputPath(`canvas-${theme}-${width}-${background}.png`) });
+      }
+      if (width === 1920) {
+        const result = await new AxeBuilder({ page }).analyze();
+        expect(result.violations.filter(v => ["serious", "critical"].includes(v.impact ?? ""))).toEqual([]);
+      }
+    }
+  }
+});
+
+test("loaded app version stays visible across navigation and distinguishes an updated server", async ({ page }) => {
+  await login(page);
+  const badge = page.locator(".app-build-bar .build-badge");
+  for (const width of [320, 1920, 2560]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const destination of ["Dashboard", "Services", "Notes", "Settings"]) {
+      await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: destination, exact: true }).click();
+      await expect(badge).toBeVisible();
+      await expect(badge).toContainText(`v${APP_VERSION}`);
+      await page.locator(".workspace-scroll").evaluate(el => { el.scrollTop = el.scrollHeight; });
+      await expect(badge).toBeInViewport();
+    }
+  }
+  await page.route("**/api/version", route => route.fulfill({ json: { version: "99.0.0" } }));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(badge).toContainText(`v${APP_VERSION}`);
+  await expect(badge).not.toContainText("99.0.0");
+  await expect(page.getByRole("button", { name: "Reload for v99.0.0" })).toBeVisible();
+  await page.unroute("**/api/version");
+  await page.getByRole("button", { name: "Reload for v99.0.0" }).click();
+  await expect(page.getByRole("button", { name: "Reload for v99.0.0" })).toHaveCount(0);
+  await expect(badge).toContainText(`v${APP_VERSION}`);
 });

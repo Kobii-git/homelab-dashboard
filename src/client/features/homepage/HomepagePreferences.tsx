@@ -105,9 +105,6 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
             <label>Spacing<select aria-label="Spacing" value={layout.spacing} onChange={e => updateLayout({ ...layout, spacing: e.target.value as HomeLayout["spacing"] })}>
               <option value="comfortable">Comfortable</option><option value="compact">Compact</option>
             </select></label>
-            <label>Shortcut style<select aria-label="Shortcut style" value={layout.shortcutStyle} onChange={e => updateLayout({ ...layout, shortcutStyle: e.target.value as HomeLayout["shortcutStyle"] })}>
-              <option value="tiles">Tiles</option><option value="compact">Compact buttons</option>
-            </select></label>
           </div>
           <label className="hp-file">
             Upload PNG background (up to 4 MiB / 4 megapixels)
