@@ -233,7 +233,7 @@ test("a 5,000-bookmark library keeps search and paged scrolling responsive", asy
   await page.getByRole("button", { name: "Bookmarks", exact: true }).click();
   await expect(page.getByRole("menu", { name: "Home bookmarks" }).locator(".hp-menu-link")).toHaveCount(60);
   await expect(page.locator(".bookmark-rail-items > a")).toHaveCount(24);
-  await expect(page.getByRole("button", { name: "More bookmarks", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "More sidebar links", exact: true })).toBeVisible();
   await page.getByRole("menuitem", { name: "Manage bookmarks", exact: true }).click();
   await expect(library.locator(".hp-link-row")).toHaveCount(60);
   const start = await page.evaluate(() => performance.now());
@@ -301,7 +301,8 @@ test("nested folders are managed in Settings and expand with the keyboard on Hom
   await expect(library).toHaveCount(0);
   const rail = page.getByRole("complementary", { name: "Bookmarks bar" });
   expect((await rail.boundingBox())!.width).toBeLessThanOrEqual(84);
-  const shortcut = rail.getByRole("button", { name: root, exact: true });
+  await expect(rail.getByRole("button", { name: root, exact: true })).toHaveCount(0);
+  const shortcut = page.getByRole("navigation", { name: "Bookmark folders" }).getByRole("button", { name: root, exact: true });
   await expect(shortcut).toBeVisible();
   await shortcut.focus();
   await shortcut.press("ArrowRight");
@@ -363,7 +364,8 @@ test("nested folders are managed in Settings and expand with the keyboard on Hom
   expect(searchBounds.y).toBeGreaterThanOrEqual(primaryBounds.y + primaryBounds.height);
   expect(searchBounds.width).toBeGreaterThanOrEqual(44);
   expect(searchBounds.height).toBeGreaterThanOrEqual(44);
-  await expect(shortcut).toBeHidden();
+  await expect(shortcut).toBeVisible();
+  await expect(rail.getByRole("button", { name: root, exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Bookmarks", exact: true }).click();
   for (const name of [root, "Web", "Design"]) await page.getByRole("menuitem", { name, exact: true }).click();
   await expect(reference).toBeVisible();

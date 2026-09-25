@@ -195,7 +195,7 @@ function UniversalSearch({
   );
 }
 
-function WeatherIcon({ code, isDay = true, size = 22 }: { code: number; isDay?: boolean; size?: number }) {
+export function WeatherIcon({ code, isDay = true, size = 22 }: { code: number; isDay?: boolean; size?: number }) {
   const Icon = [95, 96, 99].includes(code) ? CloudLightning
     : [71, 73, 75, 77, 85, 86].includes(code) ? Snowflake
     : [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code) ? CloudRain

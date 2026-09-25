@@ -65,7 +65,8 @@ test("balanced arrangement previews, cancels, and saves without changing workspa
     await nav.getByRole("button", { name: "Settings", exact: true }).click();
     await page.getByRole("button", { name: "Customize home", exact: true }).click();
     await panel.getByRole("button", { name: "Balanced arrangement", exact: true }).click();
-    await expect(panel.getByLabel("Favorites width", { exact: true })).toHaveValue("normal");
+    await expect(panel.getByLabel("Favorites width", { exact: true })).toHaveCount(0);
+    await expect(panel.getByLabel("Notes width", { exact: true })).toHaveValue("wide");
     await panel.getByRole("button", { name: "Cancel preview" }).click();
     expect((await (await page.request.get("/api/homepage")).json()).data).toEqual(original.data);
     await page.getByRole("button", { name: "Customize home", exact: true }).click();
@@ -78,8 +79,11 @@ test("balanced arrangement previews, cancels, and saves without changing workspa
     for (const widget of saved.data.workspaces.home.layout.widgets) {
       expect(widget.enabled).toBe(original.data.workspaces.home.layout.widgets.find(item => item.id === widget.id)!.enabled);
     }
-    expect(saved.data.workspaces.home.layout.widgets.slice(0, 3).map(widget => widget.id)).toEqual(["favorites", "weather", "services"]);
-    expect(saved.data.workspaces.home.layout.widgets.find(widget => widget.id === "favorites")?.size).toBe("normal");
+    for (const id of ["favorites", "weather", "bookmarks"]) {
+      const index = original.data.workspaces.home.layout.widgets.findIndex(w => w.id === id);
+      expect(saved.data.workspaces.home.layout.widgets[index]).toEqual(original.data.workspaces.home.layout.widgets[index]);
+    }
+    expect(saved.data.workspaces.home.layout.widgets.filter(w => !["favorites", "weather", "bookmarks"].includes(w.id))[0].id).toBe("services");
   } finally {
     const latest = await (await page.request.get("/api/homepage")).json();
     expect((await page.request.post("/api/homepage/state", { data: { revision: latest.revision, data: original.data } })).ok()).toBe(true);
@@ -100,15 +104,20 @@ test("dashboard status, forecast icons, logo fallbacks, and container columns re
   await page.keyboard.press("Escape");
   await expect(inspect).toBeFocused();
   await expect(page.locator(".hp-widget-tasks").getByText("Unavailable", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /^Weather:/ }).click();
   const forecast = page.locator(".hp-forecast");
   await expect(forecast.locator("svg")).toHaveCount(3);
   await expect(page.locator(".weather-current")).toContainText("Feels like 14°C");
-  const favorites = page.getByRole("region", { name: "Favorites", exact: true });
-  await expect(favorites.getByRole("link", { name: "ChatGPT", exact: true }).locator("img")).toHaveAttribute("src", "/logos/chatgpt.png");
-  await expect(favorites.getByRole("link", { name: "Reference desk", exact: true }).locator(".site-icon")).toHaveText("RD");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Favorites", exact: true }).click();
+  const favorites = page.getByRole("menu", { name: "Favorites", exact: true });
+  await expect(favorites.getByRole("menuitem", { name: "ChatGPT", exact: true }).locator("img")).toHaveAttribute("src", "/logos/chatgpt.png");
+  await expect(favorites.getByRole("menuitem", { name: "Reference desk", exact: true }).locator(".site-icon")).toHaveText("RD");
   await page.route("**/logos/youtube.png", route => route.fulfill({ status: 404, body: "" }));
   await page.reload();
-  await expect(favorites.getByRole("link", { name: "YouTube", exact: true }).locator(".site-icon")).toHaveText("YO");
+  await page.getByRole("button", { name: "Favorites", exact: true }).click();
+  await expect(favorites.getByRole("menuitem", { name: "YouTube", exact: true }).locator(".site-icon")).toHaveText("YO");
+  await page.keyboard.press("Escape");
   for (const width of [390, 768, 1440, 1920]) {
     await page.setViewportSize({ width, height: 1000 });
     const available = await page.locator(".hp-grid").evaluate(el => el.clientWidth);
@@ -130,6 +139,8 @@ test("dashboard status, forecast icons, logo fallbacks, and container columns re
   } }));
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(status.locator(".health-warning").filter({ hasText: "Weather: cached data" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Weather:/ })).toContainText("61°F");
+  await page.getByRole("button", { name: /^Weather:/ }).click();
   await expect(page.locator(".weather-current")).toContainText("61°F");
   await expect(page.locator(".compact-weather-card")).toContainText("Cached forecast");
   await expect(page.locator(".hp-forecast")).toHaveCount(0);
@@ -158,7 +169,7 @@ test("redesigned pages fit across themes and viewport sizes", async ({ page }, t
           if (await page.getByRole("button", { name: "Launchpad", exact: true }).isVisible()) await page.getByRole("button", { name: "Launchpad", exact: true }).click();
           await page.getByRole("navigation", { name: "Dashboard view" }).getByRole("button", { name: destination, exact: true }).click();
         } else await nav.getByRole("button", { name: destination, exact: true }).click();
-        if (destination === "Home") await expect(page.locator(".compact-weather-card")).toBeVisible();
+        if (destination === "Home") await expect(page.getByRole("button", { name: /^Weather:/ })).toBeVisible();
         if (destination === "Work" || destination === "Notes") await expect(page.getByLabel("Workspace notes")).toBeVisible();
         if (destination === "Operations") await expect(page.getByRole("heading", { name: "Lab Command Center" })).toBeVisible();
         if (destination === "Services") await expect(page.locator(".launcher-service").first()).toBeVisible();
@@ -188,7 +199,7 @@ test("narrow pages and zoom keep content within the viewport", async ({ page }) 
         if (await page.getByRole("button", { name: "Launchpad", exact: true }).isVisible()) await page.getByRole("button", { name: "Launchpad", exact: true }).click();
         await page.getByRole("navigation", { name: "Dashboard view" }).getByRole("button", { name: destination, exact: true }).click();
       } else await nav.getByRole("button", { name: destination, exact: true }).click();
-      if (destination === "Home") await expect(page.locator(".compact-weather-card")).toBeVisible();
+      if (destination === "Home") await expect(page.getByRole("button", { name: /^Weather:/ })).toBeVisible();
       if (destination === "Work" || destination === "Notes") await expect(page.getByLabel("Workspace notes")).toBeVisible();
       if (destination === "Settings") await expect(page.getByRole("button", { name: /^Customize (home|work)$/ })).toBeVisible();
       const overflow = await page.locator(".workspace-scroll").evaluate(root => {
@@ -351,4 +362,151 @@ test("loaded app version stays visible across navigation and distinguishes an up
   await page.getByRole("button", { name: "Reload for v99.0.0" }).click();
   await expect(page.getByRole("button", { name: "Reload for v99.0.0" })).toHaveCount(0);
   await expect(badge).toContainText(`v${APP_VERSION}`);
+});
+
+test("fixed header options cancel, save, reload, and remain isolated between workspaces", async ({ page }) => {
+  await login(page);
+  const original = await (await page.request.get("/api/homepage")).json() as HomepageSnapshot;
+  const state = structuredClone(original.data);
+  state.workspaces.home.layout.clock = "hidden";
+  for (const workspace of ["home", "work"] as const) for (const widget of state.workspaces[workspace].layout.widgets) {
+    if (["weather", "favorites"].includes(widget.id)) { widget.enabled = workspace === "home"; widget.size = "wide"; widget.presentation = "dropdown"; }
+  }
+  const nav = page.getByRole("navigation", { name: "Primary" });
+  const panel = page.getByRole("region", { name: "Customize homepage" });
+  const weather = page.getByRole("button", { name: /^Weather:/ });
+  const favorites = page.getByRole("button", { name: "Favorites", exact: true });
+  async function customize(workspace: string) {
+    await nav.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.getByRole("button", { name: `Customize ${workspace}`, exact: true }).click();
+  }
+  try {
+    expect((await page.request.post("/api/homepage/state", { data: { revision: original.revision, data: state } })).ok()).toBe(true);
+    await page.reload();
+    await expect(weather).toBeVisible();
+    await expect(page.locator(".hp-header-glance time")).toHaveCount(0);
+    await expect(page.locator(".hp-widget-weather, .hp-widget-favorites, .hp-favorites")).toHaveCount(0);
+    await favorites.focus();
+    await favorites.press("ArrowDown");
+    await expect(page.getByRole("menuitem", { name: "ChatGPT", exact: true })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(favorites).toBeFocused();
+    await favorites.click();
+    await page.getByRole("searchbox", { name: "Search Google" }).click();
+    await expect(page.getByRole("menu", { name: "Favorites" })).toHaveCount(0);
+    await customize("home");
+    for (const label of ["Weather beside clock", "Favorites dropdown"]) await panel.getByRole("checkbox", { name: label }).uncheck();
+    for (const label of ["Weather width", "Favorites width", "Weather display", "Favorites display"]) await expect(panel.getByLabel(label, { exact: true })).toHaveCount(0);
+    await panel.getByRole("button", { name: "Cancel preview" }).click();
+    expect((await (await page.request.get("/api/homepage")).json()).data).toEqual(state);
+    await page.getByRole("button", { name: "Customize home", exact: true }).click();
+    for (const label of ["Weather beside clock", "Favorites dropdown"]) await panel.getByRole("checkbox", { name: label }).uncheck();
+    await panel.getByRole("button", { name: "Save layout", exact: true }).click();
+    await expect(panel).toHaveCount(0);
+    await nav.getByRole("button", { name: "Dashboard", exact: true }).click();
+    await page.reload();
+    await expect(weather).toHaveCount(0); await expect(favorites).toHaveCount(0);
+    const saved = await (await page.request.get("/api/homepage")).json() as HomepageSnapshot;
+    expect(saved.data.workspaces.work).toEqual(state.workspaces.work);
+    expect(saved.data.workspaces.home.layout.widgets).toEqual(state.workspaces.home.layout.widgets.map(w => ["weather", "favorites"].includes(w.id) ? { ...w, enabled: false } : w));
+    await page.getByRole("navigation", { name: "Dashboard view" }).getByRole("button", { name: "Work", exact: true }).click();
+    await expect(weather).toHaveCount(0); await expect(favorites).toHaveCount(0);
+    await customize("work");
+    for (const label of ["Weather beside clock", "Favorites dropdown"]) await panel.getByRole("checkbox", { name: label }).check();
+    await panel.getByRole("button", { name: "Save layout", exact: true }).click();
+    await expect(panel).toHaveCount(0);
+    await nav.getByRole("button", { name: "Dashboard", exact: true }).click();
+    await expect(weather).toBeVisible(); await expect(favorites).toBeVisible();
+    await expect(page.locator(".hp-header-glance time")).toBeVisible();
+    await page.getByRole("navigation", { name: "Dashboard view" }).getByRole("button", { name: "Home", exact: true }).click();
+    await expect(weather).toHaveCount(0); await expect(favorites).toHaveCount(0);
+  } finally {
+    const latest = await (await page.request.get("/api/homepage")).json();
+    expect((await page.request.post("/api/homepage/state", { data: { revision: latest.revision, data: original.data } })).ok()).toBe(true);
+  }
+});
+
+test("weather and Favorites disclosures stay bounded and keyboard accessible on saved backgrounds", async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  await visualFixture(page);
+  await page.route("**/api/dashboard", async route => {
+    const dashboard = await (await route.fetch()).json();
+    const resource = dashboard.groups.flatMap((g: { resources: unknown[] }) => g.resources)[0];
+    resource.name = "Inspect sample host"; resource.favorite = true; resource.url = null;
+    await route.fulfill({ json: dashboard });
+  });
+  await login(page);
+  for (const theme of ["dark", "light"]) {
+    if (await page.locator("html").getAttribute("data-theme") !== theme) await page.getByRole("button", { name: `Switch to ${theme} mode` }).click();
+    for (const width of [320, 390, 768, 1440, 1920]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.locator(".browser-home").evaluate(el => { el.classList.remove("hp-bg-none"); el.classList.add("hp-bg-ocean"); });
+      for (const kind of ["weather", "favorites"]) {
+        const trigger = page.getByRole("button", { name: kind === "weather" ? /^Weather:/ : "Favorites", exact: true });
+        await trigger.focus(); await trigger.press("Enter");
+        const popup = page.getByRole(kind === "weather" ? "dialog" : "menu", { name: kind === "weather" ? "Weather details" : "Favorites", exact: true });
+        await expect(popup).toBeVisible();
+        const box = (await popup.boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
+        expect(await popup.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+        if (width === 1440) {
+          const result = await new AxeBuilder({ page }).analyze();
+          expect(result.violations.filter(v => ["serious", "critical"].includes(v.impact ?? ""))).toEqual([]);
+        }
+        await page.screenshot({ path: testInfo.outputPath(`${kind}-${theme}-${width}.png`) });
+        await page.keyboard.press("Escape"); await expect(trigger).toBeFocused();
+      }
+    }
+  }
+  const favorites = page.getByRole("button", { name: "Favorites", exact: true });
+  await favorites.click();
+  await page.getByRole("menuitem", { name: "Inspect sample host", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape"); await expect(favorites).toBeFocused();
+  const weather = page.getByRole("button", { name: /^Weather:/ });
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.locator("html").evaluate(el => { el.style.zoom = "2"; });
+  for (const trigger of [weather, favorites]) {
+    await trigger.click();
+    const popup = page.locator(".hp-weather-popup, .hp-bookmark-popup");
+    const bounds = (await popup.boundingBox())!;
+    expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(1281);
+    await page.keyboard.press("Escape");
+  }
+  await page.locator("html").evaluate(el => { el.style.zoom = ""; });
+  await weather.click();
+  await page.getByRole("button", { name: "Location & units", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("dialog", { name: "Weather details" })).toHaveCount(0);
+  await weather.click();
+  await page.getByRole("searchbox", { name: "Search Google" }).click();
+  await expect(page.getByRole("dialog", { name: "Weather details" })).toHaveCount(0);
+  await expect(page.getByRole("searchbox", { name: "Search Google" })).toBeFocused();
+  await weather.click();
+  await page.getByRole("button", { name: "Location & units", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Launchpad utilities", exact: true })).toBeVisible();
+});
+
+test("header weather stays available while loading and preserves cached readings after refresh failure", async ({ page }) => {
+  await visualFixture(page);
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/api/utilities/summary", async route => { await pending; await route.fallback(); });
+  try {
+    await login(page);
+    const weather = page.getByRole("button", { name: /^Weather:/ });
+    await expect(weather).toContainText("Loading");
+    await weather.click();
+    await expect(page.getByRole("dialog", { name: "Weather details" })).toContainText("Loading");
+    release();
+    await expect(weather).toContainText("16°C");
+    await page.keyboard.press("Escape");
+    await page.route("**/api/utilities/summary", route => route.abort());
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(weather).toContainText("Cached");
+    await expect(weather).toContainText("16°C");
+    await weather.click();
+    await expect(page.getByRole("dialog", { name: "Weather details" })).toContainText("Cached forecast");
+    await expect(page.locator(".hp-forecast svg")).toHaveCount(3);
+  } finally { release(); }
 });

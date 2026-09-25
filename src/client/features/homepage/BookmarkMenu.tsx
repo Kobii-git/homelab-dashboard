@@ -1,5 +1,6 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useAnchoredPosition } from "../../components/useAnchoredPosition";
 import { SiteIcon } from "../../components/SiteIcon";
 import { ArrowLeft, Bookmark, ChevronDown, ChevronRight, Folder, Settings2, Repeat2 } from "lucide-react";
 import type { WorkspaceId } from "../../../shared/homepage";
@@ -164,31 +165,15 @@ export function BookmarkMenu({ home, workspace, onWorkspace, onManage, folder, l
   </>;
 }
 
-function BookmarkPopup({ id, owner, label, anchor, nested, focus, before, after, count, renderRows, onBack, onTab, onScroll, onPointerEnter }: {
+export function BookmarkPopup({ id, owner, label, anchor, nested, focus, before, after, count, renderRows, onBack, onTab, onScroll, onPointerEnter, moreLabel = "Show more bookmarks" }: {
+  moreLabel?: string;
   id: string; owner: string; label: string; anchor: HTMLElement; nested: boolean; focus: boolean;
   before: ReactNode; after: ReactNode; count: number; renderRows: (limit: number) => ReactNode;
   onBack: () => void; onTab: () => void; onScroll: () => void; onPointerEnter: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [limit, setLimit] = useState(60);
-  const [position, setPosition] = useState({ left: 0, top: 0 });
-  useLayoutEffect(() => {
-    function place() {
-      if (!ref.current) return;
-      const rect = anchor.getBoundingClientRect();
-      const { width, height } = ref.current.getBoundingClientRect();
-      const left = nested ? (rect.right + width + 4 <= window.innerWidth - 8 ? rect.right + 4 : rect.left - width - 4) : rect.left;
-      const top = nested ? rect.top - 6 : rect.bottom + 4;
-      setPosition({ left: Math.max(8, Math.min(left, window.innerWidth - width - 8)), top: Math.max(8, Math.min(top, window.innerHeight - height - 8)) });
-    }
-    place();
-    // Parent flyouts finish positioning in the same commit. Measure again once
-    // their new screen positions have been applied, before following the pointer.
-    const frame = window.requestAnimationFrame(place);
-    window.addEventListener("resize", place);
-    window.addEventListener("scroll", place, true);
-    return () => { window.cancelAnimationFrame(frame); window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
-  }, [anchor, nested, limit, count]);
+  const position = useAnchoredPosition(anchor, ref, nested);
   useEffect(() => {
     if (focus) (ref.current?.querySelector<HTMLElement>(menuItems) ?? ref.current)?.focus();
   }, [focus]);
@@ -224,7 +209,7 @@ function BookmarkPopup({ id, owner, label, anchor, nested, focus, before, after,
       const nextIndex = limit + (before ? 1 : 0);
       setLimit(current => current + 60);
       window.requestAnimationFrame(() => ref.current?.querySelectorAll<HTMLElement>(menuItems)[nextIndex]?.focus());
-    }}>Show more bookmarks</button>}
+    }}>{moreLabel}</button>}
     {after}
   </div>;
 }

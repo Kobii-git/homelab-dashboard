@@ -19,7 +19,7 @@ export function ShortcutPicker({ snapshot, workspace, layout, onChange }: {
   const matches = options.filter(o => `${o.name} ${o.detail}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   return <section className="hp-shortcut-picker" aria-label="Choose bookmark placement">
     <h3>Bookmark folders and sidebar</h3>
-    <p className="muted-copy">The top bar shows folders with dropdown lists of bookmarks. Choose those folders separately from the links and folders in your sidebar. Individual favorites stay in Favorites.</p>
+    <p className="muted-copy">The top bar shows folders with dropdown lists of bookmarks. Choose individual sidebar links separately, including links inside folders. Your bookmarks stay in their original folders.</p>
     <label>Find a bookmark or folder<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Filter your saved places…" /></label>
     <div className="hp-placement-columns">
       {(["center", "sidebar"] as const).map(surface => {
@@ -27,19 +27,20 @@ export function ShortcutPicker({ snapshot, workspace, layout, onChange }: {
         const selection = layout[key];
         const { links, folders } = workspaceShortcuts(snapshot, workspace, selection, surface);
         const effective = { bookmarkIds: links.map(b => b.id), collectionIds: folders.map(c => c.id) };
-        const visibleOptions = matches.filter(option => surface === "sidebar" || option.kind === "collectionIds");
+        const visibleOptions = matches.filter(option => option.kind === (surface === "sidebar" ? "bookmarkIds" : "collectionIds"));
         return <fieldset key={surface}>
-          <legend>{surface === "center" ? "Top bookmark folders" : "Sidebar shortcuts"}</legend>
-          <p className="muted-copy">{links.length + folders.length} selected · {selection === null ? (surface === "center" ? "Following top-level folders" : "Following top-level items") : "Your selection"}</p>
+          <legend>{surface === "center" ? "Top bookmark folders" : "Sidebar links"}</legend>
+          <p className="muted-copy">{links.length + folders.length} selected · {selection === null ? (surface === "center" ? "Following top-level folders" : "Following unfiled links") : "Your selection"}</p>
           <div className="hp-actions">
-            <button type="button" disabled={selection === null} onClick={() => onChange({ ...layout, [key]: null })}>{surface === "center" ? "Use top-level folders" : "Use top-level items"}</button>
-            <button type="button" onClick={() => onChange({ ...layout, [key]: { bookmarkIds: [], collectionIds: [] } })}>Clear selection</button>
+            <button type="button" disabled={selection === null} onClick={() => onChange({ ...layout, [key]: null })}>{surface === "center" ? "Use top-level folders" : "Use unfiled links"}</button>
+            <button type="button" onClick={() => onChange({ ...layout, [key]: { bookmarkIds: [], collectionIds: surface === "sidebar" ? selection?.collectionIds ?? [] : [] } })}>Clear selection</button>
           </div>
           <div className="hp-placement-list" tabIndex={0} role="group" aria-label={`${surface === "center" ? "Homepage" : "Sidebar"} bookmark choices`}>
             {visibleOptions.map(option => <label className="hp-placement-option" key={`${option.kind}-${option.id}`}>
               <input type="checkbox" checked={effective[option.kind].includes(option.id)} onChange={event => {
-                const ids = effective[option.kind];
-                onChange({ ...layout, [key]: { ...effective, [option.kind]: event.target.checked ? [...ids, option.id] : ids.filter(id => id !== option.id) } });
+                const stored = surface === "sidebar" ? selection ?? effective : effective;
+                const ids = stored[option.kind];
+                onChange({ ...layout, [key]: { ...stored, [option.kind]: event.target.checked ? [...ids, option.id] : ids.filter(id => id !== option.id) } });
               }} />
               {option.kind === "collectionIds" ? <Folder size={17} aria-hidden="true" /> : <Globe size={17} aria-hidden="true" />}
               <span>{option.name}<small>{option.detail}</small></span>

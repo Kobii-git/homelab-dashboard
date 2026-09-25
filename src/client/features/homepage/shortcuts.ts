@@ -4,7 +4,7 @@ export function workspaceShortcuts(snapshot: HomepageSnapshot, workspace: Worksp
   // Older homepages selected individual links. Keep that saved selection intact,
   // but show top-level folders in the new folder bar instead of loose link tiles.
   const folderSelection = surface === "center" && selection?.bookmarkIds.length && !selection.collectionIds.length ? null : selection;
-  const folders = snapshot.data.collections.filter(c => c.workspaceId === workspace &&
+  const folders = snapshot.data.collections.filter(c => surface === "center" && c.workspaceId === workspace &&
     (folderSelection ? folderSelection.collectionIds.includes(c.id) : c.parentId === null))
     .sort((a, b) => a.sortOrder - b.sortOrder);
   const links = snapshot.bookmarks.filter(b => surface === "sidebar" && b.workspaceId === workspace && !b.deletedAt &&

@@ -129,6 +129,7 @@ test("service setup makes TCP reachability and exact web endpoints primary", asy
 });
 
 test("Launchpad is the device default, searches Google, and remembers the selected preset", async ({ page }) => {
+  await enableHomeWidgets(page, ["favorites"]);
   await login(page);
   const viewSwitch = page.getByRole("navigation", { name: "Dashboard view" });
   const launchpad = viewSwitch.getByRole("button", { name: "Home", exact: true });
@@ -136,7 +137,9 @@ test("Launchpad is the device default, searches Google, and remembers the select
   await expect(launchpad).toHaveClass(/active/);
 
   const search = page.getByRole("searchbox", { name: "Search Google" });
-  await expect(page.getByRole("link", { name: /^ChatGPT$/ })).toHaveAttribute("href", "https://chatgpt.com/");
+  await page.getByRole("button", { name: "Favorites", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: /^ChatGPT$/ })).toHaveAttribute("href", "https://chatgpt.com/");
+  await page.keyboard.press("Escape");
 
   await page.evaluate(() => {
     (window as Window & { __openedUrl?: string }).open = ((url?: string | URL) => {
@@ -247,6 +250,7 @@ test("Launchpad utilities render independently and move after services on mobile
   }));
   await login(page);
 
+  await page.getByRole("button", { name: /^Weather:/ }).click();
   await expect(page.getByText(/Cape Town/).first()).toBeVisible();
   const weather = page.locator(".compact-weather-card");
   await expect(weather.getByRole("link", { name: "Open-Meteo" })).toHaveAttribute("href", "https://open-meteo.com/");
@@ -312,7 +316,7 @@ test("a utility provider failure does not hide successful utility data or servic
     }
   }));
   await login(page);
-  await expect(page.getByRole("region", { name: "Weather", exact: true }).getByText("Unavailable", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Weather:/ })).toContainText("Unavailable");
   await page.getByRole("region", { name: "Dashboard status" }).getByText("View details", { exact: true }).click();
   await expect(page.getByText("Weather provider timed out", { exact: true })).toBeVisible();
   await expect(page.locator(".hp-widget-releases").getByText("Software releases", { exact: true })).toBeVisible();

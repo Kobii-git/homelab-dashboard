@@ -21,8 +21,12 @@ describe("balanced arrangement compatibility", () => {
       expect(widget.enabled).toBe(previous.enabled);
       expect(widget.presentation).toBe(previous.presentation);
     }
-    expect(result.widgets.map(widget => widget.id)).toEqual(["favorites", "weather", "services", "prompts", "agenda", "tasks", "mail", "notes", "reading", "timer", "media", "storage", "releases", "bookmarks"]);
-    expect(result.widgets.filter(widget => widget.size === "wide").map(widget => widget.id)).toEqual(["notes", "media"]);
+    expect(result.widgets.filter(w => !["favorites", "weather", "bookmarks"].includes(w.id)).map(w => w.id)).toEqual(["services", "prompts", "agenda", "tasks", "mail", "notes", "reading", "timer", "media", "storage", "releases"]);
+    for (const id of ["favorites", "weather", "bookmarks"]) {
+      const index = original.widgets.findIndex(w => w.id === id);
+      expect(result.widgets[index]).toEqual(original.widgets[index]);
+    }
+    expect(result.widgets.filter(widget => widget.size === "wide" && !["favorites", "bookmarks"].includes(widget.id)).map(widget => widget.id)).toEqual(["notes", "media"]);
   });
 });
 

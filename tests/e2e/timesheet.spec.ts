@@ -13,6 +13,11 @@ async function login(page: Page) {
   await page.getByRole("button", { name: "Unlock" }).click();
   await page.getByRole("navigation", { name: "Dashboard view" }).getByRole("button", { name: "Work", exact: true }).click();
   await expect(page.getByRole("region", { name: "Timesheet notes" })).toBeVisible();
+  await expect(page.locator(".hp-timesheet textarea")).toHaveCount(0);
+}
+async function openDay(page: Page, day: string) {
+  const button = page.getByRole("region", { name: "Timesheet notes" }).getByRole("button", { name: day, exact: true });
+  if (await button.getAttribute("aria-expanded") !== "true") await button.click();
 }
 async function restore(page: Page, original: HomepageSnapshot) {
   const latest = await state(page);
@@ -25,7 +30,7 @@ test("Work timesheet autosaves five days, keeps history, copies a week, and fits
   const original = await state(page);
   const sheet = page.getByRole("region", { name: "Timesheet notes" });
   try {
-    for (const day of weekdays) await sheet.getByLabel(`${day} work notes`).fill(`${day}: reviewed sample tickets and documented the results.`);
+    for (const day of weekdays) { await openDay(page, day); await sheet.getByLabel(`${day} work notes`).fill(`${day}: reviewed sample tickets and documented the results.`); }
     await expect(sheet.getByRole("status")).toHaveText("All changes saved");
     const saved = await state(page);
     expect(saved.data.workspaces.work.timesheetWeeks).toHaveLength(1);
@@ -36,13 +41,18 @@ test("Work timesheet autosaves five days, keeps history, copies a week, and fits
     expect(publicStatus.ok()).toBe(true);
     expect(await publicStatus.text()).not.toContain("reviewed sample tickets");
     await page.reload();
+    await openDay(page, "Monday");
     await expect(sheet.getByLabel("Monday work notes")).toHaveValue(/Monday: reviewed/);
     await sheet.getByRole("button", { name: "Previous timesheet week" }).click();
+    await openDay(page, "Monday");
     await expect(sheet.getByLabel("Monday work notes")).toHaveValue("");
+    await openDay(page, "Friday");
     await sheet.getByLabel("Friday work notes").fill("Last week's sample handover");
+    await openDay(page, "Friday");
     await sheet.getByLabel("Friday work notes").press("Control+Enter");
     await expect(sheet.getByRole("status")).toHaveText("All changes saved");
     await sheet.getByRole("button", { name: "This week", exact: true }).click();
+    await openDay(page, "Friday");
     await expect(sheet.getByLabel("Friday work notes")).toHaveValue(/Friday: reviewed/);
     await sheet.getByRole("button", { name: "Copy week", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Copy timesheet week" });
@@ -76,11 +86,17 @@ test("timesheet preserves failed drafts across navigation and recovers concurren
   const nav = page.getByRole("navigation", { name: "Primary" });
   try {
     await page.route("**/api/homepage/state", route => route.abort());
+    await openDay(page, "Monday");
     await sheet.getByLabel("Monday work notes").fill("My unsaved Monday");
+    await expect(sheet.getByRole("alert")).toContainText("Could not save your week");
+    await sheet.getByLabel("Monday work notes").press("Escape");
+    await expect(sheet.getByRole("button", { name: "Monday", exact: true })).toBeFocused();
+    await expect(sheet.locator("textarea")).toHaveCount(0);
     await expect(sheet.getByRole("alert")).toContainText("Could not save your week");
     await expect(sheet.getByRole("button", { name: "Previous timesheet week" })).toBeDisabled();
     await nav.getByRole("button", { name: "Services", exact: true }).click();
     await nav.getByRole("button", { name: "Dashboard", exact: true }).click();
+    await openDay(page, "Monday");
     await expect(sheet.getByLabel("Monday work notes")).toHaveValue("My unsaved Monday");
     await expect(sheet.getByRole("alert")).toContainText("Could not save your week");
     // A second client changes Monday and Tuesday while this browser is offline.
@@ -91,15 +107,24 @@ test("timesheet preserves failed drafts across navigation and recovers concurren
     await page.unroute("**/api/homepage/state");
     await sheet.getByRole("button", { name: "Retry save" }).click();
     await expect(sheet.getByText("Monday from another device", { exact: false })).toBeVisible();
+    await sheet.getByRole("button", { name: "Monday", exact: true }).click();
+    await expect(sheet.locator("textarea")).toHaveCount(0);
+    await expect(sheet.getByRole("status")).toHaveText("Review changes to Monday.");
+    await expect(sheet.getByRole("button", { name: "Monday", exact: true })).toHaveAccessibleDescription(/^Needs conflict review/);
+    await expect(sheet.getByRole("alert")).toBeVisible();
+    await openDay(page, "Monday");
     await expect(sheet.getByLabel("Monday work notes")).toHaveValue("My unsaved Monday");
+    await openDay(page, "Tuesday");
     await expect(sheet.getByLabel("Tuesday work notes")).toHaveValue("Tuesday from another device");
     await sheet.getByRole("button", { name: "Keep my edits" }).click();
     await expect(sheet.getByRole("status")).toHaveText("All changes saved");
     expect((await state(page)).data.workspaces.work.timesheetWeeks[0].days.slice(0, 2)).toEqual(["My unsaved Monday", "Tuesday from another device"]);
     await page.reload();
+    await openDay(page, "Monday");
     await expect(sheet.getByLabel("Monday work notes")).toHaveValue("My unsaved Monday");
     // An unrelated configuration revision can be retried without discarding either side.
     await page.route("**/api/homepage/state", route => route.abort());
+    await openDay(page, "Wednesday");
     await sheet.getByLabel("Wednesday work notes").fill("Wednesday draft");
     await expect(sheet.getByRole("alert")).toBeVisible();
     const newer = await state(page);
@@ -124,12 +149,21 @@ test("typing during a save is retained and clearing an empty week removes only t
   try {
     await page.route("**/api/homepage/state", async route => { await gate; await route.continue(); }, { times: 1 });
     const started = page.waitForRequest("**/api/homepage/state");
+    await openDay(page, "Monday");
     await sheet.getByLabel("Monday work notes").fill("First edit");
     await started;
+    await openDay(page, "Monday");
     await sheet.getByLabel("Monday work notes").fill("First edit plus more detail");
+    await openDay(page, "Tuesday");
+    await sheet.getByLabel("Tuesday work notes").fill("A second day while saving");
+    await sheet.getByRole("button", { name: "Tuesday", exact: true }).click();
+    await expect(sheet.locator("textarea")).toHaveCount(0);
     release();
     await expect(sheet.getByRole("status")).toHaveText("All changes saved");
-    expect((await state(page)).data.workspaces.work.timesheetWeeks[0].days[0]).toBe("First edit plus more detail");
+    expect((await state(page)).data.workspaces.work.timesheetWeeks[0].days.slice(0, 2)).toEqual(["First edit plus more detail", "A second day while saving"]);
+    await openDay(page, "Tuesday");
+    await sheet.getByLabel("Tuesday work notes").fill("");
+    await openDay(page, "Monday");
     await sheet.getByLabel("Monday work notes").fill("");
     await expect(sheet.getByRole("status")).toHaveText("All changes saved");
     expect((await state(page)).data.workspaces.work.timesheetWeeks).toEqual([]);

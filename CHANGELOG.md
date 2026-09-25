@@ -6,6 +6,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.8.4] - 2026-09-25
+
+### Changed
+- Home and Work show optional weather beside the clock, with forecast details in a compact disclosure; Favorites is an optional dropdown beside the bookmark folders.
+- Separate Top bookmark folders and Sidebar links pickers; sidebar shortcuts and overflow contain selected individual links, including nested bookmarks.
+- Work timesheet notes start as a compact weekday row, opening one editor at a time while preserving drafts, autosave, conflict review, history, and complete weekly copying.
+- Existing workspace visibility and layout values, bookmark selections, timesheet storage, and backups remain compatible without a migration.
+
 ## [0.8.3] - 2026-09-25
 
 ### Added

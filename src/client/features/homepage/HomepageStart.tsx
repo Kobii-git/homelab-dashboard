@@ -1,16 +1,17 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { FolderPlus, Search, Settings2 } from "lucide-react";
 import type { WorkspaceId } from "../../../shared/homepage";
 import { BookmarkMenu } from "./BookmarkMenu";
 import type { HomepageController } from "./useHomepage";
 import { workspaceShortcuts } from "./shortcuts";
 
-export function HomepageStart({ home, workspace, onWorkspace, onCustomize, onManage }: {
+export function HomepageStart({ home, workspace, onWorkspace, onCustomize, onManage, favorites }: {
   home: HomepageController;
   workspace: WorkspaceId;
   onWorkspace: (workspace: WorkspaceId) => void;
   onCustomize: () => void;
   onManage: () => void;
+  favorites: ReactNode;
 }) {
   const [query, setQuery] = useState("");
   const snapshot = home.snapshot!;
@@ -22,6 +23,7 @@ export function HomepageStart({ home, workspace, onWorkspace, onCustomize, onMan
         {folders.map(folder => <BookmarkMenu key={`${workspace}-${folder.id}`} home={home} workspace={workspace} onWorkspace={onWorkspace} onManage={onManage} folder={folder} placement="below" />)}
         {!folders.length && <button type="button" className="hp-folder-empty" onClick={onManage}><FolderPlus size={16} /><span>Add bookmark folders</span></button>}
       </nav>
+      {favorites}
       <button type="button" className="hp-folder-settings" onClick={onCustomize} aria-label="Choose bookmark folders" title="Choose bookmark folders"><Settings2 size={16} /></button>
     </div>
     <form className="hp-google-search" role="search" aria-label="Google" onSubmit={event => {

@@ -42,12 +42,14 @@ test("homepage and sidebar shortcuts stay independent, with neutral styling and 
     await page.getByRole("button", { name: "Customize home", exact: true }).click();
     const panel = page.getByRole("region", { name: "Customize homepage" });
     const center = panel.getByRole("group", { name: "Top bookmark folders", exact: true });
-    const sidebar = panel.getByRole("group", { name: "Sidebar shortcuts", exact: true });
+    const sidebar = panel.getByRole("group", { name: "Sidebar links", exact: true });
     await center.getByRole("button", { name: "Clear selection" }).click();
     await sidebar.getByRole("button", { name: "Clear selection" }).click();
     await expect(center.getByRole("checkbox", { name: /YouTube/ })).toHaveCount(0);
     await center.getByRole("checkbox", { name: /Daily reading/ }).first().check();
+    await expect(sidebar.getByRole("checkbox", { name: /^Daily reading/ })).toHaveCount(0);
     await sidebar.getByRole("checkbox", { name: /Reference desk/ }).check();
+    await sidebar.getByRole("checkbox", { name: /A useful article/ }).check();
     await expect(sidebar.getByRole("checkbox", { name: /YouTube/ })).not.toBeChecked();
     await expect(center.getByRole("checkbox", { name: /Reference desk/ })).toHaveCount(0);
     await panel.getByLabel("Accent", { exact: true }).selectOption("blue");
@@ -68,6 +70,8 @@ test("homepage and sidebar shortcuts stay independent, with neutral styling and 
     await expect(shortcuts.getByRole("link", { name: "Reference desk", exact: true })).toHaveCount(0);
     await expect(rail.getByRole("link", { name: "Reference desk", exact: true })).toHaveAttribute("href", "https://example.com/reference");
     await expect(rail.getByRole("link", { name: "YouTube", exact: true })).toHaveCount(0);
+    await expect(rail.getByRole("button", { name: "Daily reading", exact: true })).toHaveCount(0);
+    await expect(rail.getByRole("link", { name: "A useful article", exact: true })).toHaveAttribute("href", "https://example.com/article");
     await expect(page.locator(".browser-home")).toHaveClass(/hp-accent-blue hp-bg-none hp-spacing-compact/);
     expect((await getState()).bookmarks.some(b => b.name === "YouTube")).toBe(true);
     const folder = shortcuts.getByRole("button", { name: "Daily reading", exact: true });
@@ -114,4 +118,40 @@ test("homepage and sidebar shortcuts stay independent, with neutral styling and 
     }
     await save(original);
   }
+});
+
+test("sidebar overflow contains only remaining selected links and the library still contains folders", async ({ page }) => {
+  await page.route("**/api/homepage", async route => {
+    const snapshot = await (await route.fetch()).json() as HomepageSnapshot;
+    snapshot.data.collections = [
+      { id: "top", name: "Top folder", workspaceId: "home", parentId: null, sortOrder: 0 },
+      { id: "nested", name: "Nested folder", workspaceId: "home", parentId: "top", sortOrder: 0 },
+    ];
+    snapshot.bookmarks = Array.from({ length: 29 }, (_, i) => ({ id: `pin-${i}`, name: `Pinned link ${String(i + 1).padStart(2, "0")}`, url: `https://example.com/${i}`, workspaceId: "home", collectionId: "nested", favorite: false, notes: "", readingState: "none", sortOrder: i, deletedAt: i === 28 ? "2026-09-25T00:00:00Z" : null, updatedAt: "2026-09-25T00:00:00Z" }));
+    snapshot.data.workspaces.home.layout.sidebarShortcuts = { collectionIds: ["top"], bookmarkIds: snapshot.bookmarks.filter(b => b.id !== "pin-27").map(b => b.id).concat("missing") };
+    snapshot.data.workspaces.home.layout.centerShortcuts = { collectionIds: ["top"], bookmarkIds: [] };
+    snapshot.data.workspaces.home.layout.widgets.find(w => w.id === "bookmarks")!.enabled = true;
+    snapshot.data.workspaces.work.layout.sidebarShortcuts = { collectionIds: [], bookmarkIds: [] };
+    await route.fulfill({ json: snapshot });
+  });
+  await page.goto("/");
+  await page.getByLabel("Username").fill("admin");
+  await page.getByLabel("Password").fill("e2e-admin-password");
+  await page.getByRole("button", { name: "Unlock" }).click();
+  const rail = page.getByRole("group", { name: "Bookmark shortcuts" });
+  await expect(rail.getByRole("link")).toHaveCount(24);
+  await expect(rail.getByRole("button", { name: "Top folder", exact: true })).toHaveCount(0);
+  const more = rail.getByRole("button", { name: "More sidebar links", exact: true });
+  await more.focus(); await more.press("ArrowDown");
+  const overflow = page.getByRole("menu", { name: "More sidebar links", exact: true });
+  await expect(overflow.getByRole("menuitem")).toHaveCount(3);
+  await expect(overflow.getByRole("menuitem", { name: "Pinned link 25", exact: true })).toBeFocused();
+  await expect(overflow.getByRole("menuitem", { name: "Pinned link 27", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape"); await expect(more).toBeFocused();
+  await rail.getByRole("button", { name: "Bookmarks", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Top folder", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByRole("navigation", { name: "Dashboard view" }).getByRole("button", { name: "Work", exact: true }).click();
+  await expect(rail.getByRole("link")).toHaveCount(0);
+  await expect(more).toHaveCount(0);
 });

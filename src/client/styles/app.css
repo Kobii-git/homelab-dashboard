@@ -5104,6 +5104,20 @@ label textarea {
 .hp-header p { color:var(--text-muted); margin:0; }
 .hp-eyebrow { font-size:12px; text-transform:uppercase; letter-spacing:.1em; color:var(--hp-accent); }
 .hp-header-tools { display:grid; justify-items:end; gap:10px; }
+.hp-header-glance { display:flex; align-items:center; justify-content:flex-end; gap:14px; min-width:0; max-width:100%; }
+.browser-home .hp-header-weather { display:inline-flex; min-width:0; max-width:250px; padding:5px 0; border:0; background:none; color:var(--text-muted); font-size:13px; }
+.hp-header-weather > svg { flex-shrink:0; }
+.hp-header-weather > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.hp-header-weather small { font-size:11px; color:var(--warning); }
+.hp-weather-popup { position:fixed; z-index:90; width:min(380px,calc(100vw - 16px)); max-height:calc(100dvh - 16px); overflow:auto; padding:16px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--text); box-shadow:var(--shadow-2); }
+.hp-weather-popup h3 { margin:0; font-size:16px; }
+.hp-weather-popup > .compact-weather-card { padding:0; border:0; background:none; box-shadow:none; }
+.hp-weather-popup > button { margin-top:12px; }
+.hp-weather-popup button { display:inline-flex; align-items:center; justify-content:center; min-width:36px; min-height:36px; padding:7px 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface-2); color:var(--text); font:inherit; font-size:12px; cursor:pointer; }
+.hp-weather-popup button:hover { border-color:var(--accent); }
+.hp-weather-popup:focus-visible, .hp-weather-popup :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.hp-fixed-options { display:flex; flex-wrap:wrap; gap:12px 24px; padding:16px; margin:20px 0; border:1px solid var(--border); border-radius:10px; }
+.hp-fixed-options legend { font-weight:600; font-size:14px; padding:0 6px; }
 .hp-header time { font-size:30px; font-variant-numeric:tabular-nums; font-weight:300; }
 .hp-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
 .hp-actions label { min-width:0; }
@@ -5126,13 +5140,19 @@ label textarea {
 .hp-card-title { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
 .hp-card-title h3 { margin:0; }
 .hp-card-title h3 small { color:var(--text-muted); font-weight:400; }
-.hp-timesheet { margin:8px 0 28px; padding-top:20px; border-top:1px solid var(--line-soft); }
+.hp-timesheet { max-width:720px; margin:8px 0 28px; padding-top:20px; border-top:1px solid var(--line-soft); }
 .hp-timesheet h3 { display:flex; align-items:center; gap:8px; font-size:16px; }
 .hp-timesheet .muted-copy { margin:6px 0 0; font-size:12px; }
 .hp-timesheet-range { font-size:12px; font-variant-numeric:tabular-nums; }
-.hp-timesheet-days { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; }
-.hp-timesheet-day { min-width:0; padding:12px; border:1px solid var(--border); border-radius:10px; background:var(--surface); }
-.hp-timesheet-day.is-today { border-color:var(--hp-accent); }
+.hp-timesheet-weekdays { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px; }
+.browser-home .hp-timesheet-weekdays button { position:relative; gap:5px; min-width:0; padding:8px 3px; font-size:12px; background:transparent; border:1px solid var(--border); color:var(--text-muted); }
+.browser-home .hp-timesheet-weekdays button[aria-expanded="true"] { background:var(--surface-2); color:var(--text); border-color:var(--hp-accent); }
+.browser-home .hp-timesheet-weekdays button.is-today { text-decoration:underline; text-underline-offset:5px; }
+.browser-home .hp-timesheet-weekdays button.has-conflict { border-color:var(--warning); }
+.hp-day-dot { width:4px; height:4px; border-radius:50%; background:currentColor; flex-shrink:0; }
+.hp-weekday-short { display:none; }
+.hp-timesheet-day[hidden] { display:none; }
+.hp-timesheet-day { margin-top:8px; min-width:0; padding:12px; border:1px solid var(--border); border-radius:10px; background:var(--surface); }
 .hp-timesheet-day label { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px; margin-bottom:8px; font-size:12px; }
 .hp-timesheet-day label span { color:var(--text-muted); }
 .browser-home .hp-timesheet-day textarea { display:block; width:100%; min-width:0; min-height:100px; padding:0; border:0; border-radius:2px; background:transparent; resize:vertical; font-size:14px; line-height:1.6; }
@@ -5141,14 +5161,10 @@ label textarea {
 .hp-timesheet-footer p { margin:0; color:var(--text-muted); font-size:12px; }
 .hp-timesheet-conflict { max-height:120px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--text); font-size:12px; border-top:1px solid var(--border); padding-top:8px; }
 .hp-timesheet button { min-width:36px; min-height:36px; }
-@container (min-width:550px) { .hp-timesheet-days { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@container (min-width:1000px) { .hp-timesheet-days { grid-template-columns:repeat(5,minmax(0,1fr)); } }
+@media(max-width:620px) { .hp-weekday-full { display:none; } .hp-weekday-short { display:inline; } .hp-timesheet button { min-height:44px; } }
 .hp-card input:not([type="checkbox"]), .hp-card select, .hp-card textarea, .hp-modal input:not([type="checkbox"]), .hp-modal textarea, .hp-modal select { width:100%; min-width:0; }
 .hp-card label, .hp-modal label { display:grid; gap:6px; font-size:12px; color:var(--text-muted); }
 .hp-grow { flex:1; }
-.hp-favorites { display:flex; flex-wrap:wrap; gap:8px; align-items:start; }
-.hp-favorites a, .browser-home .hp-favorites > button { width:88px; display:grid; justify-items:center; gap:8px; padding:8px 6px; border-radius:10px; color:var(--text); text-decoration:none; font-size:12px; text-align:center; border:0; background:none; }
-.hp-favorites strong { max-width:100%; overflow-wrap:anywhere; }
 .hp-link-list { margin-top:12px; }
 .hp-link-row { display:flex; align-items:center; gap:8px; border-top:1px solid var(--border); padding:10px 0; }
 .hp-link-row > a { display:flex; align-items:center; gap:12px; flex:1; min-width:0; color:var(--text); text-decoration:none; }
@@ -5201,7 +5217,7 @@ label textarea {
 [data-theme="light"] .hp-accent-green { --hp-accent:#167253; }
 [data-theme="light"] .hp-accent-violet { --hp-accent:#7440ba; }
 [data-theme="light"] .hp-accent-amber { --hp-accent:#79540f; }
-@media(max-width:850px) { .hp-header { align-items:start; flex-direction:column; } .hp-header-tools { width:100%; display:flex; justify-content:space-between; flex-wrap:wrap; } .hp-widget-options { grid-template-columns:minmax(0,1fr); } }
+@media(max-width:850px) { .hp-header { align-items:start; flex-direction:column; } .hp-header-tools { width:100%; display:flex; justify-content:space-between; flex-wrap:wrap; } .hp-header-glance { flex:1 0 100%; justify-content:flex-start; order:-1; } .hp-widget-options { grid-template-columns:minmax(0,1fr); } }
 @media(max-width:620px) { .browser-home { padding:16px; } .hp-card { padding:16px; } .hp-widget { padding:16px 0 0; } .hp-toolbar { flex-direction:column; align-items:start; } .hp-chatgpt { flex-wrap:wrap; } .hp-link-row { flex-wrap:wrap; gap:5px; } .hp-link-row > a { flex-basis:calc(100% - 30px); } .hp-link-row > button:first-of-type { margin-left:24px; } .hp-actions { align-items:stretch; } .hp-bookmarks > .hp-actions > label { flex-basis:100%; } }
 
 .modal-backdrop { position:fixed; inset:0; z-index:100; background:#0008; backdrop-filter:blur(3px); }
@@ -5245,7 +5261,6 @@ label textarea {
 .hp-background-preview strong { font-size:24px; }
 .hp-background-preview > span { color:var(--text-muted); font-size:14px; }
 .hp-sync { color:var(--text-muted); font-size:12px; }
-.hp-favorites a:hover, .browser-home .hp-favorites > button:hover { background:var(--surface-2); }
 .hp-bookmark-tree { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr)); align-items:start; gap:4px 16px; }
 .hp-folder { min-width:0; }
 .hp-folder summary { display:flex; align-items:center; gap:10px; padding:12px 10px; border-radius:10px; cursor:pointer; list-style:none; }
@@ -5288,7 +5303,6 @@ summary:focus-visible, .settings-hub button:focus-visible, .service-launcher a:f
 @media(max-width:620px) {
   .nav-list > button:last-child { margin-top:0; }
   .homepage-preferences { padding:0; }
-  .hp-favorites a, .browser-home .hp-favorites > button { width:84px; padding:8px 4px; }
   .hp-folder-content { margin-left:4px; padding-left:6px; }
   .settings-sections { gap:6px; }
   .settings-sections button { flex:1 1 auto; font-size:12px; }
@@ -5498,6 +5512,7 @@ input::file-selector-button {
   .hp-header { align-items:start; gap:16px; }
   .hp-header-tools { gap:8px; }
   .hp-header time { font-size:24px; }
+  .browser-home .hp-header-weather, .hp-weather-popup button { min-height:44px; }
   .hp-header h2 { font-size:27px; }
   .hp-header p { font-size:13px; line-height:1.5; }
   .settings-sections button { padding:8px; }
@@ -5506,11 +5521,11 @@ input::file-selector-button {
 
 /* Browser-style folder bar. Individual links live inside its dropdowns. */
 .hp-start { margin:0 0 28px; }
-.hp-bookmark-bar { display:flex; align-items:flex-start; gap:8px; border-block:1px solid var(--line-soft); padding:6px 0; margin-bottom:24px; }
+.hp-bookmark-bar { display:flex; flex-wrap:wrap; align-items:flex-start; gap:8px; border-block:1px solid var(--line-soft); padding:6px 0; margin-bottom:24px; }
 .hp-folder-bar { display:flex; flex:1; min-width:0; flex-wrap:wrap; align-items:center; gap:4px; }
-.browser-home .hp-folder-bar > button { display:inline-flex; justify-content:flex-start; gap:8px; max-width:100%; min-width:0; min-height:36px; padding:6px 10px; border:0; border-radius:6px; background:none; color:var(--text); font-size:13px; font-weight:500; }
+.browser-home .hp-folder-bar > button, .browser-home .hp-bookmark-bar > .hp-bookmark-trigger { display:inline-flex; justify-content:flex-start; gap:8px; max-width:100%; min-width:0; min-height:36px; padding:6px 10px; border:0; border-radius:6px; background:none; color:var(--text); font-size:13px; font-weight:500; }
 .hp-folder-bar .nav-label { max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.hp-folder-bar .bookmark-nav-chevron { margin-left:4px; }
+.hp-bookmark-bar > .hp-bookmark-trigger .bookmark-nav-chevron, .hp-folder-bar .bookmark-nav-chevron { margin-left:4px; }
 .hp-folder-bar svg { flex-shrink:0; color:var(--text-muted); }
 .browser-home .hp-folder-settings { flex-shrink:0; min-height:36px; width:36px; padding:6px; border:0; background:none; color:var(--text-muted); }
 .browser-home .hp-folder-bar > button:is(:hover,[aria-expanded="true"]), .browser-home .hp-folder-settings:hover { background:var(--surface-2); }

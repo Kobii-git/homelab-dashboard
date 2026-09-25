@@ -14,6 +14,7 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
   const snapshot = home.snapshot;
   if (!snapshot) return <p role="status">{home.error || "Loading preferences…"}</p>;
   const layout = customize?.data.workspaces[workspace].layout ?? snapshot.data.workspaces[workspace].layout;
+  const movableWidgets = layout.widgets.filter(w => !["favorites", "weather", "bookmarks"].includes(w.id));
   function updateLayout(next: HomeLayout) {
     if (customize)
       setCustomize({
@@ -135,10 +136,15 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
             />
           </label>
           <ShortcutPicker snapshot={snapshot} workspace={workspace} layout={layout} onChange={updateLayout} />
+          <fieldset className="hp-fixed-options"><legend>Header and shortcuts</legend>
+            {([["weather", "Weather beside clock"], ["favorites", "Favorites dropdown"], ["bookmarks", "Bookmarks in sidebar"]] as const).map(([id, label]) => <label className="hp-check" key={id}>
+              <input type="checkbox" checked={layout.widgets.find(w => w.id === id)!.enabled} onChange={event => updateLayout({ ...layout, widgets: layout.widgets.map(w => w.id === id ? { ...w, enabled: event.target.checked } : w) })} />{label}
+            </label>)}
+          </fieldset>
           <div className="hp-card-title"><h3>Arrange your widgets</h3><button type="button" onClick={() => updateLayout(balancedLayout(layout))}>Balanced arrangement</button></div>
           <p className="muted-copy">Balanced arrangement previews new order and widths while preserving enabled widgets and other preferences. Save layout applies the preview.</p>
           <div className="hp-widget-options">
-            {layout.widgets.map((w, i) => (
+            {movableWidgets.map((w, i) => (
               <div key={w.id}>
                 <label className="hp-check">
                   <input
@@ -157,7 +163,6 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
                   />
                   {titles[w.id]}
                 </label>
-                {w.id !== "bookmarks" && <>
                 <select
                   className="hp-presentation"
                   aria-label={`${titles[w.id]} display`}
@@ -189,14 +194,13 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
                     key={delta}
                     aria-label={`Move ${titles[w.id]} ${delta < 0 ? "up" : "down"}`}
                     disabled={
-                      i + delta < 0 || i + delta >= layout.widgets.length
+                      i + delta < 0 || i + delta >= movableWidgets.length
                     }
                     onClick={() => {
                       const widgets = [...layout.widgets];
-                      [widgets[i], widgets[i + delta]] = [
-                        widgets[i + delta],
-                        widgets[i],
-                      ];
+                      const from = widgets.findIndex(x => x.id === w.id);
+                      const to = widgets.findIndex(x => x.id === movableWidgets[i + delta].id);
+                      [widgets[from], widgets[to]] = [widgets[to], widgets[from]];
                       updateLayout({ ...layout, widgets });
                     }}
                   >
@@ -206,7 +210,7 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
                       <ArrowDown size={14} />
                     )}
                   </button>
-                ))}</>}
+                ))}
               </div>
             ))}
           </div>

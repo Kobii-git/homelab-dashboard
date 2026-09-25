@@ -27,7 +27,7 @@ describe("independent bookmark shortcuts", () => {
     expect(center.links).toEqual([]);
     expect(center.folders.map(c => c.id)).toEqual(["folder"]);
     expect(sidebar.links.map(b => b.id)).toEqual(["root"]);
-    expect(sidebar.folders.map(c => c.id)).toEqual(["folder"]);
+    expect(sidebar.folders).toEqual([]);
   });
   it("allows nested shortcuts while omitting missing, trashed and other-workspace choices", () => {
     const state = fixture();
@@ -43,6 +43,9 @@ describe("independent bookmark shortcuts", () => {
     const original = structuredClone(selection);
     expect(workspaceShortcuts(state, "home", selection, "center").folders.map(c => c.id)).toEqual(["folder"]);
     expect(selection).toEqual(original);
+    const sidebar = workspaceShortcuts(state, "home", { bookmarkIds: ["favorite"], collectionIds: ["folder"] }, "sidebar");
+    expect(sidebar.folders).toEqual([]);
+    expect(sidebar.links.map(b => b.id)).toEqual(["favorite"]);
     expect(workspaceShortcuts(state, "home", { bookmarkIds: [], collectionIds: [] }, "center")).toEqual({ links: [], folders: [] });
     expect(workspaceShortcuts(state, "work", null, "center").folders.map(c => c.id)).toEqual(["work"]);
   });

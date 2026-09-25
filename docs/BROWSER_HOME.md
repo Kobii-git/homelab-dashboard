@@ -20,11 +20,14 @@ collection, favorite status, notes, and a reading state. The pencil opens a dedi
 Bookmarks have explicit classification and cannot be monitored. Existing disabled websites are
 classified once during upgrade; existing service IDs, groups, and monitoring history are retained.
 
-The top bar on Home and Work shows compact folder buttons, each opening a dropdown list of bookmarks. Nested folders open submenus. By default it follows the workspace’s top-level folders; select specific folders under **Settings → Appearance & widgets → Customize home/work → Top bookmark folders**. The bar contains folders, while individual favorites remain in Favorites. Older saved link-only selections display top-level folders without rewriting saved bookmarks. An explicitly empty selection stays empty.
+The top bar on Home and Work shows compact folder buttons, each opening a dropdown list of bookmarks. Nested folders open submenus. By default it follows the workspace’s top-level folders; select specific folders under **Settings → Appearance & widgets → Customize home/work → Top bookmark folders**. The optional **Favorites** dropdown sits beside these folders and retains bookmark favorites, Home service favorites, service inspection actions, and ChatGPT. Older saved link-only selections display top-level folders without rewriting saved bookmarks. An explicitly empty selection stays empty.
 
-The slim vertical bookmarks bar independently shows top-level folders and unfiled links for the selected workspace.
-Click a folder to open its small side menu, or click a link to open it in a new tab. It shows the first
-24 shortcuts; **Bookmarks** (and **More bookmarks** for larger libraries) opens the complete library.
+The slim vertical bookmarks bar independently shows individual links for the selected workspace.
+Choose **Sidebar links** in customization to pin any bookmark, including links inside nested folders,
+without moving it or changing the top folder selection. The default follows unfiled links; an explicitly
+empty selection stays empty. Older saved sidebar folder selections are retained but no longer displayed.
+The first 24 selected links appear directly; **More sidebar links** contains only the remaining selected
+links. **Bookmarks** always opens the complete library, including its folders.
 Dashboard, Services, and Notes sit above the shortcuts, with Settings below. Collapse the bar to icons or hide it;
 the reveal button brings it back. On phones, primary navigation sits above a separate row for search, bookmarks, theme, and logout.
 
@@ -56,7 +59,7 @@ supported; use HTML for browser migration or the configuration archive for a com
 
 **Settings → Appearance & widgets → Customize home/work** controls widget visibility, order, width,
 accent, clock, and backgrounds. Choose **Tidal**, **Aurora**, **Blue hour**, or **Graphite** from the thumbnail picker, or keep Plain, Dawn, Ocean, or an uploaded PNG. The large preview follows the current light/dark theme. Home and Work save their choices separately. These built-ins are bundled static images with no animation or remote image service; artwork provenance is documented in [Background assets](BACKGROUND_ASSETS.md).
-Homepage modules use flat sections with subtle dividers in a responsive one-, two-, or three-column grid. Content and workspace backgrounds extend across the available screen width, including wide monitors. Wide modules span the full row. Existing widget order, widths, visibility, and presentation are preserved.
+Homepage modules use flat sections with subtle dividers in a responsive one-, two-, or three-column grid. Content and workspace backgrounds extend across the available screen width, including wide monitors. Wide modules span the full row. Existing grid widget order, widths, visibility, and presentation are preserved.
 Choose **Always open** or **Dropdown** for each section:
 dedicated content stays visible, while a dropdown opens when you click its title (or press Enter/Space).
 You can mix both styles. Collapsing a section preserves its unsaved draft while you stay in that workspace.
@@ -64,15 +67,20 @@ Display choices sync with the saved layout; dropdowns start closed when the work
 **Balanced arrangement** previews a compact ordering with normal-width sections, except wide Notes and
 Media. It preserves enabled widgets, dropdown choices, shortcut selections, accents, and backgrounds.
 Choose **Save layout** to apply it, or **Cancel preview** to keep the saved layout.
-**Bookmarks in sidebar** controls the shortcut's visibility;
-its old saved width and position are retained for compatibility but do not affect the page layout.
+**Weather beside clock**, **Favorites dropdown**, and **Bookmarks in sidebar** control these fixed
+areas independently for each workspace. Their old saved width, position, and presentation values remain
+compatible but do not affect their new locations or appear in the arrangement controls.
 Save applies the layout to your other devices; Cancel restores the saved layout; Reset changes only
 the preview until saved. PNG uploads support non-interlaced RGB/RGBA images under 4 MiB and four
 megapixels. Uploaded images live in SQLite and are included in configuration archives. Delete unused
 images in customization. Background storage is limited to 24 MiB / 32 images.
 
-Enable Weather in customization, then choose its location and units in **Settings → Integrations & system → Daily tools**. It shows current
-conditions and a three-day forecast. Other optional calendar/task/mail/media/storage widgets still
+Enable **Weather beside clock** in customization. A small icon, temperature, and condition appear to
+the left of the clock on Home and Work, including when the clock is hidden. Open weather for its
+location, feels-like temperature, three-day forecast, attribution, and **Location & units** settings.
+Cached readings remain available with a discreet indicator; detailed failures appear in the status
+strip. Escape returns focus to the weather button; clicking outside dismisses the disclosure.
+Choose location and units in **Settings → Integrations & system → Daily tools**. Other optional calendar/task/mail/media/storage widgets still
 require their existing read-only connector settings. Provider failures do not block saved links.
 
 Open **Notes** in the rail from any page for quick capture and a scrolling saved-note list. Choose Home
@@ -103,12 +111,16 @@ resubmission against the latest version. The app is not an offline editor or nat
 
 ## Work timesheet notes
 
-The Work dashboard includes **Timesheet notes** beneath the bookmark area: a small box for each day,
-Monday through Friday. The current week follows your browser’s local date. Notes save automatically
+The Work dashboard includes **Timesheet notes** beneath the bookmark area: a compact, left-aligned
+Monday–Friday row, initially closed. Click a day to open its editor, click again to close it, or choose
+another day to switch. Escape closes the editor and returns focus to its day. Short labels on phones
+retain full accessible names. Indicators show today, days with notes, and days needing conflict review.
+Switching or closing editors preserves drafts and keeps autosaving; save errors stay visible while closed.
+The current week follows your browser’s local date. Notes save automatically
 after a short typing pause; **Save now** or **⌘/Ctrl + Enter** saves immediately. Wait for
 **All changes saved** before closing the app. Previous/next arrows revisit saved weeks; **This week**
 returns to the current one. A new week starts empty without removing earlier entries. Clearing all five
-boxes removes only that week’s saved entry. This section is always present in Work and does not change
+daily entries removes only that week’s saved entry. This section is always present in Work and does not change
 your widget layout or regular notes.
 
 **Copy week** opens a dated text preview to paste into your timesheet. If clipboard access is unavailable

@@ -8,6 +8,7 @@ import {
 import {
   ChevronRight,
   Settings2,
+  Star,
 } from "lucide-react";
 import {
   type HomepageData,
@@ -32,10 +33,11 @@ import {
   MailCard,
   MediaCard,
   StorageCard,
-  CompactWeatherCard,
   ReleasesCard,
 } from "../dashboard/DashboardLaunchpad";
 import { Notes } from "./Notes";
+import { HeaderWeather } from "./HeaderWeather";
+import { ShortcutMenu, type ShortcutItem } from "./ShortcutMenu";
 import { WorkTimesheet } from "./WorkTimesheet";
 import { CopyPreview } from "./BookmarkManager";
 import { widgetTitles } from "./widgetTitles";
@@ -147,6 +149,12 @@ export function BrowserHomepage({
   const favorites = snapshot.bookmarks.filter(
     (b) => b.workspaceId === workspace && b.favorite && !b.deletedAt,
   );
+  const favoriteItems: ShortcutItem[] = [
+    { id: "chatgpt", label: "ChatGPT", href: "https://chatgpt.com/", icon: <SiteIcon name="ChatGPT" url="https://chatgpt.com/" size={28} /> },
+    ...favorites.map(b => ({ id: `bookmark-${b.id}`, label: b.name, href: b.url, icon: <SiteIcon name={b.name} url={b.url} size={28} /> })),
+    ...(workspace === "home" ? services.filter(s => s.favorite).map(s => ({ id: `service-${s.id}`, label: s.name, href: s.url || undefined,
+      icon: <ServiceIcon resource={s} size={28} />, onSelect: () => onInspectService(s) })) : []),
+  ];
   const background = backgroundImage(layout.background);
   const enabledWidgets = layout.widgets.filter(widget => widget.enabled);
   const statusItems: HealthItem[] = [serviceHealth(services, onInspectService)];
@@ -154,7 +162,6 @@ export function BrowserHomepage({
   const contextConfigured = { agenda: settings.dashboardHome.agendaEnabled, tasks: settings.dashboardHome.tasksEnabled,
     mail: settings.dashboardHome.mailEnabled, media: settings.dashboardHome.mediaEnabled, storage: settings.dashboardHome.storageEnabled };
   const weatherConfigured = settings.dashboardUtilities.weather.enabled && Boolean(settings.dashboardUtilities.weather.location);
-  const weatherState = utilityPresentation(weatherConfigured ? utilities?.weather : disabled, weatherConfigured ? weatherError : "");
   for (const widget of enabledWidgets) {
     if (widget.id === "weather" || widget.id === "releases") {
       const configured = settings.dashboardUtilities[widget.id].enabled && (widget.id !== "weather" || settings.dashboardUtilities.weather.location);
@@ -187,42 +194,6 @@ export function BrowserHomepage({
       <section className="hp-card launchpad-utilities"><ReleasesCard releases={utilities.releases.data}
         stale={utilities.releases.stale || Boolean(weatherError)} error={utilities.releases.error} /></section>
     ) : moduleState("Software releases", settings.dashboardUtilities.releases.enabled ? utilities?.releases : disabled, settings.dashboardUtilities.releases.enabled ? weatherError : ""),
-    favorites: (
-      <section className="hp-card" aria-label="Favorites">
-        <h3>Favorites</h3>
-        <div className="hp-favorites">
-          <a href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer"><SiteIcon name="ChatGPT" url="https://chatgpt.com/" /><strong>ChatGPT</strong></a>
-          {favorites.map((b) => (
-            <a
-              key={b.id}
-              href={b.url}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <SiteIcon name={b.name} url={b.url} />
-              <strong>{b.name}</strong>
-            </a>
-          ))}
-          {workspace === "home" &&
-            services
-              .filter((s) => s.favorite)
-              .map((s) => s.url ? (
-                <a
-                  key={s.id}
-                  href={s.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ServiceIcon resource={s} />
-                  <strong>{s.name}</strong>
-                </a>
-              ) : <button key={s.id} type="button" onClick={event => { event.currentTarget.focus(); onInspectService(s); }}>
-                <ServiceIcon resource={s} /><strong>{s.name}</strong>
-              </button>)}
-        </div>
-
-      </section>
-    ),
     notes: <Notes key={workspace} home={home} workspace={workspace} />,
     prompts: (
       <PromptLibrary key={workspace} home={home} workspace={workspace} />
@@ -256,20 +227,6 @@ export function BrowserHomepage({
       </section>
     ),
     timer: <FocusTimer />,
-    weather: (
-      <section className="hp-card" aria-label="Weather">
-        <div className="hp-card-title">
-          <h3>Weather</h3>
-          <button onClick={() => onSettings("integrations")}>Location &amp; units</button>
-        </div>
-        {utilities?.weather.data && weatherConfigured ? (
-          <CompactWeatherCard data={utilities.weather.data} stale={utilities.weather.stale || Boolean(utilities.weather.error) || Boolean(weatherError)} />
-        ) : <StatusIndicator tone={weatherState.tone}>
-          {weatherState.label}
-        </StatusIndicator>}
-
-      </section>
-    ),
     agenda: contextBlock("agenda", value => <CalendarCard summary={value.agenda} now={now} />),
     tasks: contextBlock("tasks", value => <TasksCard summary={value.tasks} />),
     mail: contextBlock("mail", value => <MailCard summary={value.mail} />),
@@ -301,6 +258,8 @@ export function BrowserHomepage({
         </div>
         <div className="hp-header-tools">
           <button className="hp-customize-button" onClick={() => onSettings("homepage")}><Settings2 size={15} /> Customize {workspace}</button>
+          <div className="hp-header-glance">
+          {weatherEnabled && <HeaderWeather key={workspace} weather={utilities?.weather} configured={weatherConfigured} error={weatherError} onSettings={() => onSettings("integrations")} />}
           {layout.clock !== "hidden" && (
             <time>
               {now.toLocaleTimeString([], {
@@ -309,6 +268,7 @@ export function BrowserHomepage({
               })}
             </time>
           )}
+          </div>
           <nav className="segmented-control" aria-label="Dashboard view">
             <button
               aria-pressed={workspace === "home"}
@@ -333,7 +293,7 @@ export function BrowserHomepage({
         </div>
       </header>
       <HealthStrip items={statusItems} />
-      <HomepageStart home={home} workspace={workspace} onWorkspace={setWorkspace} onCustomize={() => onSettings("homepage")} onManage={() => onSettings("bookmarks")} />
+      <HomepageStart home={home} workspace={workspace} onWorkspace={setWorkspace} onCustomize={() => onSettings("homepage")} onManage={() => onSettings("bookmarks")} favorites={enabledWidgets.some(w => w.id === "favorites") ? <ShortcutMenu key={workspace} label="Favorites" icon={<Star size={17} aria-hidden="true" />} items={favoriteItems} /> : null} />
       {home.busy && <p className="hp-sync" role="status">Saving…</p>}
       {home.error && (
         <div className="hp-notice" role="alert">
@@ -347,7 +307,7 @@ export function BrowserHomepage({
       {workspace === "work" && <WorkTimesheet home={home} now={now} />}
       <div className="hp-grid">
         {layout.widgets
-          .filter((w) => w.enabled && w.id !== "bookmarks")
+          .filter((w) => w.enabled && !["bookmarks", "favorites", "weather"].includes(w.id))
           .map((w) => (
             <div key={`${workspace}-${w.id}`} id={`widget-${w.id}`} className={`hp-widget hp-widget-${w.id} ${w.size === "wide" ? "hp-wide" : ""}`}>
               {w.presentation === "dropdown" ? <details className="hp-widget-dropdown">

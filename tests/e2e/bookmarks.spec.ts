@@ -114,14 +114,17 @@ for (const unavailable of [false, true]) {
     await page.getByLabel("Username").fill("admin");
     await page.getByLabel("Password").fill("e2e-admin-password");
     await page.getByRole("button", { name: "Unlock" }).click();
-    const today = page.getByRole("region", { name: "Weather", exact: true });
+    await expect(page.getByRole("button", { name: /^Weather:/ })).toContainText(unavailable ? "Unavailable" : "22°C");
+    await page.getByRole("button", { name: /^Weather:/ }).click();
+    const today = page.getByRole("dialog", { name: "Weather details", exact: true });
     await expect(today.getByText(unavailable ? "Unavailable" : "22°C").first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Bookmarks", exact: true })).toBeVisible();
     if (!unavailable) {
-      const grid = await page.getByRole("region", { name: "Weather", exact: true }).boundingBox();
+      const grid = await today.boundingBox();
       const card = await page.locator(".compact-weather-card").boundingBox();
       expect(grid && card && card.width <= grid.width).toBe(true);
     }
+    await page.keyboard.press("Escape");
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: "Bookmarks", exact: true }).click();
     await expect(page.getByRole("menu", { name: "Home bookmarks" })).toBeVisible();
@@ -129,7 +132,7 @@ for (const unavailable of [false, true]) {
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: /Switch to light mode|Light mode/ }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-    await expect(page.getByRole("heading", { name: "Favorites", exact: true })).toHaveCSS("color", "rgb(37, 58, 54)");
+    await expect(page.getByRole("button", { name: "Favorites", exact: true })).toHaveCSS("color", "rgb(37, 58, 54)");
     const results = await new AxeBuilder({ page }).analyze();
     expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? ""))).toEqual([]);
   });
