@@ -20,9 +20,11 @@ export function SettingsHub({ section, onSection, services, system, onRestored }
   const [workspace, setWorkspace] = useHomepageWorkspace();
   return <main className="view-shell settings-hub">
     <PageHeader title="Settings" subtitle="A space that works the way you do." />
+    <div className="settings-layout">
     <nav className="settings-sections" aria-label="Settings sections">
       {sections.map(item => <button key={item.id} className={section === item.id ? "active" : ""} aria-current={section === item.id ? "page" : undefined} onClick={() => onSection(item.id)}>{item.label}</button>)}
     </nav>
+    <div className="settings-content">
     {(section === "homepage" || section === "bookmarks") && <>
       <div className="segmented-control settings-workspace" role="group" aria-label="Workspace settings">
         {(["home", "work"] as const).map(id => <button key={id} aria-pressed={workspace === id} className={workspace === id ? "active" : ""} onClick={() => setWorkspace(id)}>{id === "home" ? "Home" : "Work"}</button>)}
@@ -33,5 +35,7 @@ export function SettingsHub({ section, onSection, services, system, onRestored }
     {section === "services" && services}
     {section === "integrations" && system}
     {section === "backups" && <DataBackups onRestored={onRestored} />}
+    </div>
+    </div>
   </main>;
 }

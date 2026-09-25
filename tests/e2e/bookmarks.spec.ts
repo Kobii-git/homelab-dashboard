@@ -115,7 +115,7 @@ for (const unavailable of [false, true]) {
     await page.getByLabel("Password").fill("e2e-admin-password");
     await page.getByRole("button", { name: "Unlock" }).click();
     const today = page.getByRole("region", { name: "Weather", exact: true });
-    await expect(today.getByText(unavailable ? /Weather unavailable/ : "22°C").first()).toBeVisible();
+    await expect(today.getByText(unavailable ? "Unavailable" : "22°C").first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Bookmarks", exact: true })).toBeVisible();
     if (!unavailable) {
       const grid = await page.getByRole("region", { name: "Weather", exact: true }).boundingBox();

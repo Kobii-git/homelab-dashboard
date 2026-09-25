@@ -1,3 +1,4 @@
+import { SiteIcon } from "../../components/SiteIcon";
 import { BookmarkTree } from "./BookmarkTree";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { ArrowDown, ArrowUp, Bookmark, Pencil, Plus, Star, Settings2, X } from "lucide-react";
@@ -442,9 +443,7 @@ export function BookmarkManager({
               }
             />
             <a href={b.url} target="_blank" rel="noopener noreferrer">
-              <span className="hp-site-icon">
-                {b.name.charAt(0).toUpperCase()}
-              </span>
+              <SiteIcon name={b.name} url={b.url} size={28} />
               <span>
                 <strong>{b.name}</strong>
                 <small>

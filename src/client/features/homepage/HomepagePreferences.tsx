@@ -4,6 +4,7 @@ import { defaultLayout, type HomeLayout, type HomepageData, type HomepageSnapsho
 import { apiSend } from "../../lib/api";
 import { fileBase64, type HomepageController } from "./useHomepage";
 import { widgetTitles as titles } from "./widgetTitles";
+import { balancedLayout } from "./balancedLayout";
 import { ShortcutPicker } from "./ShortcutPicker";
 export function HomepagePreferences({ home, workspace }: { home: HomepageController; workspace: WorkspaceId }) {
   const [customize, setCustomize] = useState<{ data: HomepageData; revision: number } | null>(null);
@@ -154,7 +155,8 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
             />
           </label>
           <ShortcutPicker snapshot={snapshot} workspace={workspace} layout={layout} onChange={updateLayout} />
-          <h3>Arrange your widgets</h3>
+          <div className="hp-card-title"><h3>Arrange your widgets</h3><button type="button" onClick={() => updateLayout(balancedLayout(layout))}>Balanced arrangement</button></div>
+          <p className="muted-copy">Balanced arrangement previews new order and widths while preserving enabled widgets and other preferences. Save layout applies the preview.</p>
           <div className="hp-widget-options">
             {layout.widgets.map((w, i) => (
               <div key={w.id}>

@@ -168,7 +168,7 @@ test("an empty Launchpad shows focused onboarding and Operations stays signal-on
 
   await page.getByRole("navigation", { name: "Dashboard view" }).getByRole("button", { name: "Operations" }).click();
   await expect(page.getByRole("button", { name: /Connect operations data/ })).toBeVisible();
-  await expect(page.getByText("No operational issues need attention")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Dashboard status" }).getByText("No operational integrations", { exact: true })).toBeVisible();
   await expect(page.locator(".briefing-grid")).toHaveCount(0);
   await expectNoSeriousAxeViolations(page);
 });
@@ -312,8 +312,10 @@ test("a utility provider failure does not hide successful utility data or servic
     }
   }));
   await login(page);
-  await expect(page.getByText("Weather unavailable")).toBeVisible();
-  await expect(page.getByText("Software releases")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Weather", exact: true }).getByText("Unavailable", { exact: true })).toBeVisible();
+  await page.getByRole("region", { name: "Dashboard status" }).getByText("View details", { exact: true }).click();
+  await expect(page.getByText("Weather provider timed out", { exact: true })).toBeVisible();
+  await expect(page.locator(".hp-widget-releases").getByText("Software releases", { exact: true })).toBeVisible();
   await expect(page.locator(".svc-primary").first()).toBeVisible();
 });
 

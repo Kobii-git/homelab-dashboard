@@ -71,7 +71,7 @@ export function Notes({ home, workspace }: { home: HomepageController; workspace
     <div className="hp-note-library">
       <label className="hp-note-search"><Search size={16} aria-hidden="true" /><input aria-label="Find a note" placeholder="Find a note…" value={query} onChange={e => setQuery(e.target.value)} /></label>
       <div className="hp-note-list" ref={listRef} role="region" aria-label="Saved notes" tabIndex={0}>
-        {filteredNotes.map(note => <button key={note.id} className={`hp-note note-color-${Array.from(note.id).reduce((total, char) => total + char.charCodeAt(0), 0) % 4}`} onClick={() => { setNotice(""); setEditing(draft(note)); }}>
+        {filteredNotes.map(note => <button key={note.id} className="hp-note" onClick={() => { setNotice(""); setEditing(draft(note)); }}>
           <strong>{note.title}</strong><span>{notePreview(note)}</span><ArrowUpRight size={15} aria-hidden="true" />
         </button>)}
         {!notes.length && <div className="hp-notes-empty"><StickyNote size={26} aria-hidden="true" /><strong>Your ideas belong here</strong><p>Save a quick note. It will appear here, ready to open whenever you need it.</p><button onClick={() => scratchRef.current?.focus()}>Write your first note</button></div>}

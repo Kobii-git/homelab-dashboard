@@ -1,7 +1,7 @@
 import { BookmarkMenu } from "./BookmarkMenu";
 import { useHomepage } from "./useHomepage";
 import { useHomepageWorkspace } from "./useHomepageWorkspace";
-import { Globe } from "lucide-react";
+import { SiteIcon } from "../../components/SiteIcon";
 import { workspaceShortcuts } from "./shortcuts";
 
 export function SidebarBookmarks({ onManage }: { onManage: () => void }) {
@@ -23,7 +23,7 @@ export function SidebarBookmarks({ onManage }: { onManage: () => void }) {
       {shortcuts.slice(0, 24).map(shortcut => shortcut.kind === "folder"
         ? <BookmarkMenu key={shortcut.value.id} {...menuProps} folder={shortcut.value} />
         : <a key={shortcut.value.id} href={shortcut.value.url} target="_blank" rel="noopener noreferrer" title={shortcut.value.name}>
-          <Globe size={19} /><span className="nav-label">{shortcut.value.name}</span>
+          <SiteIcon name={shortcut.value.name} url={shortcut.value.url} size={28} /><span className="nav-label">{shortcut.value.name}</span>
         </a>)}
       {shortcuts.length > 24 && <BookmarkMenu {...menuProps} label="More bookmarks" />}
     </div>

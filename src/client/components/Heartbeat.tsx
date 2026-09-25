@@ -19,7 +19,7 @@ export function Heartbeat({
 
   if (visible.length === 0) {
     return (
-      <div className={`heartbeat is-empty ${className}`.trim()} aria-label="No checks recorded yet">
+      <div className={`heartbeat is-empty ${className}`.trim()} role="img" aria-label="No checks recorded yet">
         {Array.from({ length: slots }, (_, index) => (
           <span className="hb-tick hb-empty" key={index} />
         ))}
@@ -28,11 +28,14 @@ export function Heartbeat({
   }
 
   const online = visible.filter((tick) => tick.status === "online").length;
+  const offline = visible.filter((tick) => tick.status === "offline").length;
+  const unknown = visible.length - online - offline;
 
   return (
     <div
       className={`heartbeat ${className}`.trim()}
-      aria-label={`Last ${visible.length} checks: ${online} online, ${visible.length - online} offline`}
+      role="img"
+      aria-label={`Last ${visible.length} checks: ${online} online, ${offline} offline${unknown ? `, ${unknown} unknown` : ""}`}
     >
       {Array.from({ length: padding }, (_, index) => (
         <span className="hb-tick hb-empty" key={`pad-${index}`} />

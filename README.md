@@ -14,7 +14,8 @@ A private, self-hosted browser homepage and command center for your bookmarks, w
 - **Calendar dates** - the Launchpad uses the device’s local time for timed events, keeps all-day dates on their intended day, and includes ongoing multi-day events; mail and storage cards flag cached data when providers are unavailable
 - **Media and storage** - optional Plex recently-added, Radarr upcoming, TMDB discovery, and TrueNAS capacity/health modules; TrueNAS health also appears in Operations
 - **Browser home and bookmarks** - dedicated bookmark management, nested collections, browser HTML import with preview, HTML/JSON export, bulk moves, trash/restore, and cross-device conflict protection; see [Browser home](docs/BROWSER_HOME.md)
-- **Homepage utilities** - optional three-day Open-Meteo weather, cached releases, configurable widgets/backgrounds, and normal ChatGPT links using your existing account without new AI API usage
+- **Homepage utilities** - responsive module cards, an optional balanced layout preset, three-day Open-Meteo forecasts with condition icons, cached releases, configurable widgets/backgrounds, and normal ChatGPT links using your existing account without new AI API usage
+- **Status summaries** - compact service/integration health strips with expandable details, neutral unknown states, and cached values retained in their modules
 - **Portable configuration** - validated ZIP export/restore with uploaded assets, safety-download confirmation, authentication exclusion, and disabled restored monitoring; see [Backups](docs/BACKUP_AND_RESTORE.md)
 - **Private HTTPS option** - pinned Caddy/Cloudflare DNS-01 deployment for LAN/VPN use without public app exposure; see [Private HTTPS](docs/PRIVATE_HTTPS.md)
 - **Heartbeat monitoring** - Uptime-Kuma-style heartbeat bars, uptime %, and latency on every card, plus a detail drawer with a latency sparkline, per-check errors, and threshold-gated stable status

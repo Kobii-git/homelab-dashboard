@@ -1,5 +1,6 @@
+import { SiteIcon } from "../../components/SiteIcon";
 import { useState } from "react";
-import { Bookmark, ChevronRight, Folder, Pencil } from "lucide-react";
+import { ChevronRight, Folder, Pencil } from "lucide-react";
 import type { HomepageBookmark, HomepageSnapshot, WorkspaceId } from "../../../shared/homepage";
 import { bookmarkHostname } from "../../lib/bookmarks";
 
@@ -30,7 +31,7 @@ function BookmarkLinks({ bookmarks, onEdit }: { bookmarks: HomepageBookmark[]; o
   const [limit, setLimit] = useState(60);
   return <>
     {bookmarks.slice(0, limit).map(b => <div className="hp-bookmark-link" key={b.id}>
-      <a href={b.url} target="_blank" rel="noopener noreferrer"><Bookmark size={16} /><span><strong>{b.name}</strong><small>{bookmarkHostname(b.url)}</small></span></a>
+      <a href={b.url} target="_blank" rel="noopener noreferrer"><SiteIcon name={b.name} url={b.url} size={28} /><span><strong>{b.name}</strong><small>{bookmarkHostname(b.url)}</small></span></a>
       <button className="icon-button" aria-label={`Edit bookmark ${b.name}`} onClick={() => onEdit(b)}><Pencil size={14} /></button>
     </div>)}
     {bookmarks.length > limit && <button onClick={() => setLimit(limit + 60)}>Show more bookmarks</button>}

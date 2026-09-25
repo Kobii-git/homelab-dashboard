@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Bookmark, ChevronDown, ChevronRight, Folder, Globe, Settings2, Repeat2 } from "lucide-react";
+import { SiteIcon } from "../../components/SiteIcon";
+import { ArrowLeft, Bookmark, ChevronDown, ChevronRight, Folder, Settings2, Repeat2 } from "lucide-react";
 import type { WorkspaceId } from "../../../shared/homepage";
 import type { HomepageController } from "./useHomepage";
 
@@ -128,7 +129,7 @@ export function BookmarkMenu({ home, workspace, onWorkspace, onManage, folder, l
         rel="noopener noreferrer"
         onClick={() => close()}
         onPointerEnter={event => { if (event.pointerType === "mouse") hover(() => setPath(current => current.slice(0, level))); }}
-      ><Globe size={15} /><span>{row.value.name}</span></a>)}
+      ><SiteIcon name={row.value.name} url={row.value.url} size={28} /><span>{row.value.name}</span></a>)}
       before={narrow && parent ? <button type="button" role="menuitem" tabIndex={-1} onClick={() => back(level)}><ArrowLeft size={15} /><span>Back</span></button> : null}
       after={!parent ? <>
         {home.error && <button type="button" role="menuitem" tabIndex={-1} onClick={() => void home.refresh()}>Couldn’t load bookmarks · Retry</button>}

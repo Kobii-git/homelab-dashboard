@@ -27,7 +27,7 @@ The slim vertical bookmarks bar shows top-level folders and unfiled links for th
 Click a folder to open its small side menu, or click a link to open it in a new tab. It shows the first
 24 shortcuts; **Bookmarks** (and **More bookmarks** for larger libraries) opens the complete library.
 Dashboard, Services, and Notes sit above the shortcuts, with Settings below. Collapse the bar to icons or hide it;
-the reveal button brings it back. On phones, it becomes a compact top strip with a Bookmarks button.
+the reveal button brings it back. On phones, primary navigation sits above a separate row for search, bookmarks, theme, and logout.
 
 The bar opens a compact bookmark menu without a backdrop. Hover or click a folder inside a menu to open its
 submenu to the side. Use Up/Down to move, Right or Enter to open a folder, and Left or Escape to go
@@ -57,10 +57,15 @@ supported; use HTML for browser migration or the configuration archive for a com
 
 **Settings → Appearance & widgets → Customize home/work** controls widget visibility, order, width,
 accent, clock, and backgrounds.
-Homepage sections have no enclosing panels. Choose **Always open** or **Dropdown** for each section:
+Homepage modules use bordered cards in a responsive one-, two-, or three-column grid. Wide modules
+span the full row. Existing widget order, widths, visibility, and presentation are preserved.
+Choose **Always open** or **Dropdown** for each section:
 dedicated content stays visible, while a dropdown opens when you click its title (or press Enter/Space).
 You can mix both styles. Collapsing a section preserves its unsaved draft while you stay in that workspace.
 Display choices sync with the saved layout; dropdowns start closed when the workspace opens.
+**Balanced arrangement** previews a compact ordering with normal-width cards, except wide Notes and
+Media. It preserves enabled widgets, dropdown choices, shortcut selections, accents, and backgrounds.
+Choose **Save layout** to apply it, or **Cancel preview** to keep the saved layout.
 **Bookmarks in sidebar** controls the shortcut's visibility;
 its old saved width and position are retained for compatibility but do not affect the page layout.
 Save applies the layout to your other devices; Cancel restores the saved layout; Reset changes only
@@ -84,7 +89,8 @@ that browser but is not shared. Leaving a workspace closes its editor, so save d
 
 The **Services** sidebar item opens a service launcher with search by name or description. Click a
 service's icon, name, or description to open it. **Manage services** opens configuration
-under Settings; homepage service filters and layout controls are collapsed under **Service options**.
+under Settings. Operational filters, checks, and service reordering remain in **Operations**;
+the homepage Services module stays focused on launching and inspecting services.
 
 Integration settings are grouped into **Daily tools**, **Connections**, and **Account & runtime**.
 Changing groups preserves unsaved form edits while the Settings page stays open.
@@ -124,3 +130,16 @@ bar, manage native browser tabs, or copy browser passwords/history. When away fr
 VPN first; if DNS or routing fails, the browser itself may show an unreachable-page error.
 
 See [configuration backups](BACKUP_AND_RESTORE.md) and the [optional feature backlog](HOMEPAGE_BACKLOG.md).
+
+## Status and destination icons
+
+The strip beneath the dashboard header summarizes service health and the integrations enabled in the
+current workspace. **View details** expands provider errors and links to service details or Settings.
+Cached values remain visible in their cards. Unknown or unconfigured signals remain neutral rather
+than appearing healthy. Operations puts its attention briefing before metrics and the service directory.
+The optional public status page uses the same surfaces and follows the device's light/dark preference.
+
+Favorites, shortcuts, and services share consistent icon frames. Service logos use the existing
+same-origin proxy; ChatGPT and YouTube bookmark logos are bundled locally. Other bookmarks and failed
+images use two-letter initials. No arbitrary bookmark favicon lookup is performed. Logo sources and
+notices are linked from **Settings → Integrations & system → Account & runtime → Credits**.

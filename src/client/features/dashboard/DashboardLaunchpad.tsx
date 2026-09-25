@@ -6,6 +6,8 @@ import {
   CheckCircle2,
   Cloud,
   CloudLightning,
+  CloudFog,
+  Moon,
   CloudRain,
   CloudSun,
   ExternalLink,
@@ -30,6 +32,7 @@ import type {
   ReleaseItemDto,
   WeatherSummaryDto
 } from "../../../shared/types";
+import { StatusIndicator } from "../../components/HealthStrip";
 import { ServiceIcon } from "../../components/ServiceIcon";
 import { isBookmark } from "../../lib/bookmarks";
 import { apiGet } from "../../lib/api";
@@ -192,13 +195,18 @@ function UniversalSearch({
   );
 }
 
-function WeatherIcon({ data }: { data: WeatherSummaryDto }) {
-  const code = data.weatherCode;
-  if ([95, 96, 99].includes(code)) return <CloudLightning size={22} />;
-  if ([71, 73, 75, 77, 85, 86].includes(code)) return <Snowflake size={22} />;
-  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return <CloudRain size={22} />;
-  if (code === 0) return data.isDay ? <Sun size={22} /> : <CloudSun size={22} />;
-  return <Cloud size={22} />;
+function WeatherIcon({ code, isDay = true, size = 22 }: { code: number; isDay?: boolean; size?: number }) {
+  const Icon = [95, 96, 99].includes(code) ? CloudLightning
+    : [71, 73, 75, 77, 85, 86].includes(code) ? Snowflake
+    : [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code) ? CloudRain
+    : [45, 48].includes(code) ? CloudFog
+    : code === 0 ? (isDay ? Sun : Moon)
+    : [1, 2].includes(code) ? CloudSun : Cloud;
+  return <Icon size={size} aria-hidden="true" />;
+}
+
+function CachedNotice({ children }: { children: ReactNode }) {
+  return <p className="utility-note" role="status"><StatusIndicator tone="warning">{children}</StatusIndicator></p>;
 }
 
 export function ReleasesCard({ releases, stale, error }: { releases: ReleaseItemDto[]; stale: boolean; error: string | null }) {
@@ -216,7 +224,7 @@ export function ReleasesCard({ releases, stale, error }: { releases: ReleaseItem
           </a>
         ))}
       </div>
-      {(stale || error) ? <p className="utility-note">{error ?? "Showing cached release data."}</p> : null}
+      {(stale || error) ? <CachedNotice>Showing cached release data.</CachedNotice> : null}
     </article>
   );
 }
@@ -238,7 +246,7 @@ function calendarColor(colorId: string | null): string {
 }
 
 export function CalendarCard({ summary, now }: { summary: DashboardHomeSummaryDto["agenda"]; now: Date }) {
-  if (summary.state !== "ready" || !summary.data) return <ResultNotice label="Calendar unavailable" error={summary.error} />;
+  if (!summary.data) return <ResultNotice label="Calendar unavailable" error={summary.error} />;
   const year = now.getFullYear();
   const month = now.getMonth();
   const firstWeekday = new Date(year, month, 1).getDay();
@@ -272,13 +280,13 @@ export function CalendarCard({ summary, now }: { summary: DashboardHomeSummaryDt
           return event.url ? <a tabIndex={0} key={key} href={event.url} target="_blank" rel="noreferrer">{content}</a> : <div key={key}>{content}</div>;
         })}
       </div>
-      {summary.error ? <p className="utility-note">{summary.error}</p> : null}
+      {(summary.stale || summary.error) ? <CachedNotice>Showing cached calendar data.</CachedNotice> : null}
     </article>
   );
 }
 
 export function TasksCard({ summary }: { summary: DashboardHomeSummaryDto["tasks"] }) {
-  if (summary.state !== "ready" || !summary.data) return <ResultNotice label="Todoist unavailable" error={summary.error} />;
+  if (!summary.data) return <ResultNotice label="Todoist unavailable" error={summary.error} />;
   return (
     <article className="home-module home-tasks-card">
       <header className="home-module-header">
@@ -294,19 +302,19 @@ export function TasksCard({ summary }: { summary: DashboardHomeSummaryDto["tasks
           </a>
         ))}
       </div>
-      {(summary.stale || summary.error) ? <p className="utility-note">{summary.error ?? "Showing cached tasks."}</p> : null}
+      {(summary.stale || summary.error) ? <CachedNotice>Showing cached tasks.</CachedNotice> : null}
     </article>
   );
 }
 
 export function MailCard({ summary }: { summary: DashboardHomeSummaryDto["mail"] }) {
-  if (summary.state !== "ready" || !summary.data) return <ResultNotice label="Gmail unavailable" error={summary.error} />;
+  if (!summary.data) return <ResultNotice label="Gmail unavailable" error={summary.error} />;
   return (
     <article className="home-module home-mail-card">
       <span className="mail-icon"><Inbox size={19} /></span>
       <span><strong>{summary.data.inboxUnread}</strong><small>unread in Inbox</small></span>
       <div><a href={summary.data.inboxUrl} target="_blank" rel="noreferrer">Inbox</a><a href={summary.data.composeUrl} target="_blank" rel="noreferrer">Compose</a></div>
-      {(summary.stale || summary.error) ? <p className="utility-note" role="status">{summary.stale ? "Showing cached mail count." : ""}{summary.error ? ` ${summary.error}` : ""}</p> : null}
+      {(summary.stale || summary.error) ? <CachedNotice>Showing cached mail count.</CachedNotice> : null}
     </article>
   );
 }
@@ -315,10 +323,18 @@ export function CompactWeatherCard({ data, stale }: { data: WeatherSummaryDto; s
   const degree = data.units === "metric" ? "°C" : "°F";
   return (
     <article className="home-module compact-weather-card">
-      <span className="utility-card-icon"><WeatherIcon data={data} /></span>
-      <span><strong>{Math.round(data.temperature)}{degree}</strong><small>{data.condition} · {data.location.name}</small></span>
-      <small>{stale ? "Cached forecast" : `Feels ${Math.round(data.apparentTemperature ?? data.temperature)}°`}</small>
-      <div className="hp-forecast">{(data.days ?? []).slice(0,3).map(day => <div key={day.date}><strong>{new Date(`${day.date}T12:00:00`).toLocaleDateString([], { weekday: "short" })}</strong><span>{day.condition}</span><small>{Math.round(day.high)}° / {Math.round(day.low)}°</small>{day.precipitationChance !== null && <small>{day.precipitationChance}% rain</small>}</div>)}</div>
+      <div className="weather-current">
+        <span className="utility-card-icon"><WeatherIcon code={data.weatherCode} isDay={data.isDay} size={28} /></span>
+        <div><strong>{Math.round(data.temperature)}{degree}</strong><small>{data.condition} · {data.location.name}</small>
+          <small>Feels like {Math.round(data.apparentTemperature ?? data.temperature)}{degree}</small></div>
+      </div>
+      {stale && <CachedNotice>Cached forecast</CachedNotice>}
+      {(data.days ?? []).length > 0 && <div className="hp-forecast">{data.days.slice(0, 3).map(day => <div key={day.date}>
+        <strong>{new Date(`${day.date}T12:00:00`).toLocaleDateString([], { weekday: "short" })}</strong>
+        <WeatherIcon code={day.weatherCode} size={20} /><span>{day.condition}</span>
+        <small>{Math.round(day.high)}° / {Math.round(day.low)}°</small>
+        {day.precipitationChance !== null && <small>{day.precipitationChance}% rain</small>}
+      </div>)}</div>}
       <p className="weather-attribution">Weather by <a tabIndex={0} href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> · <a tabIndex={0} href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>. Rounded and summarized.</p>
     </article>
   );
@@ -328,7 +344,7 @@ type MediaTab = "recentlyAdded" | "upcoming" | "trending";
 
 export function MediaCard({ summary }: { summary: DashboardHomeSummaryDto["media"] }) {
   const [tab, setTab] = useState<MediaTab>("recentlyAdded");
-  if (summary.state !== "ready" || !summary.data) return <ResultNotice label="Media unavailable" error={summary.error} />;
+  if (!summary.data) return <ResultNotice label="Media unavailable" error={summary.error} />;
   const items = summary.data[tab];
   const labels: Record<MediaTab, string> = { recentlyAdded: "Recently added", upcoming: "Upcoming", trending: "Trending" };
   const tabs = Object.keys(labels) as MediaTab[];
@@ -376,13 +392,13 @@ export function MediaCard({ summary }: { summary: DashboardHomeSummaryDto["media
           return item.externalUrl ? <a key={item.id} href={item.externalUrl} target="_blank" rel="noreferrer">{content}</a> : <div key={item.id}>{content}</div>;
         })}
       </div>
-      {(summary.stale || summary.error) ? <p className="utility-note">{summary.error ?? "Showing cached media."}</p> : null}
+      {(summary.stale || summary.error) ? <CachedNotice>Showing cached media.</CachedNotice> : null}
     </article>
   );
 }
 
 export function StorageCard({ summary }: { summary: DashboardHomeSummaryDto["storage"] }) {
-  if (summary.state !== "ready" || !summary.data) return <ResultNotice label="Storage unavailable" error={summary.error} />;
+  if (!summary.data) return <ResultNotice label="Storage unavailable" error={summary.error} />;
   const data = summary.data;
   const level = data.usedPercent >= 90 || !["ONLINE", "HEALTHY"].includes(data.health.toUpperCase()) ? "critical" : data.usedPercent >= 80 ? "warning" : "healthy";
   return (
@@ -392,7 +408,7 @@ export function StorageCard({ summary }: { summary: DashboardHomeSummaryDto["sto
       <div className="storage-bar" role="progressbar" aria-label="Storage used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={data.usedPercent}><i style={{ width: `${Math.min(100, data.usedPercent)}%` }} /></div>
       <div className="storage-facts"><span><small>Used</small><strong>{formatBytes(data.usedBytes)}</strong></span><span><small>Free</small><strong>{formatBytes(data.freeBytes)}</strong></span></div>
       <p>{data.datasetName ?? data.poolName} · {data.change24hBytes == null ? "building 24h trend" : `${data.change24hBytes >= 0 ? "+" : "−"}${formatBytes(Math.abs(data.change24hBytes))} in 24h`}</p>
-      {(summary.stale || summary.error) ? <p className="utility-note" role="status">{summary.stale ? "Showing cached storage data." : ""}{summary.error ? ` ${summary.error}` : ""}</p> : null}
+      {(summary.stale || summary.error) ? <CachedNotice>Showing cached storage data.</CachedNotice> : null}
     </article>
   );
 }

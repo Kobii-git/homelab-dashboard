@@ -1,3 +1,4 @@
+import { SiteIcon } from "../../components/SiteIcon";
 import { useState } from "react";
 import { ArrowUpRight, Plus, Search, Settings2 } from "lucide-react";
 import type { WorkspaceId } from "../../../shared/homepage";
@@ -30,7 +31,7 @@ export function HomepageStart({ home, workspace, onWorkspace, onCustomize, onMan
     </div>
     <nav className="hp-center-shortcuts" aria-label="Homepage shortcuts">
       {links.map(link => <a key={link.id} className="hp-center-link" href={link.url} target="_blank" rel="noopener noreferrer">
-        <span className="hp-shortcut-icon" aria-hidden="true">{link.name.charAt(0).toUpperCase()}</span><span>{link.name}</span><ArrowUpRight size={14} aria-hidden="true" />
+        <SiteIcon name={link.name} url={link.url} size={layout.shortcutStyle === "compact" ? 28 : 40} /><span>{link.name}</span><ArrowUpRight size={14} aria-hidden="true" />
       </a>)}
       {folders.map(folder => <BookmarkMenu key={folder.id} home={home} workspace={workspace} onWorkspace={onWorkspace} onManage={onManage} folder={folder} placement="below" />)}
       {!links.length && !folders.length && <button type="button" className="hp-shortcut-empty" onClick={onCustomize}><Plus size={22} /><span><strong>Keep your go-to places here</strong><small>Choose links or folders, separately from your sidebar.</small></span></button>}

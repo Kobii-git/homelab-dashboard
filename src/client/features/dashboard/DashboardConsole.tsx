@@ -30,6 +30,8 @@ import type { AiBriefingActionDto, AiBriefingDto, ApiWidgetDto, DashboardResourc
 import { EmptyPanel, StatusBadge } from "../../components/Primitives";
 import { Heartbeat } from "../../components/Heartbeat";
 import { ServiceDrawer } from "../../components/ServiceDrawer";
+import { HealthStrip, type HealthItem } from "../../components/HealthStrip";
+import { serviceHealth } from "../../lib/healthPresentation";
 import { ServiceIcon } from "../../components/ServiceIcon";
 import { ModalSurface } from "../../components/ModalSurface";
 import {
@@ -751,7 +753,7 @@ function ServiceCard({
         onClick={activate}
       >
         <header className="svc-top">
-          <ServiceIcon resource={resource} size={density === "grid" ? 40 : 30} />
+          <ServiceIcon resource={resource} size={40} />
           <span className="svc-name">
             <strong>{resource.name}</strong>
             <small>{serviceAddress(resource)}</small>
@@ -1194,13 +1196,22 @@ export function DashboardConsole({
     </>
   );
 
+  const signalCount = hostMonitors.length + integrations.length + apiWidgets.length;
+  const unknownSignals = hostMonitors.some(host => host.latestStatus === "unknown") || integrations.some(source => source.status === "unknown") || apiWidgets.some(widget => widget.latestStatus === "unknown");
+  const operationsHealth: HealthItem[] = [serviceHealth(directoryResources, resource => setInspectedId(resource.id)), {
+    id: "operations", tone: dailyIssueCount > 0 ? (offlineResources.length + offlineHosts + offlineIntegrations + offlineApiWidgets + offlineGateways > 0 ? "error" : "warning") : unknownSignals || !signalCount ? "neutral" : "healthy",
+    label: dailyIssueCount > 0 ? `${dailyIssueCount} operational item${dailyIssueCount === 1 ? "" : "s"} need attention` : unknownSignals ? "Some operational signals are unknown" : !signalCount ? "No operational integrations" : "Operational signals healthy",
+    details: dailyIssueCount > 0 ? [{ id: "attention", label: "Operational issues", actionLabel: "View attention briefing", onAction: () => document.getElementById("operations-attention")?.focus() }]
+      : unknownSignals || !signalCount ? [{ id: "connections", label: unknownSignals ? "Waiting for operational data" : "Connect operational data", actionLabel: "Integration settings", onAction: () => onOpenSettings("integrations") }] : [],
+  }];
+
   const dateLine = now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
   const clock = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   if (mode === "launchpad") {
     return (
       <main className="view-shell dashboard-view launchpad-view">
-        <BrowserHomepage username={username} now={now} settings={systemSettings} onOperations={() => setMode("operations")} onSettings={onOpenSettings} services={resources.filter(r => !isBookmark(r))} serviceDirectory={serviceDirectory} />
+        <BrowserHomepage username={username} now={now} settings={systemSettings} onOperations={() => setMode("operations")} onSettings={onOpenSettings} services={resources.filter(r => !isBookmark(r))} serviceDirectory={serviceDirectory} onInspectService={resource => setInspectedId(resource.id)} />
         {overlays}
       </main>
     );
@@ -1230,112 +1241,19 @@ export function DashboardConsole({
                 {apiWidgets.length} API widget{apiWidgets.length === 1 ? "" : "s"}
               </>
             ) : null}
-            <span className="dash-hero-pulse dot-online" /> {totals.online} online
-            {totals.offline > 0 ? (
-              <>
-                <span className="dash-hero-pulse dot-offline" /> {totals.offline} offline
-              </>
-            ) : null}
-            {totals.unknown > 0 ? (
-              <>
-                <span className="dash-hero-pulse dot-unknown" /> {totals.unknown} unknown
-              </>
-            ) : null}
           </p>
         </div>
         <div className="ops-status-panel">
           <div className="dash-clock" aria-hidden>{clock}</div>
-          <span className={`ops-state ${dailyIssueCount > 0 ? "ops-state-attention" : "ops-state-ok"}`}>
-            {dailyIssueCount > 0 ? `${dailyIssueCount} item${dailyIssueCount === 1 ? "" : "s"} need attention` : "All clear"}
-          </span>
           <small>{lastUpdatedAt ? `Updated ${relativeTime(lastUpdatedAt)}` : "No samples yet"}</small>
           <DashboardModeSwitch mode={mode} onChange={setMode} />
         </div>
       </header>
 
-      {hostMonitors.length > 0 ? (
-        <section className="lab-vitals">
-        <div className="section-heading compact-section-heading">
-          <h3>Lab Vitals</h3>
-          <button className="icon-text-button" type="button" onClick={() => onOpenSettings()}>
-            <Plus size={14} /> Host monitor
-          </button>
-        </div>
-        <div className="host-grid">
-          {hostMonitors.map((host) => (
-            <HostVitalsCard key={host.id} host={host} onInspect={(item) => setInspectedHostId(item.id)} />
-          ))}
-        </div>
-      </section>
-      ) : null}
+      <HealthStrip items={operationsHealth} />
 
-      {hostMonitors.length === 0 && integrations.length === 0 && apiWidgets.length === 0 && !aiBriefing ? (
-        <button className="operations-connect-panel" type="button" onClick={() => onOpenSettings()}>
-          <span className="host-icon"><Server size={19} /></span>
-          <span>
-            <strong>Connect operations data</strong>
-            <small>Add a Glances host, OPNsense integration, or read-only API widget when you are ready.</small>
-          </span>
-          <Plus size={16} />
-        </button>
-      ) : null}
-
-      {integrations.length > 0 ? (
-        <section className="lab-vitals integration-vitals">
-          <div className="section-heading compact-section-heading">
-            <h3>OPNsense</h3>
-            <button className="icon-text-button" type="button" onClick={() => onOpenSettings()}>
-              <RefreshCw size={14} /> Integration
-            </button>
-          </div>
-          <div className="host-grid integration-grid">
-            {integrations.map((source) => (
-              <IntegrationCard
-                key={source.id}
-                source={source}
-                onInspect={(item) => setInspectedIntegrationId(item.id)}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {apiWidgets.length > 0 ? (
-        <section className="lab-vitals api-widget-vitals">
-          <div className="section-heading compact-section-heading">
-            <h3>API Widgets</h3>
-            <button className="icon-text-button" type="button" onClick={() => onOpenSettings()}>
-              <Plus size={14} /> Widget
-            </button>
-          </div>
-          <div className="api-widget-grid">
-            {apiWidgets.map((widget) => (
-              <ApiWidgetCard key={widget.id} widget={widget} />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {aiBriefing ? (
-        <CommandBriefingPanel
-          briefing={aiBriefing}
-          refreshing={aiBriefingRefreshing}
-          onRefresh={() => void refreshAiBriefing()}
-          onAction={runAiAction}
-        />
-      ) : null}
-
-      {dailyIssueCount === 0 && briefing.recentChanges.length === 0 ? (
-        <section className="operations-all-clear">
-          <span className="ops-state ops-state-ok">All clear</span>
-          <span>
-            <strong>No operational issues need attention</strong>
-            <small>{resources.length > 0 ? `${totals.online}/${resources.length} services online with no recent transitions.` : "Add services when you are ready to start monitoring."}</small>
-          </span>
-          <span className="group-meta">last 24h</span>
-        </section>
-      ) : (
-      <section className="daily-briefing">
+      {(dailyIssueCount > 0 || briefing.recentChanges.length > 0) && (
+      <section className="daily-briefing" id="operations-attention" tabIndex={-1}>
         <div className="section-heading compact-section-heading">
           <h3>Daily Briefing</h3>
           <span className="group-meta">last 24h</span>
@@ -1442,6 +1360,78 @@ export function DashboardConsole({
       </section>
       )}
 
+      {hostMonitors.length > 0 ? (
+        <section className="lab-vitals">
+        <div className="section-heading compact-section-heading">
+          <h3>Lab Vitals</h3>
+          <button className="icon-text-button" type="button" onClick={() => onOpenSettings()}>
+            <Plus size={14} /> Host monitor
+          </button>
+        </div>
+        <div className="host-grid">
+          {hostMonitors.map((host) => (
+            <HostVitalsCard key={host.id} host={host} onInspect={(item) => setInspectedHostId(item.id)} />
+          ))}
+        </div>
+      </section>
+      ) : null}
+
+      {hostMonitors.length === 0 && integrations.length === 0 && apiWidgets.length === 0 && !aiBriefing ? (
+        <button className="operations-connect-panel" type="button" onClick={() => onOpenSettings()}>
+          <span className="host-icon"><Server size={19} /></span>
+          <span>
+            <strong>Connect operations data</strong>
+            <small>Add a Glances host, OPNsense integration, or read-only API widget when you are ready.</small>
+          </span>
+          <Plus size={16} />
+        </button>
+      ) : null}
+
+      {integrations.length > 0 ? (
+        <section className="lab-vitals integration-vitals">
+          <div className="section-heading compact-section-heading">
+            <h3>OPNsense</h3>
+            <button className="icon-text-button" type="button" onClick={() => onOpenSettings()}>
+              <RefreshCw size={14} /> Integration
+            </button>
+          </div>
+          <div className="host-grid integration-grid">
+            {integrations.map((source) => (
+              <IntegrationCard
+                key={source.id}
+                source={source}
+                onInspect={(item) => setInspectedIntegrationId(item.id)}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {apiWidgets.length > 0 ? (
+        <section className="lab-vitals api-widget-vitals">
+          <div className="section-heading compact-section-heading">
+            <h3>API Widgets</h3>
+            <button className="icon-text-button" type="button" onClick={() => onOpenSettings()}>
+              <Plus size={14} /> Widget
+            </button>
+          </div>
+          <div className="api-widget-grid">
+            {apiWidgets.map((widget) => (
+              <ApiWidgetCard key={widget.id} widget={widget} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {aiBriefing ? (
+        <CommandBriefingPanel
+          briefing={aiBriefing}
+          refreshing={aiBriefingRefreshing}
+          onRefresh={() => void refreshAiBriefing()}
+          onAction={runAiAction}
+        />
+      ) : null}
+
       <div className="dash-toolbar">
         <label className="search-box service-search">
           <Search size={16} />
@@ -1526,7 +1516,7 @@ export function DashboardConsole({
                 title={resource.url ? `Open ${resource.name}` : resource.name}
                 onClick={() => (resource.url ? openResource(resource) : setInspectedId(resource.id))}
               >
-                <ServiceIcon resource={resource} size={30} />
+                <ServiceIcon resource={resource} size={40} />
                 <span>{resource.name}</span>
                 <i className={`svc-dot dot-${status}`} />
               </button>

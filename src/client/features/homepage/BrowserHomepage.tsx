@@ -6,7 +6,6 @@ import {
   type ReactNode,
 } from "react";
 import {
-  ExternalLink,
   ChevronRight,
   Settings2,
 } from "lucide-react";
@@ -20,6 +19,10 @@ import type {
   DashboardResource,
   DashboardUtilitiesSummaryDto,
 } from "../../../shared/types";
+import { SiteIcon } from "../../components/SiteIcon";
+import { ServiceIcon } from "../../components/ServiceIcon";
+import { HealthStrip, StatusIndicator, type HealthItem } from "../../components/HealthStrip";
+import { serviceHealth, utilityHealth, utilityPresentation } from "../../lib/healthPresentation";
 import { HomepageStart } from "./HomepageStart";
 import { ModalSurface } from "../../components/ModalSurface";
 import {
@@ -49,6 +52,7 @@ export function BrowserHomepage({
   onSettings,
   services,
   serviceDirectory,
+  onInspectService,
 }: {
   username: string;
   now: Date;
@@ -57,6 +61,7 @@ export function BrowserHomepage({
   onSettings: (section?: "homepage" | "bookmarks" | "integrations" | "services") => void;
   services: DashboardResource[];
   serviceDirectory: ReactNode;
+  onInspectService: (resource: DashboardResource) => void;
 }) {
   const home = useHomepage();
   const [workspace, setWorkspace] = useHomepageWorkspace();
@@ -143,6 +148,34 @@ export function BrowserHomepage({
   const background = layout.background.startsWith("asset:")
     ? `linear-gradient(var(--hp-overlay),var(--hp-overlay)),url(/api/homepage/assets/${layout.background.slice(6)})`
     : undefined;
+  const enabledWidgets = layout.widgets.filter(widget => widget.enabled);
+  const statusItems: HealthItem[] = [serviceHealth(services, onInspectService)];
+  const disabled = { state: "disabled", data: null, stale: false, error: null, fetchedAt: null } as const;
+  const contextConfigured = { agenda: settings.dashboardHome.agendaEnabled, tasks: settings.dashboardHome.tasksEnabled,
+    mail: settings.dashboardHome.mailEnabled, media: settings.dashboardHome.mediaEnabled, storage: settings.dashboardHome.storageEnabled };
+  const weatherConfigured = settings.dashboardUtilities.weather.enabled && Boolean(settings.dashboardUtilities.weather.location);
+  const weatherState = utilityPresentation(weatherConfigured ? utilities?.weather : disabled, weatherConfigured ? weatherError : "");
+  for (const widget of enabledWidgets) {
+    if (widget.id === "weather" || widget.id === "releases") {
+      const configured = settings.dashboardUtilities[widget.id].enabled && (widget.id !== "weather" || settings.dashboardUtilities.weather.location);
+      statusItems.push(utilityHealth(widget.id, widgetTitles[widget.id], configured ? utilities?.[widget.id] : disabled, configured ? weatherError : "", () => onSettings("integrations")));
+    } else if (["agenda", "tasks", "mail", "media", "storage"].includes(widget.id)) {
+      const id = widget.id as keyof DashboardHomeSummaryDto;
+      statusItems.push(utilityHealth(id, widgetTitles[id], contextConfigured[id] ? context?.[id] : disabled, contextConfigured[id] ? contextError : "", () => onSettings("integrations")));
+    }
+  }
+  function moduleState(title: string, result: Parameters<typeof utilityPresentation>[0], fetchError = "") {
+    const state = utilityPresentation(result, fetchError);
+    return <section className="hp-card module-state"><h3>{title}</h3><StatusIndicator tone={state.tone}>{state.label}</StatusIndicator>
+      {state.tone !== "loading" && <button type="button" onClick={() => onSettings("integrations")}>Integration settings</button>}
+    </section>;
+  }
+  function contextBlock(id: keyof DashboardHomeSummaryDto, render: (summary: DashboardHomeSummaryDto) => ReactNode) {
+    const result = contextConfigured[id] ? context?.[id] : disabled;
+    if (!context || result?.data == null) return moduleState(widgetTitles[id], result, contextConfigured[id] ? contextError : "");
+    const summary = contextError ? { ...context, [id]: { ...result, stale: true, error: contextError } } : context;
+    return render(summary);
+  }
   const blocks: Record<string, ReactNode> = {
     services: (
       <section className="hp-card launchpad-services" aria-label="Services">
@@ -150,27 +183,15 @@ export function BrowserHomepage({
         {serviceDirectory}
       </section>
     ),
-    releases: (
-      <section className="hp-card launchpad-utilities">
-        {utilities?.releases?.data ? (
-          <ReleasesCard
-            releases={utilities.releases.data}
-            stale={utilities.releases.stale}
-            error={utilities.releases.error}
-          />
-        ) : (
-          <p role="status">
-            {utilities?.releases?.error ||
-              "Configure release repositories in Settings."}
-          </p>
-        )}
-      </section>
-    ),
+    releases: settings.dashboardUtilities.releases.enabled && utilities?.releases?.data ? (
+      <section className="hp-card launchpad-utilities"><ReleasesCard releases={utilities.releases.data}
+        stale={utilities.releases.stale || Boolean(weatherError)} error={utilities.releases.error} /></section>
+    ) : moduleState("Software releases", settings.dashboardUtilities.releases.enabled ? utilities?.releases : disabled, settings.dashboardUtilities.releases.enabled ? weatherError : ""),
     favorites: (
       <section className="hp-card" aria-label="Favorites">
         <h3>Favorites</h3>
         <div className="hp-favorites">
-          <a href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer"><span className="hp-site-icon"><ExternalLink size={18} /></span><strong>ChatGPT</strong></a>
+          <a href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer"><SiteIcon name="ChatGPT" url="https://chatgpt.com/" /><strong>ChatGPT</strong></a>
           {favorites.map((b) => (
             <a
               key={b.id}
@@ -178,26 +199,26 @@ export function BrowserHomepage({
               target="_blank"
               rel="noopener noreferrer"
             >
-              <span className="hp-site-icon">
-                {b.name.charAt(0).toUpperCase()}
-              </span>
+              <SiteIcon name={b.name} url={b.url} />
               <strong>{b.name}</strong>
             </a>
           ))}
           {workspace === "home" &&
             services
               .filter((s) => s.favorite)
-              .map((s) => (
+              .map((s) => s.url ? (
                 <a
                   key={s.id}
-                  href={s.url ?? "#"}
+                  href={s.url}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  <span className="hp-site-icon">{s.name.charAt(0)}</span>
+                  <ServiceIcon resource={s} />
                   <strong>{s.name}</strong>
                 </a>
-              ))}
+              ) : <button key={s.id} type="button" onClick={event => { event.currentTarget.focus(); onInspectService(s); }}>
+                <ServiceIcon resource={s} /><strong>{s.name}</strong>
+              </button>)}
         </div>
 
       </section>
@@ -241,56 +262,19 @@ export function BrowserHomepage({
           <h3>Weather</h3>
           <button onClick={() => onSettings("integrations")}>Location &amp; units</button>
         </div>
-        {!settings.dashboardUtilities.weather.enabled ? (
-          <p>Choose a city in Settings to show your local forecast.</p>
-        ) : (
-          <>
-            {weatherError && (
-              <p role="status">Weather unavailable: {weatherError}</p>
-            )}
-            {!utilities && !weatherError && (
-              <p role="status">Loading weather…</p>
-            )}
-            {utilities?.weather.data && (
-              <CompactWeatherCard
-                data={utilities.weather.data}
-                stale={utilities.weather.stale || Boolean(weatherError)}
-              />
-            )}{" "}
-            {utilities?.weather.error && (
-              <p role="status">
-                <strong>Weather unavailable</strong> · {utilities.weather.error}
-              </p>
-            )}
-          </>
-        )}
+        {utilities?.weather.data && weatherConfigured ? (
+          <CompactWeatherCard data={utilities.weather.data} stale={utilities.weather.stale || Boolean(utilities.weather.error) || Boolean(weatherError)} />
+        ) : <StatusIndicator tone={weatherState.tone}>
+          {weatherState.label}
+        </StatusIndicator>}
+
       </section>
     ),
-    agenda: context ? (
-      <CalendarCard summary={context.agenda} now={now} />
-    ) : (
-      <p role="status">{contextError || "Loading calendar…"}</p>
-    ),
-    tasks: context ? (
-      <TasksCard summary={context.tasks} />
-    ) : (
-      <p role="status">{contextError || "Loading tasks…"}</p>
-    ),
-    mail: context ? (
-      <MailCard summary={context.mail} />
-    ) : (
-      <p role="status">{contextError || "Loading mail…"}</p>
-    ),
-    media: context ? (
-      <MediaCard summary={context.media} />
-    ) : (
-      <p role="status">{contextError || "Loading media…"}</p>
-    ),
-    storage: context ? (
-      <StorageCard summary={context.storage} />
-    ) : (
-      <p role="status">{contextError || "Loading storage…"}</p>
-    ),
+    agenda: contextBlock("agenda", value => <CalendarCard summary={value.agenda} now={now} />),
+    tasks: contextBlock("tasks", value => <TasksCard summary={value.tasks} />),
+    mail: contextBlock("mail", value => <MailCard summary={value.mail} />),
+    media: contextBlock("media", value => <MediaCard summary={value.media} />),
+    storage: contextBlock("storage", value => <StorageCard summary={value.storage} />),
   };
   return (
     <div
@@ -348,6 +332,7 @@ export function BrowserHomepage({
           </nav>
         </div>
       </header>
+      <HealthStrip items={statusItems} />
       <HomepageStart home={home} workspace={workspace} onWorkspace={setWorkspace} onCustomize={() => onSettings("homepage")} onManage={() => onSettings("bookmarks")} />
       {home.busy && <p className="hp-sync" role="status">Saving…</p>}
       {home.error && (
@@ -363,7 +348,7 @@ export function BrowserHomepage({
         {layout.widgets
           .filter((w) => w.enabled && w.id !== "bookmarks")
           .map((w) => (
-            <div key={`${workspace}-${w.id}`} className={`hp-widget hp-widget-${w.id} ${w.size === "wide" ? "hp-wide" : ""}`}>
+            <div key={`${workspace}-${w.id}`} id={`widget-${w.id}`} className={`hp-widget hp-widget-${w.id} ${w.size === "wide" ? "hp-wide" : ""}`}>
               {w.presentation === "dropdown" ? <details className="hp-widget-dropdown">
                 <summary><ChevronRight size={16} /><span>{widgetTitles[w.id]}</span></summary>
                 <div className="hp-dropdown-content">{blocks[w.id]}</div>

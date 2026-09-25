@@ -136,7 +136,7 @@ export function CommandPalette({
                   onMouseEnter={() => setActive(index)}
                   onClick={() => pick(item)}
                 >
-                  <ServiceIcon resource={item.resource} size={24} />
+                  <ServiceIcon resource={item.resource} size={28} />
                   <span className="palette-copy">
                     <strong>{item.resource.name}</strong>
                     <small>{serviceAddress(item.resource)}</small>

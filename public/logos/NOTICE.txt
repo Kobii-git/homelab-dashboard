@@ -1,0 +1,21 @@
+Bundled destination logos
+
+OpenAI / ChatGPT and YouTube / Google marks identify links to their respective services.
+The marks remain the property of their owners; no affiliation or endorsement is implied.
+
+Source: Homarr dashboard-icons (Apache-2.0 collection; see LICENSE.txt).
+Individual trademarks retain their owners' rights. Assets are unmodified.
+Retrieved: 2026-09-25
+Commit: ab52e3bfaa737cba86793c76ccfcb312f8841278
+
+chatgpt
+Source: https://raw.githubusercontent.com/homarr-labs/dashboard-icons/ab52e3bfaa737cba86793c76ccfcb312f8841278/png/chatgpt.png
+SHA-256: 4e881a7f017181681438748d2409240a104e1764860847b49e894afac032f5ad
+
+youtube
+Source: https://raw.githubusercontent.com/homarr-labs/dashboard-icons/ab52e3bfaa737cba86793c76ccfcb312f8841278/png/youtube.png
+SHA-256: 21712266fd01c447e36b4461ff86124735c483c8921252c011f0a43547031552
+
+Brand guidelines:
+https://openai.com/brand/
+https://brand.youtube/

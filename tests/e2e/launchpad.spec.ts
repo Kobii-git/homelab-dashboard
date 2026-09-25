@@ -75,7 +75,9 @@ test.describe("Launchpad in the device time zone", () => {
     await openLaunchpad(page, summary);
     await expect(page.locator(".home-mail-card strong")).toHaveText("4");
     await expect(page.locator(".home-mail-card").getByRole("status")).toContainText("Showing cached mail count.");
-    await expect(page.locator(".home-mail-card").getByRole("status")).toContainText("Mail refresh failed.");
+    await page.getByRole("region", { name: "Dashboard status" }).getByText("View details", { exact: true }).click();
+    await expect(page.getByRole("region", { name: "Dashboard status" })).toContainText("Mail refresh failed.");
+    await expect(page.locator(".home-mail-card")).not.toContainText("Mail refresh failed.");
     await expect(page.locator(".home-storage-card").getByRole("progressbar")).toHaveAttribute("aria-valuenow", "65");
     await expect(page.locator(".home-storage-card").getByRole("status")).toHaveText("Showing cached storage data.");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);

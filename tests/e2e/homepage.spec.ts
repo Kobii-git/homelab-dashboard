@@ -355,7 +355,14 @@ test("nested folders are managed in Settings and expand with the keyboard on Hom
   await page.getByRole("searchbox", { name: "Search Google" }).click();
   await expect(page.getByRole("menu")).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect.poll(async () => (await rail.boundingBox())!.height).toBeLessThanOrEqual(64);
+  await expect.poll(async () => (await rail.boundingBox())!.height).toBeLessThanOrEqual(128);
+  const primaryButton = rail.getByRole("button", { name: "Dashboard", exact: true });
+  const searchButton = rail.getByRole("button", { name: "Search (⌘K)", exact: true });
+  const primaryBounds = (await primaryButton.boundingBox())!;
+  const searchBounds = (await searchButton.boundingBox())!;
+  expect(searchBounds.y).toBeGreaterThanOrEqual(primaryBounds.y + primaryBounds.height);
+  expect(searchBounds.width).toBeGreaterThanOrEqual(44);
+  expect(searchBounds.height).toBeGreaterThanOrEqual(44);
   await expect(shortcut).toBeHidden();
   await page.getByRole("button", { name: "Bookmarks", exact: true }).click();
   for (const name of [root, "Web", "Design"]) await page.getByRole("menuitem", { name, exact: true }).click();

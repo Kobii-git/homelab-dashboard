@@ -39,6 +39,10 @@ components. Do not strip their notices when redistributing images.
 - Service icons may be obtained at runtime from
   [Homarr dashboard-icons](https://github.com/homarr-labs/dashboard-icons), whose collection is
   Apache-2.0 licensed. Individual product marks retain their owners' rights. No endorsement is implied.
+- Bundled ChatGPT and YouTube destination logos come from a pinned Homarr dashboard-icons revision.
+  Exact sources, hashes, and owner attribution are in `public/logos/NOTICE.txt`; the collection license
+  is retained in `public/logos/LICENSE.txt`. These product marks remain their owners’ property and are
+  excluded from this project’s MIT grant. No affiliation or endorsement is implied.
 - Google, ChatGPT, browser and integration names identify compatible external services. This project
   does not grant trademark rights or rights to redistribute provider content.
 - Import only backgrounds and other content you have permission to use. User data and uploads are

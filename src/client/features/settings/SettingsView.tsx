@@ -1295,6 +1295,7 @@ export function SettingsView({
         <section className="table-panel" hidden={category !== "system"}>
           <h3><Film size={16} /> Credits</h3>
           <p className="muted-copy">Homelab Dashboard is MIT licensed. <a href="/third-party-licenses.txt" target="_blank" rel="noreferrer">Third-party software licenses and notices</a>.</p>
+          <p className="muted-copy">Destination logos identify their respective services. OpenAI and YouTube marks belong to their owners; no endorsement is implied. <a href="/logos/NOTICE.txt" target="_blank" rel="noreferrer">Logo sources and notices</a>.</p>
           <a className="tmdb-credit" href="https://www.themoviedb.org" target="_blank" rel="noreferrer">
             <img src="/tmdb-logo.svg" alt="TMDB" />
           </a>
