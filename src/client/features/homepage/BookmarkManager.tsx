@@ -257,7 +257,20 @@ export function BookmarkManager({
           {trash ? "Back to bookmarks" : "Trash"}
         </button>
       </div>
-      <details className="hp-transfer"><summary>Import &amp; export</summary><div className="hp-actions hp-subtle">
+      <details className="hp-transfer">
+        <summary>Import &amp; export</summary>
+        <p>
+          Import bookmarks and folders from a browser HTML file (.html or .htm)
+          into this workspace. Review the links before saving. Passwords,
+          history, cookies, and browser settings are not imported.
+        </p>
+        <p>
+          <strong>Firefox:</strong> Bookmarks → Manage bookmarks → Import and
+          Backup → Export Bookmarks to HTML. <strong>Internet Explorer:</strong>{" "}
+          Favorites → arrow beside Add to Favorites → Import and Export → Export
+          to a file → Favorites.
+        </p>
+        <div className="hp-actions hp-subtle">
         <button type="button" onClick={() => void exportBookmarks("html")}>
           Export HTML
         </button>

@@ -60,7 +60,6 @@ function failureReason(error: unknown, fallback: CheckFailureReason = "unknown")
     return fallback === "icmp_no_reply" ? "icmp_unavailable" : fallback;
   }
   if (
-    message.includes("outside the configured allowlist") ||
     message.includes("forbidden address") ||
     message.includes("outbound provider host is not allowlisted")
   ) {

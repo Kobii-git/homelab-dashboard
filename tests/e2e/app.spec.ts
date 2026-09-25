@@ -101,6 +101,7 @@ test("service setup makes TCP reachability and exact web endpoints primary", asy
 
   await page.getByRole("button", { name: "Service", exact: true }).click();
   let serviceForm = page.getByRole("heading", { name: "New service" }).locator("..");
+  await expect(serviceForm.locator('[name="icon"]')).toHaveCount(0);
   await serviceForm.getByRole("textbox", { name: "Name", exact: true }).fill(`OPNsense TCP Reachability ${suffix}`);
   await serviceForm.getByRole("textbox", { name: "Host", exact: true }).fill("192.168.10.254");
   await serviceForm.locator('select[name="resourceCheckType"]').selectOption("tcp");
@@ -474,6 +475,43 @@ test("a rejected authenticated refresh returns to login with an expiry message",
   await page.route("**/api/dashboard", (route) => route.fulfill({ status: 401, json: { error: "Authentication required" } }));
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(page.getByText(/session expired or was invalidated/i)).toBeVisible();
+});
+
+test("a transient background failure keeps the service list without a global error", async ({ page }) => {
+  await login(page);
+  await page.getByRole("button", { name: "Manage services" }).click();
+  await expect(page.getByRole("heading", { name: "Services", exact: true })).toBeVisible();
+
+  await page.route("**/api/homepage", (route) => route.fulfill({ status: 500, json: { error: "Internal server error" } }));
+  const homeFailure = page.waitForResponse((response) => response.url().endsWith("/api/homepage") && response.status() === 500);
+  await page.evaluate(() => window.dispatchEvent(new Event("homepage:changed")));
+  await homeFailure;
+  await expect(page.locator(".app-error")).toHaveCount(0);
+  await expect(page.locator(".loading-strip")).toHaveCount(0);
+
+  await page.route("**/api/dashboard", (route) => route.fulfill({ status: 500, json: { error: "Internal server error" } }));
+  const firstFailure = page.waitForResponse((response) => response.url().endsWith("/api/dashboard") && response.status() === 500);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await firstFailure;
+  await expect(page.locator(".app-error")).toHaveCount(0);
+  await expect(page.locator(".loading-strip")).toHaveCount(0);
+
+  const secondFailure = page.waitForResponse((response) => response.url().endsWith("/api/dashboard") && response.status() === 500);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await secondFailure;
+  await expect(page.getByText("Dashboard refresh is failing. Showing the last loaded data.")).toBeVisible();
+  await expect(page.locator(".loading-strip")).toHaveCount(0);
+
+  await page.unroute("**/api/dashboard");
+  const recovery = page.waitForResponse((response) => response.url().endsWith("/api/dashboard") && response.status() === 200);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await recovery;
+  await expect(page.locator(".app-error")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Services", exact: true })).toBeVisible();
+
+  await page.route("**/api/dashboard", (route) => route.fulfill({ status: 500, json: { error: "Internal server error" } }));
+  await page.getByRole("button", { name: "Sync" }).click();
+  await expect(page.locator(".app-error")).toHaveText("Internal server error");
 });
 
 test("public status distinguishes unknown state and recovers from fetch errors", async ({ page }) => {

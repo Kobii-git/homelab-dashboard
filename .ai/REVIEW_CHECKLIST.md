@@ -34,7 +34,7 @@ implementation summary or manufacture findings.
 
 ## Outbound network or integrations
 
-- Confirm the destination uses shared DNS/allowlist/pinning controls and cannot follow an unchecked
+- Confirm the destination uses shared DNS/forbidden-address/pinning controls and cannot follow an unchecked
   redirect or reconnect to another address.
 - Check bounded timeout, response size, concurrency/retry behavior, TLS verification, and sanitized
   errors/logs.

@@ -22,9 +22,8 @@ through `NODE_EXTRA_CA_CERTS`; install the CA rather than disabling verification
 ## Required Configuration
 
 From a fresh clone, run `./scripts/install-docker.sh`. On Linux, it detects the Docker host's
-private IPv4 address and connected subnet for the initial bind and monitoring boundary. If detection
-fails, it prompts for those values. Edit `DASHBOARD_BIND_IP` and `OUTBOUND_ALLOWED_CIDRS` in `.env`
-and rerun the installer to change them later. It then generates secrets and builds
+private IPv4 address for the initial bind. If detection fails, it prompts for that address.
+Edit `DASHBOARD_BIND_IP` in `.env` and rerun the installer to change it later. It then generates secrets and builds
 the image locally. The image seeds a new named data volume with a directory owned by the non-root
 dashboard user. Existing volumes prepared by previous releases remain usable; if a manually created
 volume has incompatible ownership, correct it after backing up the data. Back up an existing database
@@ -41,7 +40,6 @@ configure:
 ```env
 APP_ORIGIN=https://dashboard.home.arpa
 TRUST_PROXY_CIDRS=172.17.0.1/32
-OUTBOUND_ALLOWED_CIDRS=192.168.50.0/24
 COOKIE_SECRET=<at-least-32-random-characters>
 SETUP_CODE=<12-base32-characters-for-first-boot>
 HOMELAB_IMAGE=ghcr.io/kobii-git/homelab-dashboard@sha256:<verified-digest>
@@ -54,10 +52,8 @@ Direct HTTP mode requires `DIRECT_HTTP_LAN=true`, `APP_ORIGIN=http://<private-ho
 `DASHBOARD_BIND_IP=<same-private-host-IP>`, and an empty `TRUST_PROXY_CIDRS`. The server rejects
 public bind addresses and mismatched origins.
 
-`OUTBOUND_ALLOWED_CIDRS` remains required. The installer uses the host's connected subnet only as
-an initial boundary; review it if monitored services live on another network. Use the smallest real
-network boundary. `192.168.50.0/24` is an example, not an application default. Exact approved public monitoring
-names may be listed in `OUTBOUND_ALLOWED_HOSTS`.
+Admin-selected service and monitoring targets may use any ordinary LAN, VPN, or public address.
+The outbound policy still blocks special addresses and keeps DNS pinning, timeouts, and response limits.
 
 `SETUP_CODE` is required only until a database-backed administrator exists. Clear it in
 `.env` after setup. `PUBLIC_STATUS_MODE` defaults to `disabled`; `aggregate` exposes
@@ -99,7 +95,7 @@ authenticated ZAP baselines.
 - Reverse-proxy HTTPS and Host/Origin validation are working.
 - Runtime Health reports no security readiness warnings.
 - Public status is disabled unless deliberately approved.
-- Monitoring CIDRs and any exact public hosts are minimal and correct.
+- Service monitoring targets are intentional and special addresses remain blocked.
 - All private CAs are trusted; insecure integration overrides are off.
 - Personal-context and media modules show only expected safe fields; TrueNAS uses a read-only role.
 - GitHub access and private GHCR pulls work over authenticated, trusted transports.

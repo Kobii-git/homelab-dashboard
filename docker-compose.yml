@@ -8,8 +8,6 @@ services:
       DATABASE_URL: file:/data/homelab.db
       APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN to the exact URL used in the browser}
       COOKIE_SECRET: ${COOKIE_SECRET:?Set COOKIE_SECRET to at least 32 random characters}
-      OUTBOUND_ALLOWED_CIDRS: ${OUTBOUND_ALLOWED_CIDRS:?Set the monitored network CIDRs}
-      OUTBOUND_ALLOWED_HOSTS: ${OUTBOUND_ALLOWED_HOSTS:-}
       TRUST_PROXY_CIDRS: ${TRUST_PROXY_CIDRS:-}
       DIRECT_HTTP_LAN: ${DIRECT_HTTP_LAN:-false}
       DASHBOARD_BIND_IP: ${DASHBOARD_BIND_IP:-127.0.0.1}

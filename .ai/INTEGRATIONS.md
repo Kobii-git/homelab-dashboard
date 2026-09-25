@@ -40,6 +40,6 @@ boundary.
 ## Test method
 
 Use local fake HTTP/TCP/TLS servers and injected requesters. Cover success, auth construction without
-secret exposure, allowlist rejection, DNS/redirect/rebinding, timeout, size limits, malformed JSON,
+secret exposure, forbidden-address rejection, DNS/redirect/rebinding, timeout, size limits, malformed JSON,
 TLS trust/hostname errors, persisted sanitized failure, and dashboard isolation. Never validate by
 contacting an operator or production service.

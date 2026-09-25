@@ -8,7 +8,7 @@ The supported product is a private, single-admin LAN/VPN application. HTTPS behi
 reverse proxy is the normal deployment. An explicit direct HTTP mode supports initial setup on one
 private host IP, with network-visible credentials/cookies until HTTPS is configured. Direct internet
 exposure and multi-user authorization are unsupported. Production startup requires an exact
-`APP_ORIGIN`, a strong cookie secret, and an explicit outbound network boundary. HTTPS mode requires
+`APP_ORIGIN` and a strong cookie secret. HTTPS mode requires
 trusted-proxy CIDRs; direct HTTP requires an exact private bind IP and disables proxy trust.
 
 ## Authentication and authorization
@@ -52,7 +52,7 @@ authentication behavior changes.
 ## Outbound boundary
 
 Admin-influenced destinations must use `src/server/outboundPolicy.ts` and pinned bounded request or
-connectivity helpers. Preserve explicit CIDR/hostname allowlists, forbidden special ranges, DNS
+connectivity helpers. Admin-selected targets may use ordinary LAN, VPN, or public addresses. Preserve forbidden special ranges, DNS
 timeouts, address pinning, fixed-provider allowlists/concurrency, redirect rejection/bounds,
 response-size limits, timeouts, TLS verification, and sanitized errors.
 

@@ -20,8 +20,6 @@ type ParsedCidr = {
 
 type OutboundPolicyState = {
   enforce: boolean;
-  allowedCidrs: ParsedCidr[];
-  allowedHosts: Set<string>;
   allowInsecureIntegrations: boolean;
 };
 
@@ -45,8 +43,6 @@ const fixedProviderWaiters: Array<() => void> = [];
 
 let state: OutboundPolicyState = {
   enforce: false,
-  allowedCidrs: [],
-  allowedHosts: new Set(),
   allowInsecureIntegrations: false
 };
 
@@ -150,9 +146,7 @@ function isAlwaysForbidden(address: string): boolean {
 
 export function configureOutboundPolicy(env: AppEnv): void {
   state = {
-    enforce: env.nodeEnv === "production" || env.outboundAllowedCidrs.length > 0 || env.outboundAllowedHosts.length > 0,
-    allowedCidrs: env.outboundAllowedCidrs.map(parseCidr),
-    allowedHosts: new Set(env.outboundAllowedHosts.map((host) => host.toLowerCase())),
+    enforce: env.nodeEnv === "production",
     allowInsecureIntegrations: env.allowInsecureIntegrations
   };
 }
@@ -160,8 +154,6 @@ export function configureOutboundPolicy(env: AppEnv): void {
 export function resetOutboundPolicyForTests(): void {
   state = {
     enforce: false,
-    allowedCidrs: [],
-    allowedHosts: new Set(),
     allowInsecureIntegrations: false
   };
 }
@@ -234,13 +226,6 @@ export async function resolveOutboundTarget(
     throw new Error(`Outbound target ${normalizedHost} resolves to a forbidden address`);
   }
 
-  if (state.enforce && !options.fixedProvider && !state.allowedHosts.has(normalizedHost)) {
-    const disallowed = normalized.some((entry) =>
-      !state.allowedCidrs.some((cidr) => inCidr(entry.address, cidr))
-    );
-    if (disallowed) throw new Error(`Outbound target ${normalizedHost} is outside the configured allowlist`);
-  }
-
   const selected = normalized[0];
   return {
     hostname: normalizedHost,
@@ -258,16 +243,10 @@ export async function resolveOutboundTarget(
 
 export function outboundPolicySummary(): {
   enforced: boolean;
-  configured: boolean;
-  allowedCidrCount: number;
-  allowedHostCount: number;
   allowInsecureIntegrations: boolean;
 } {
   return {
     enforced: state.enforce,
-    configured: state.allowedCidrs.length > 0 || state.allowedHosts.size > 0,
-    allowedCidrCount: state.allowedCidrs.length,
-    allowedHostCount: state.allowedHosts.size,
     allowInsecureIntegrations: state.allowInsecureIntegrations
   };
 }

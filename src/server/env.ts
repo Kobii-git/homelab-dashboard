@@ -13,8 +13,6 @@ export type AppEnv = {
   sessionMaxAgeSeconds: number;
   setupCode: string | null;
   publicStatusMode: "disabled" | "aggregate" | "services";
-  outboundAllowedCidrs: string[];
-  outboundAllowedHosts: string[];
   allowInsecureIntegrations: boolean;
   apiWidgetSecretAllowlist: string[];
   opnsense: OpnsenseEnvConfig;
@@ -112,20 +110,6 @@ function listEnv(value: string | undefined): string[] {
       .map((entry) => entry.trim())
       .filter(Boolean)
   )];
-}
-
-function allowedHostList(value: string | undefined): string[] {
-  return listEnv(value).map((entry) => {
-    const normalized = entry.toLowerCase().replace(/\.$/, "");
-    const valid = normalized.length <= 253 &&
-      normalized.split(".").every((label) =>
-        /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)
-      );
-    if (!valid || normalized.includes("*")) {
-      throw new Error(`OUTBOUND_ALLOWED_HOSTS contains an invalid exact hostname: ${entry}`);
-    }
-    return normalized;
-  });
 }
 
 function privateBindIp(host: string): boolean {
@@ -303,11 +287,6 @@ export function getEnv(): Omit<AppEnv, "cookieSecret"> & {
       throw new Error("TRUST_PROXY_CIDRS must be empty in direct HTTP mode");
     }
   }
-  const outboundAllowedCidrs = listEnv(process.env.OUTBOUND_ALLOWED_CIDRS);
-  if (production && outboundAllowedCidrs.length === 0) {
-    throw new Error("OUTBOUND_ALLOWED_CIDRS must define the monitored network boundary in production");
-  }
-
   return {
     nodeEnv,
     host: process.env.HOST ?? "0.0.0.0",
@@ -326,8 +305,6 @@ export function getEnv(): Omit<AppEnv, "cookieSecret"> & {
     ) * 60 * 60,
     setupCode: textEnv(process.env.SETUP_CODE),
     publicStatusMode: publicStatusModeEnv(process.env.PUBLIC_STATUS_MODE),
-    outboundAllowedCidrs,
-    outboundAllowedHosts: allowedHostList(process.env.OUTBOUND_ALLOWED_HOSTS),
     allowInsecureIntegrations: boolEnv(process.env.ALLOW_INSECURE_INTEGRATIONS, false),
     apiWidgetSecretAllowlist: (process.env.API_WIDGET_SECRET_ALLOWLIST ?? "")
       .split(",")

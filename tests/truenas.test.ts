@@ -26,8 +26,6 @@ function policyEnv(): AppEnv {
     sessionMaxAgeSeconds: 3600,
     setupCode: null,
     publicStatusMode: "disabled",
-    outboundAllowedCidrs: [],
-    outboundAllowedHosts: [],
     allowInsecureIntegrations: true,
     apiWidgetSecretAllowlist: [],
     opnsense: { enabled: false, configured: false, name: "OPNsense", baseUrl: null, apiKey: null, apiSecret: null, tlsVerify: true, pollIntervalSeconds: 60 },

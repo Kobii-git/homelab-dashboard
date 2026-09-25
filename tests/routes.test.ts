@@ -67,8 +67,6 @@ const env = {
   sessionMaxAgeSeconds: 60 * 60 * 24 * 7,
   setupCode: null,
   publicStatusMode: "services" as const,
-  outboundAllowedCidrs: [],
-  outboundAllowedHosts: [],
   allowInsecureIntegrations: true,
   apiWidgetSecretAllowlist: ["CUSTOM_WIDGET_TOKEN", "TEST_WIDGET_TOKEN"],
   opnsense: {
@@ -1030,6 +1028,35 @@ describe("api routes", () => {
     });
     expect(dashboard.statusCode).toBe(200);
     expect(dashboard.body).toContain("Router");
+  });
+
+  it("accepts admin-selected service targets outside the former network list", async () => {
+    const cookie = await loginCookie();
+    configureOutboundPolicy({ ...env, nodeEnv: "production" });
+    const lookup = vi.spyOn(dns.promises, "lookup");
+    try {
+      lookup.mockResolvedValueOnce([{ address: "10.0.10.1", family: 4 }] as never);
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/resources",
+        headers: { cookie },
+        payload: { name: "Another LAN", kind: "app", url: "https://10.0.10.1/" }
+      });
+      expect(created.statusCode).toBe(201);
+
+      lookup.mockResolvedValueOnce([{ address: "169.254.169.254", family: 4 }] as never);
+      const blocked = await app.inject({
+        method: "POST",
+        url: "/api/resources",
+        headers: { cookie },
+        payload: { name: "Blocked target", kind: "app", url: "http://169.254.169.254/" }
+      });
+      expect(blocked.statusCode).toBe(400);
+      expect(blocked.json<{ error: string }>().error).toContain("forbidden address");
+    } finally {
+      lookup.mockRestore();
+      configureOutboundPolicy(env);
+    }
   });
 
   it("creates Glances host monitors and includes metrics in the dashboard", async () => {
@@ -2776,7 +2803,6 @@ describe("api routes", () => {
         appOrigin: "https://dashboard.test",
         cookieSecure: true,
         trustedProxyCidrs: ["127.0.0.1/32"],
-        outboundAllowedCidrs: ["10.0.21.0/24"],
         allowInsecureIntegrations: false,
         publicStatusMode: "disabled"
       },
@@ -2868,7 +2894,6 @@ describe("api routes", () => {
         appOrigin: "http://192.168.50.20:4173",
         cookieSecure: false,
         trustedProxyCidrs: [],
-        outboundAllowedCidrs: ["192.168.50.0/24"]
       },
       monitor: false,
       logger: false
@@ -2899,8 +2924,6 @@ describe("api routes", () => {
     configureOutboundPolicy({
       ...env,
       nodeEnv: "production",
-      outboundAllowedCidrs: ["10.0.21.0/24"],
-      outboundAllowedHosts: [],
       allowInsecureIntegrations: false
     });
     const lookup = vi.spyOn(dns.promises, "lookup");
@@ -2909,7 +2932,7 @@ describe("api routes", () => {
       await expect(resolveOutboundTarget("allowed.test")).resolves.toMatchObject({ address: "10.0.21.15" });
 
       lookup.mockResolvedValueOnce([{ address: "10.0.22.15", family: 4 }] as never);
-      await expect(resolveOutboundTarget("outside.test")).rejects.toThrow("outside the configured allowlist");
+      await expect(resolveOutboundTarget("outside.test")).resolves.toMatchObject({ address: "10.0.22.15" });
 
       lookup.mockResolvedValueOnce([{ address: "169.254.169.254", family: 4 }] as never);
       await expect(resolveOutboundTarget("metadata.test")).rejects.toThrow("forbidden address");
@@ -3110,8 +3133,6 @@ describe("api routes", () => {
       "TRUST_PROXY_CIDRS",
       "DIRECT_HTTP_LAN",
       "DASHBOARD_BIND_IP",
-      "OUTBOUND_ALLOWED_CIDRS",
-      "OUTBOUND_ALLOWED_HOSTS",
       "COOKIE_SECRET",
       "ADMIN_PASSWORD",
       "SESSION_MAX_AGE_HOURS"
@@ -3123,21 +3144,15 @@ describe("api routes", () => {
       process.env.TRUST_PROXY_CIDRS = "172.17.0.1/32";
       process.env.DIRECT_HTTP_LAN = "false";
       process.env.DASHBOARD_BIND_IP = "127.0.0.1";
-      process.env.OUTBOUND_ALLOWED_CIDRS = "10.0.21.0/24";
-      process.env.OUTBOUND_ALLOWED_HOSTS = "Status.Example.com";
       process.env.COOKIE_SECRET = "production-cookie-secret-with-more-than-32-characters";
       process.env.ADMIN_PASSWORD = "production-admin-password";
       process.env.SESSION_MAX_AGE_HOURS = "999";
 
       const production = getEnv();
       expect(production.appOrigin).toBe("https://dashboard.test");
-      expect(production.outboundAllowedHosts).toEqual(["status.example.com"]);
       expect(production.sessionMaxAgeSeconds).toBe(30 * 24 * 60 * 60);
       expect(production.cookieSecure).toBe(true);
 
-      process.env.OUTBOUND_ALLOWED_HOSTS = "*.example.com";
-      expect(() => getEnv()).toThrow("invalid exact hostname");
-      process.env.OUTBOUND_ALLOWED_HOSTS = "status.example.com";
       delete process.env.TRUST_PROXY_CIDRS;
       expect(() => getEnv()).toThrow("TRUST_PROXY_CIDRS");
       process.env.TRUST_PROXY_CIDRS = "172.17.0.1/32";

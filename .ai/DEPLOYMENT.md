@@ -34,9 +34,9 @@ startup requirements. `docker-compose.yml` owns the deployed environment mapping
 `docs/SECURE_DEPLOYMENT.md` owns the operator launch checklist, reverse-proxy requirements, private
 CA guidance, and image-trust procedure.
 `scripts/install-docker.sh` configures a local source build, generating missing first-boot secrets
-without replacing existing nonempty secrets. On Linux, it defaults the private bind IP and outbound
-monitoring boundary to the host's routed IPv4 address and connected subnet, preserving existing
-valid operator network settings; detection failure falls back to prompts. `--https-proxy` switches
+without replacing existing nonempty secrets. On Linux, it defaults the private bind IP to the
+host's routed IPv4 address, preserving an existing valid operator setting; detection failure
+falls back to a prompt. `--https-proxy` switches
 to an HTTPS origin and trusted proxy CIDR. The Compose build override
 retains the production hardening.
 

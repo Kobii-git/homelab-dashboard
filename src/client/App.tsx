@@ -316,6 +316,7 @@ export function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [dataReady, setDataReady] = useState(false);
   const dataReadyRef = useRef(false);
+  const backgroundRefreshFailuresRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [sessionMessage, setSessionMessage] = useState<string | null>(null);
@@ -385,19 +386,29 @@ export function App() {
   }, [requestReauthentication]);
 
 
-  async function loadData() {
+  function recordBackgroundRefreshFailure() {
+    backgroundRefreshFailuresRef.current += 1;
+    if (backgroundRefreshFailuresRef.current >= 2) {
+      setError("Dashboard refresh is failing. Showing the last loaded data.");
+    }
+  }
+
+  async function loadData({ background = false }: { background?: boolean } = {}) {
     const initialLoad = !dataReadyRef.current;
     if (initialLoad) setLoading(true);
     else setRefreshing(true);
-    setError(null);
+    if (!background) setError(null);
 
     try {
       const dashboard = await apiGet<DashboardDto>("/api/dashboard");
       setData(deriveAppData(dashboard));
       dataReadyRef.current = true;
       setDataReady(true);
+      backgroundRefreshFailuresRef.current = 0;
+      setError(null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Load failed");
+      if (background && !initialLoad) recordBackgroundRefreshFailure();
+      else setError(loadError instanceof Error ? loadError.message : "Load failed");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -495,15 +506,17 @@ export function App() {
       refreshing = true;
       try {
         const current = await apiGet<{ revision: number }>("/api/config/revision");
-        await loadData();
+        await loadData({ background: true });
         if (lastRevision !== current.revision) {
           // Admin forms own drafts; refresh shared settings only outside the editor.
           if (view !== "settings") await loadSystemSettings();
           lastRevision = current.revision;
         }
+      } catch {
+        recordBackgroundRefreshFailure();
       } finally { refreshing = false; }
     }
-    const update = () => { void onFocus().catch(() => undefined); };
+    const update = () => { void onFocus(); };
     const timer = setInterval(update, 30000);
     window.addEventListener("focus", update);
     window.addEventListener("online", update);

@@ -12,8 +12,6 @@ services:
       APP_ORIGIN: https://${DASHBOARD_HOST:?Set the private hostname under your owned domain}
       COOKIE_SECRET: ${COOKIE_SECRET:?Set a strong secret of at least 32 characters}
       TRUST_PROXY_CIDRS: ${PROXY_CONTAINER_IP:?Set the fixed proxy IP}/32
-      OUTBOUND_ALLOWED_CIDRS: ${OUTBOUND_ALLOWED_CIDRS:?Set monitored LAN CIDRs}
-      OUTBOUND_ALLOWED_HOSTS: ${OUTBOUND_ALLOWED_HOSTS:-}
       PUBLIC_STATUS_MODE: disabled
       SETUP_CODE: ${SETUP_CODE:-}
       SESSION_MAX_AGE_HOURS: ${SESSION_MAX_AGE_HOURS:-168}

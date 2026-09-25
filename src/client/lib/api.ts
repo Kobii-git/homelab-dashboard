@@ -86,9 +86,6 @@ export type RuntimeStatusDto = {
     trustedProxyConfigured: boolean;
     outboundPolicy: {
       enforced: boolean;
-      configured: boolean;
-      allowedCidrCount: number;
-      allowedHostCount: number;
       allowInsecureIntegrations: boolean;
     };
     readinessWarnings: string[];
@@ -203,7 +200,7 @@ export function getApiError(error: unknown): string {
   return error instanceof Error ? error.message : "Request failed";
 }
 
-async function parseResponse<T>(response: Response, path: string): Promise<T> {
+async function parseResponse<T>(response: Response, path: string, reportError = true): Promise<T> {
   const text = await response.text();
   let data: ApiErrorBody = {};
 
@@ -224,7 +221,7 @@ async function parseResponse<T>(response: Response, path: string): Promise<T> {
       // The mutation wrapper opens the accessible password dialog and retries once.
     } else if (response.status === 401 && path !== "/api/auth/login" && path !== "/api/auth/reauth") {
       window.dispatchEvent(new CustomEvent("homelab:session-expired"));
-    } else {
+    } else if (reportError) {
       window.dispatchEvent(new CustomEvent("homelab:api-error", { detail: message }));
     }
     throw new ApiResponseError(message, response.status, data.code);
@@ -234,17 +231,8 @@ async function parseResponse<T>(response: Response, path: string): Promise<T> {
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(path, {
-      credentials: "include"
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Network request failed";
-    window.dispatchEvent(new CustomEvent("homelab:api-error", { detail: message }));
-    throw error;
-  }
-  return parseResponse<T>(response, path);
+  const response = await fetch(path, { credentials: "include" });
+  return parseResponse<T>(response, path, false);
 }
 
 export async function apiSend<T>(

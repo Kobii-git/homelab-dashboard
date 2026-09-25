@@ -53,10 +53,10 @@ cd homelab-dashboard
 ```
 
 For a first run without a reverse proxy, the installer detects this host's private IPv4 address
-and connected subnet when Linux routing information is available. It binds only to that address
+when Linux routing information is available. It binds only to that address
 and publishes host port 4173 to container port 4173 at `http://<address>:4173`.
-Edit `DASHBOARD_BIND_IP` and `OUTBOUND_ALLOWED_CIDRS` in `.env`
-and rerun the installer to change them later. If detection fails, the installer asks for them.
+Edit `DASHBOARD_BIND_IP` in `.env` and rerun the installer to change it later.
+If detection fails, the installer asks for the address.
 HTTP sends login credentials and session cookies without encryption, so use this mode only on a
 trusted private network. Do not forward this port to the internet. To configure HTTPS later, run
 `./scripts/install-docker.sh --https-proxy`; the named data volume is retained.
@@ -80,8 +80,6 @@ using real integration credentials. Backups follow the external
 | `TRUST_PROXY_CIDRS` | HTTPS mode | Exact reverse-proxy source CIDRs trusted for forwarded HTTPS/client information |
 | `DIRECT_HTTP_LAN` | No | Explicit private HTTP mode; installer sets `true` until an HTTPS proxy is configured |
 | `DASHBOARD_BIND_IP` | Compose/private HTTP | Exact private host IP to bind; default `127.0.0.1` for HTTPS proxy mode |
-| `OUTBOUND_ALLOWED_CIDRS` | Production | Network CIDRs monitoring may contact; installer defaults to the detected host subnet |
-| `OUTBOUND_ALLOWED_HOSTS` | No | Exact approved public DNS names for admin-defined monitoring |
 | `COOKIE_SECRET` | Production | At least 32 random characters; never stored in Git |
 | `SETUP_CODE` | First production boot | Explicit 12-character bootstrap code when `ADMIN_PASSWORD` is absent |
 | `ADMIN_PASSWORD` | No | Skip web account creation and use this password instead; minimum 12 characters in production |

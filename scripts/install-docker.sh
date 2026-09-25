@@ -81,60 +81,18 @@ private_bind_ip() {
      (10#$first == 100 && 10#$second >= 64 && 10#$second <= 127) )) || [[ $1 == 127.0.0.1 ]]
 }
 
-network_for_ipv4() {
-  local address=$1 prefix=$2 first second third fourth value mask network
-  [[ $prefix =~ ^[0-9]+$ ]] && (( prefix >= 1 && prefix <= 32 )) || return 1
-  IFS=. read -r first second third fourth <<< "$address"
-  value=$(( (10#$first << 24) | (10#$second << 16) | (10#$third << 8) | 10#$fourth ))
-  mask=$(( (0xffffffff << (32 - prefix)) & 0xffffffff ))
-  network=$(( value & mask ))
-  printf '%d.%d.%d.%d/%d\n' \
-    "$(( (network >> 24) & 255 ))" "$(( (network >> 16) & 255 ))" \
-    "$(( (network >> 8) & 255 ))" "$(( network & 255 ))" "$prefix"
-}
-
 detect_host_network() {
-  local route bind_ip interface address network_cidr
+  local route bind_ip interface address
   command -v ip >/dev/null 2>&1 || return 1
   # This asks the local routing table for its default path; it sends no packet.
   route=$(ip -4 route get 1.1.1.1 2>/dev/null) || return 1
   bind_ip=$(awk '{ for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit } }' <<< "$route")
   interface=$(awk '{ for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }' <<< "$route")
-  # A CGNAT/mesh address cannot seed the outbound allowlist, which excludes that range.
-  [[ -n $interface && $bind_ip != 127.0.0.1 && $bind_ip != 100.* ]] && private_bind_ip "$bind_ip" || return 1
+  [[ -n $interface && $bind_ip != 127.0.0.1 ]] && private_bind_ip "$bind_ip" || return 1
   address=$(ip -o -4 addr show dev "$interface" scope global 2>/dev/null |
     awk -v ip="$bind_ip" '$3 == "inet" { split($4, parts, "/"); if (parts[1] == ip) { print $4; exit } }')
   [[ -n $address ]] || return 1
-  network_cidr=$(network_for_ipv4 "$bind_ip" "${address#*/}") || return 1
-  printf '%s %s\n' "$bind_ip" "$network_cidr"
-}
-
-cidr_entries_have_addresses() {
-  local entry address prefix max_prefix first second third fourth octet
-  local -a entries
-  IFS=, read -r -a entries <<< "$1"
-  (( ${#entries[@]} > 0 )) || return 1
-  for entry in "${entries[@]}"; do
-    entry=${entry#"${entry%%[![:space:]]*}"}
-    entry=${entry%"${entry##*[![:space:]]}"}
-    address=${entry%%/*}
-    [[ -n $address && $entry != *[[:space:]]* && $entry != */*/* ]] || return 1
-    if [[ $address == *:* ]]; then
-      [[ $address =~ ^[0-9A-Fa-f:.]+$ ]] || return 1
-      max_prefix=128
-    else
-      [[ $address =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
-      IFS=. read -r first second third fourth <<< "$address"
-      for octet in "$first" "$second" "$third" "$fourth"; do
-        [[ $octet == 0 || $octet != 0* ]] && (( 10#$octet <= 255 )) || return 1
-      done
-      max_prefix=32
-    fi
-    if [[ $entry == */* ]]; then
-      prefix=${entry##*/}
-      [[ $prefix =~ ^[0-9]{1,3}$ ]] && (( 10#$prefix <= max_prefix )) || return 1
-    fi
-  done
+  printf '%s\n' "$bind_ip"
 }
 
 mode=$requested_mode
@@ -148,10 +106,7 @@ if [[ -z $mode ]]; then
 fi
 
 detected_ip=""
-detected_cidr=""
-if detected_network=$(detect_host_network); then
-  read -r detected_ip detected_cidr <<< "$detected_network"
-fi
+detected_ip=$(detect_host_network || true)
 
 if [[ $mode == lan ]]; then
   bind_ip=$(get_setting DASHBOARD_BIND_IP)
@@ -180,26 +135,6 @@ else
   set_setting DASHBOARD_BIND_IP 127.0.0.1
   set_setting DIRECT_HTTP_LAN false
 fi
-outbound_cidrs=$(get_setting OUTBOUND_ALLOWED_CIDRS)
-if [[ -z $outbound_cidrs ]] || ! cidr_entries_have_addresses "$outbound_cidrs"; then
-  if [[ -n $detected_cidr ]]; then
-    set_setting OUTBOUND_ALLOWED_CIDRS "$detected_cidr"
-  else
-    if [[ ! -t 0 ]]; then
-      echo "Set OUTBOUND_ALLOWED_CIDRS to a complete IP address or CIDR in .env, then rerun (example: 192.168.50.0/24)." >&2
-      exit 1
-    fi
-    while true; do
-      read -r -p "Network the dashboard may monitor (example: 192.168.50.0/24, not just 24): " outbound_cidrs
-      if cidr_entries_have_addresses "$outbound_cidrs"; then
-        set_setting OUTBOUND_ALLOWED_CIDRS "$outbound_cidrs"
-        break
-      fi
-      echo "Enter a complete IP address or network/prefix, not only the prefix length." >&2
-    done
-  fi
-fi
-
 if [[ $mode == https && $(get_setting APP_ORIGIN) != https://* ]]; then
   echo "APP_ORIGIN must be an HTTPS origin in proxy mode. Check .env." >&2
   exit 1

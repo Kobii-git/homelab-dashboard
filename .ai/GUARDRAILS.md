@@ -57,7 +57,7 @@ Controls: **Automated** by negative route tests; **manual security review** is m
 
 If you add outbound HTTP/TCP/TLS/DNS behavior or a target field, route it through
 `src/server/outboundPolicy.ts` and the bounded/pinned helpers used by neighboring code. Preserve DNS
-resolution checks, forbidden-address blocking, explicit allowlists, fixed-provider limits, timeout
+resolution checks, forbidden-address blocking, fixed-provider allowlists and limits, timeout
 budgets, response-size bounds, redirect policy, TLS verification, and credential redaction. Test
 failure, rebinding/redirect, timeout, and size-limit behavior.
 

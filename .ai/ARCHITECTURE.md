@@ -52,7 +52,7 @@ transactions for revision checks and dependent writes.
 - **Browser to API:** same-origin cookies and server-side authorization are authoritative; client
   controls are usability only.
 - **Reverse proxy to app:** production trusts only configured proxy CIDRs and an exact HTTPS origin.
-- **Admin-defined target to network:** DNS resolution, forbidden ranges, explicit outbound
+- **Admin-defined target to network:** DNS resolution, forbidden-address checks, fixed-provider
   allowlists, connection pinning, and bounded responses constrain SSRF and rebinding.
 - **Credential to integration:** OPNsense, TrueNAS, personal-context, AI, and API-widget secrets originate in environment
   configuration. Credentialed endpoints require verified HTTPS unless an explicitly surfaced

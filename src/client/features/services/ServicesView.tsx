@@ -275,7 +275,7 @@ export function ServicesView({
         kind: form.get("kind"),
         url,
         host,
-        icon: emptyToNull(form.get("icon")),
+        icon: resourceDefaults?.icon ?? null,
         color: emptyToNull(form.get("color")),
         description: emptyToNull(form.get("description")),
         groupId: emptyToNull(form.get("groupId")),
@@ -623,12 +623,6 @@ export function ServicesView({
               </label>
               <Field label="URL" name="url" placeholder="https://service.local" defaultValue={resourceDefaults?.url ?? ""} />
               <Field label="Host" name="host" placeholder="server.home.arpa" defaultValue={resourceDefaults?.host ?? ""} />
-              <Field
-                label="Icon (auto-detected from name if empty)"
-                name="icon"
-                placeholder="plex, home-assistant, or https://… image"
-                defaultValue={resourceDefaults?.icon ?? ""}
-              />
               <label>
                 Color
                 <input name="color" type="color" defaultValue={resourceDefaults?.color ?? "#2dd4bf"} style={{ height: 38, cursor: "pointer" }} />

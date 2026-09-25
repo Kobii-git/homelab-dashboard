@@ -1350,7 +1350,7 @@ export function SettingsView({
                 <span><span>App origin</span><strong>{runtime.security.appOrigin ?? "development mode"}</strong></span>
                 <span><span>Session</span><strong>{runtime.auth.sessionMaxAgeHours}h · {runtime.auth.cookieSecure ? "secure cookie" : "HTTP cookie"}</strong></span>
                 <span><span>Public status</span><strong>{runtime.security.publicStatusMode}</strong></span>
-                <span><span>Outbound policy</span><strong>{runtime.security.outboundPolicy.configured ? `${runtime.security.outboundPolicy.allowedCidrCount} CIDR · ${runtime.security.outboundPolicy.allowedHostCount} hosts` : "not configured"}</strong></span>
+                <span><span>Outbound targets</span><strong>Admin chosen · special addresses blocked</strong></span>
               </div>
               {runtime.security.readinessWarnings.length > 0 ? (
                 <div className="form-error" role="status">

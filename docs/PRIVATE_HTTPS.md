@@ -18,7 +18,7 @@ alternative to the existing root Compose deployment, not an override to combine 
 4. Copy the example variables to a protected operator environment file. Choose a non-overlapping
    Docker subnet and a fixed address inside it for Caddy. The application trusts only that address
    as a `/32`. Set `LAN_BIND_IP` to a private host interface, never `0.0.0.0` or a public address.
-5. Set a verified application image digest, a random cookie secret, and monitored LAN allowlists.
+5. Set a verified application image digest and a random cookie secret.
    This example intentionally disables public status and AI. Add existing read-only connector
    environment settings explicitly if needed; do not put their secrets in configuration archives.
 

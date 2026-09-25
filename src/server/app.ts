@@ -1342,7 +1342,6 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
         ? "Private HTTP mode sends login credentials and session cookies without TLS; use only on a trusted LAN/VPN"
         : "Session cookies are not restricted to HTTPS"] : []),
       ...(env.publicStatusMode !== "disabled" ? [`Public status is enabled in ${env.publicStatusMode} mode`] : []),
-      ...(!outbound.configured ? ["Outbound monitoring allowlists are not configured"] : []),
       ...(outbound.allowInsecureIntegrations ? ["CRITICAL: Insecure integration transport override is enabled"] : [])
     ];
 

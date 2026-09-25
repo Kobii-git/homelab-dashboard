@@ -49,6 +49,17 @@ The Settings manager shows 60 links per page. Everyday folders initially show 60
 In **Settings → Bookmarks & folders → Import & export**, import a browser's bookmark **HTML export**, up to 5 MiB / 10,000 links. Review additions, folder paths,
 and duplicate counts before applying. Exact normalized URL duplicates in the destination workspace
 are skipped, including links already in trash. Query strings and fragments remain significant.
+To make that file in Firefox, open **Bookmarks → Manage bookmarks → Import and
+Backup → Export Bookmarks to HTML** and save `bookmarks.html`. Use the HTML export,
+not Firefox's JSON/JSONLZ4 bookmark backup. In Internet Explorer, open
+**Favorites → arrow beside Add to Favorites → Import and Export → Export to a file → Favorites**,
+select the top Favorites folder, and save `bookmark.htm`. If Internet Explorer
+is no longer available, export the favorites from the browser where they now
+reside as bookmark HTML. Choose **Home** or **Work** in the app, then select the
+saved `.html` or `.htm` file under **Import browser HTML**. Import each browser
+file separately and review its preview before applying. These files contain
+bookmarks and folders only; browser passwords, history, cookies, and settings
+do not enter the app.
 HTML is parsed on the server without executing scripts or loading addresses. Unsafe URLs invalidate
 the preview. Preview tokens expire after ten minutes. Undo is available for ten minutes and only if
 no configuration changes happened after import; it removes imported links and leaves empty folders.

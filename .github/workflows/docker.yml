@@ -86,7 +86,6 @@ jobs:
           export COOKIE_SECRET="ci-cookie-secret-with-more-than-32-characters"
           export APP_ORIGIN="https://dashboard.test"
           export TRUST_PROXY_CIDRS="127.0.0.1/32"
-          export OUTBOUND_ALLOWED_CIDRS="10.0.0.0/8"
           export HOST=127.0.0.1
           export PORT=4173
           npx prisma db push --skip-generate
@@ -113,7 +112,6 @@ jobs:
           docker run -d --name "${container}" --read-only --tmpfs /tmp:size=64m,mode=1777 --cap-drop ALL --security-opt no-new-privileges \
             -e ADMIN_PASSWORD=ci-admin-password -e COOKIE_SECRET=ci-cookie-secret-with-more-than-32-characters \
             -e APP_ORIGIN=https://dashboard.test -e TRUST_PROXY_CIDRS=127.0.0.1/32 \
-            -e OUTBOUND_ALLOWED_CIDRS=10.0.0.0/8 \
             -p 4174:4173 -v "${volume}:/data" homelab-dashboard-ci
           test "$(docker inspect --format '{{.Config.User}}' "${container}")" = "node"
           for _ in $(seq 1 30); do
