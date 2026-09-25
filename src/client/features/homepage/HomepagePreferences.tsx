@@ -14,7 +14,8 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
   const snapshot = home.snapshot;
   if (!snapshot) return <p role="status">{home.error || "Loading preferences…"}</p>;
   const layout = customize?.data.workspaces[workspace].layout ?? snapshot.data.workspaces[workspace].layout;
-  const movableWidgets = layout.widgets.filter(w => !["favorites", "weather", "bookmarks"].includes(w.id) && !(workspace === "home" && w.id === "services"));
+  const contentWidgets = layout.widgets.filter(w => !["favorites", "weather", "bookmarks"].includes(w.id) && !(workspace === "home" && w.id === "services"));
+  const movableWidgets = contentWidgets.filter(w => !(workspace === "work" && ["notes", "timer"].includes(w.id)));
   function updateLayout(next: HomeLayout) {
     if (customize)
       setCustomize({
@@ -149,7 +150,10 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
                 onChange={event => updateLayout({ ...layout, widgets: layout.widgets.map(w => w.id === "services" ? { ...w, enabled: event.target.checked } : w) })} />Services</label>
               <span className="muted-copy">Opens below Google search, across the full width.</span>
             </div>}
-            {movableWidgets.map((w, i) => (
+            {contentWidgets.map(w => {
+              const i = movableWidgets.findIndex(widget => widget.id === w.id);
+              const fixedPlacement = i === -1;
+              return (
               <div key={w.id}>
                 <label className="hp-check">
                   <input
@@ -177,7 +181,7 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
                   <option value="section">Always open</option>
                   <option value="dropdown">Dropdown</option>
                 </select>
-                <select
+                {!fixedPlacement && <select
                   aria-label={`${titles[w.id]} width`}
                   value={w.size}
                   onChange={(e) =>
@@ -193,8 +197,9 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
                 >
                   <option value="normal">Normal</option>
                   <option value="wide">Wide</option>
-                </select>
-                {[-1, 1].map((delta) => (
+                </select>}
+                {fixedPlacement && <span className="muted-copy">{w.id === "notes" ? "Beside Timesheet notes." : "Below the other Work widgets."}</span>}
+                {!fixedPlacement && [-1, 1].map((delta) => (
                   <button
                     key={delta}
                     aria-label={`Move ${titles[w.id]} ${delta < 0 ? "up" : "down"}`}
@@ -217,7 +222,7 @@ export function HomepagePreferences({ home, workspace }: { home: HomepageControl
                   </button>
                 ))}
               </div>
-            ))}
+            ); })}
           </div>
           {snapshot.assets.length > 0 && (
             <details>

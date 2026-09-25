@@ -6,6 +6,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.8.6] - 2026-09-25
+
+### Changed
+- Work places Notes beside Timesheet notes on wider screens and the focus timer below the other widgets, preserving saved visibility and dropdown settings. Home is unchanged.
+- Timesheet notes use smaller MON–FRI tabs and a shorter, always-visible editor with keyboard navigation. Autosave, conflict recovery, week history, and daily entries remain unchanged.
+
 ## [0.8.5] - 2026-09-25
 
 ### Changed

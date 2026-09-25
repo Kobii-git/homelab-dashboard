@@ -2,7 +2,7 @@
 
 A private, self-hosted browser homepage and command center for your bookmarks, work, and home services. Home and Work organize everyday browsing and planning; Operations monitors lab health and useful read-only signals over LAN/VPN.
 
-![Version](https://img.shields.io/badge/version-0.8.5-2dd4bf)
+![Version](https://img.shields.io/badge/version-0.8.6-2dd4bf)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -36,7 +36,7 @@ Remote SSH/RDP/VNC access, Guacamole, saved credentials, vaults, alert channels,
 
 ## Current Scope
 
-Version `0.8.5` is a focused service launchpad and daily-operations command center with service health, lab vitals, threshold-aware monitoring, optional read-only utilities and AI briefings, and safe runtime diagnostics. The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles, network discovery, Docker discovery, Hyper-V discovery, or built-in HTTPS termination.
+Version `0.8.6` is a focused service launchpad and daily-operations command center with service health, lab vitals, threshold-aware monitoring, optional read-only utilities and AI briefings, and safe runtime diagnostics. The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles, network discovery, Docker discovery, Hyper-V discovery, or built-in HTTPS termination.
 
 The active database models are `Resource`, `DashboardGroup`, `HealthCheck`, `HealthResult`, `HostMonitor`, `HostMetricSample`, `IntegrationSource`, `IntegrationSample`, `ApiWidget`, `ApiWidgetSample`, `AdminAccount`, `SystemConfig`, `HomepageState`, and `HomepageAsset`.
 
@@ -175,7 +175,7 @@ API widgets are configured in **Settings > Integrations & system > API widgets**
 
 ### Optional Launchpad Utilities
 
-Home and Work search always opens Google. The top bookmark bar shows compact folder dropdowns, including nested folders. It defaults to your workspace’s top-level folders; individual bookmarks stay inside the menus, Favorites, or the sidebar. In **Settings > Appearance & widgets**, choose **Top bookmark folders** separately from **Sidebar links**, including links inside nested folders. The sidebar defaults to unfiled links and never shows folder shortcuts; the main Bookmarks menu still opens the complete library. Favorites is an optional dropdown beside the top folders. Weather is a small disclosure beside the clock on Home and Work. Work timesheet notes use a closed weekday row that opens one editor at a time, retaining autosave and weekly history. Older link-only homepage selections display the top-level folders without changing saved bookmarks. You can also choose accent colors, full-width backgrounds, and spacing. The background picker includes Tidal, Aurora, Blue hour, and Graphite with thumbnail previews. They are bundled static images, with separate saved choices for Home and Work. Home places Services directly below Google search, across the full page width. Services sit side by side and wrap to the available space, with headings only for named groups.
+Home and Work search always opens Google. The top bookmark bar shows compact folder dropdowns, including nested folders. It defaults to your workspace’s top-level folders; individual bookmarks stay inside the menus, Favorites, or the sidebar. In **Settings > Appearance & widgets**, choose **Top bookmark folders** separately from **Sidebar links**, including links inside nested folders. The sidebar defaults to unfiled links and never shows folder shortcuts; the main Bookmarks menu still opens the complete library. Favorites is an optional dropdown beside the top folders. Weather is a small disclosure beside the clock on Home and Work. Work places Notes beside Timesheet notes on wider screens, with the focus timer below the other widgets. Compact MON–FRI tabs keep one short timesheet editor visible, retaining autosave and weekly history. Older link-only homepage selections display the top-level folders without changing saved bookmarks. You can also choose accent colors, full-width backgrounds, and spacing. The background picker includes Tidal, Aurora, Blue hour, and Graphite with thumbnail previews. They are bundled static images, with separate saved choices for Home and Work. Home places Services directly below Google search, across the full page width. Services sit side by side and wrap to the available space, with headings only for named groups.
 
 Configure weather and release tracking in **Settings > Integrations & system > Launchpad utilities**. Weather uses a normalized Open-Meteo location and can display metric or imperial temperatures. Release tracking accepts up to 12 public GitHub repositories in `owner/repository` format; known service templates can suggest repositories, but additions are not persisted until you confirm with **Save utilities**.
 
@@ -275,7 +275,7 @@ Every branch build also publishes a commit-labelled `sha-*` tag and signs the di
 
 ## Versioning
 
-Current: **v0.8.5**
+Current: **v0.8.6**
 
 Verify the running build:
 

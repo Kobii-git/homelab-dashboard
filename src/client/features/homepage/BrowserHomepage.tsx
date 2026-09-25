@@ -157,7 +157,9 @@ export function BrowserHomepage({
   ];
   const background = backgroundImage(layout.background);
   const enabledWidgets = layout.widgets.filter(widget => widget.enabled);
-  const contentWidgets = enabledWidgets.filter(widget => !["bookmarks", "favorites", "weather"].includes(widget.id));
+  const workNotes = workspace === "work" ? enabledWidgets.find(widget => widget.id === "notes") : undefined;
+  const workTimer = workspace === "work" ? enabledWidgets.find(widget => widget.id === "timer") : undefined;
+  const contentWidgets = enabledWidgets.filter(widget => !["bookmarks", "favorites", "weather"].includes(widget.id) && !(workspace === "work" && ["notes", "timer"].includes(widget.id)));
   if (workspace === "home") contentWidgets.sort((a, b) => Number(b.id === "services") - Number(a.id === "services"));
   const statusItems: HealthItem[] = [serviceHealth(services, onInspectService)];
   const disabled = { state: "disabled", data: null, stale: false, error: null, fetchedAt: null } as const;
@@ -235,6 +237,14 @@ export function BrowserHomepage({
     media: contextBlock("media", value => <MediaCard summary={value.media} />),
     storage: contextBlock("storage", value => <StorageCard summary={value.storage} />),
   };
+  function renderWidget(w: (typeof enabledWidgets)[number]) {
+    return <div key={`${workspace}-${w.id}`} id={`widget-${w.id}`} className={`hp-widget hp-widget-${w.id} ${w.size === "wide" || (workspace === "home" && w.id === "services") ? "hp-wide" : ""}`}>
+      {w.presentation === "dropdown" && !(workspace === "home" && w.id === "services") ? <details className="hp-widget-dropdown">
+        <summary><ChevronRight size={16} /><span>{widgetTitles[w.id]}</span></summary>
+        <div className="hp-dropdown-content">{blocks[w.id]}</div>
+      </details> : blocks[w.id]}
+    </div>;
+  }
   return (
     <div
       className={`browser-home hp-accent-${layout.accent} hp-bg-${layout.background.split(":")[0]} hp-spacing-${layout.spacing}`}
@@ -306,17 +316,14 @@ export function BrowserHomepage({
           </small>
         </div>
       )}
-      {workspace === "work" && <WorkTimesheet home={home} now={now} />}
+      {workspace === "work" && <div className={`hp-work-capture ${workNotes ? "has-notes" : ""}`}>
+        {workNotes && renderWidget(workNotes)}
+        <WorkTimesheet home={home} now={now} />
+      </div>}
       <div className="hp-grid">
-        {contentWidgets.map((w) => (
-            <div key={`${workspace}-${w.id}`} id={`widget-${w.id}`} className={`hp-widget hp-widget-${w.id} ${w.size === "wide" || (workspace === "home" && w.id === "services") ? "hp-wide" : ""}`}>
-              {w.presentation === "dropdown" && !(workspace === "home" && w.id === "services") ? <details className="hp-widget-dropdown">
-                <summary><ChevronRight size={16} /><span>{widgetTitles[w.id]}</span></summary>
-                <div className="hp-dropdown-content">{blocks[w.id]}</div>
-              </details> : blocks[w.id]}
-            </div>
-          ))}
+        {contentWidgets.map(renderWidget)}
       </div>
+      {workTimer && <div className="hp-work-timer">{renderWidget(workTimer)}</div>}
     </div>
   );
 }

@@ -16,7 +16,7 @@ export function WorkTimesheet({ home, now }: { home: HomepageController; now: Da
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [copy, setCopy] = useState<string | null>(null);
-  const [activeDay, setActiveDay] = useState<number | null>(null);
+  const [activeDay, setActiveDay] = useState(() => now.getDay() >= 1 && now.getDay() <= 5 ? now.getDay() - 1 : 0);
   const dayButtons = useRef<(HTMLButtonElement | null)[]>([]);
   const saving = useRef(false);
   const snapshot = home.snapshot!;
@@ -69,7 +69,6 @@ export function WorkTimesheet({ home, now }: { home: HomepageController; now: Da
   function changeWeek(next: string) {
     if (draft || home.busy) return;
     setWeek(next);
-    setActiveDay(null);
     setNotice("");
     setError("");
   }
@@ -84,21 +83,24 @@ export function WorkTimesheet({ home, now }: { home: HomepageController; now: Da
         <button disabled={week === currentWeek || Boolean(draft) || home.busy} onClick={() => changeWeek(currentWeek)}>This week</button>
       </div>
     </div>
-    <div className="hp-timesheet-weekdays" role="group" aria-label="Timesheet weekdays">
-      {weekdays.map((day, index) => <button key={day} ref={element => { dayButtons.current[index] = element; }} type="button" aria-label={day}
-        aria-expanded={activeDay === index} aria-controls={`timesheet-panel-${index}`} aria-describedby={`timesheet-day-state-${index}`}
+    <div className="hp-timesheet-weekdays" role="tablist" aria-label="Timesheet weekdays">
+      {weekdays.map((day, index) => <button key={day} ref={element => { dayButtons.current[index] = element; }} type="button" role="tab" id={`timesheet-tab-${index}`} aria-label={day}
+        aria-selected={activeDay === index} tabIndex={activeDay === index ? 0 : -1} aria-controls={`timesheet-panel-${index}`} aria-describedby={`timesheet-day-state-${index}`}
         className={`${week === currentWeek && now.getDay() === index + 1 ? "is-today" : ""} ${conflicts.includes(index) ? "has-conflict" : ""}`}
-        onClick={() => setActiveDay(activeDay === index ? null : index)}>
-        <span className="hp-weekday-full">{day}</span><span className="hp-weekday-short" aria-hidden="true">{day.slice(0, 3)}</span>
+        onClick={() => setActiveDay(index)} onKeyDown={event => {
+          const next = event.key === "ArrowRight" ? (index + 1) % weekdays.length : event.key === "ArrowLeft" ? (index + weekdays.length - 1) % weekdays.length : event.key === "Home" ? 0 : event.key === "End" ? weekdays.length - 1 : null;
+          if (next !== null) { event.preventDefault(); setActiveDay(next); dayButtons.current[next]?.focus(); }
+        }}>
+        <span aria-hidden="true">{day.slice(0, 3).toUpperCase()}</span>
         {days[index].trim() && <span className="hp-day-dot" aria-hidden="true" />}
         <span className="hp-sr-only" id={`timesheet-day-state-${index}`}>{conflicts.includes(index) ? "Needs conflict review" : days[index].trim() ? "Has notes" : "No notes"}{week === currentWeek && now.getDay() === index + 1 ? ", today" : ""}</span>
       </button>)}
     </div>
-    {weekdays.map((day, index) => <div id={`timesheet-panel-${index}`} hidden={activeDay !== index} className="hp-timesheet-day" key={day}
-      onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); setActiveDay(null); dayButtons.current[index]?.focus(); } }}>
+    {weekdays.map((day, index) => <div id={`timesheet-panel-${index}`} role="tabpanel" aria-labelledby={`timesheet-tab-${index}`} hidden={activeDay !== index} className="hp-timesheet-day" key={day}
+      onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); dayButtons.current[index]?.focus(); } }}>
       {activeDay === index && <>
         <label htmlFor={`timesheet-${day}`}><strong>{day}</strong><span>{dateLabel(shiftDate(week, index))}</span></label>
-        <textarea id={`timesheet-${day}`} aria-label={`${day} work notes`} rows={4} maxLength={5000} placeholder="What did you work on?" value={days[index]}
+        <textarea id={`timesheet-${day}`} aria-label={`${day} work notes`} rows={2} maxLength={5000} placeholder="What did you work on?" value={days[index]}
           onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void save(); } }}
           onChange={event => {
             const next = [...days] as TimesheetDays;

@@ -111,17 +111,22 @@ resubmission against the latest version. The app is not an offline editor or nat
 
 ## Work timesheet notes
 
-The Work dashboard includes **Timesheet notes** beneath the bookmark area: a compact, left-aligned
-Monday–Friday row, initially closed. Click a day to open its editor, click again to close it, or choose
-another day to switch. Escape closes the editor and returns focus to its day. Short labels on phones
-retain full accessible names. Indicators show today, days with notes, and days needing conflict review.
-Switching or closing editors preserves drafts and keeps autosaving; save errors stay visible while closed.
+The Work dashboard places enabled **Notes** on the left and **Timesheet notes** on the right beneath
+Google search, stacking them on smaller screens. The enabled focus timer sits below the other Work
+widgets. These fixed positions ignore saved order and width values without changing stored layouts;
+Notes and the timer retain their visibility and dropdown settings.
+
+Timesheet notes use small **MON–FRI** tabs with one short editor always visible. Today is selected
+initially (Monday on weekends). Click a tab to switch days; clicking the selected tab keeps it open.
+Arrow keys, Home, and End navigate the tabs. Escape returns focus from the editor to its tab.
+Abbreviations retain full accessible weekday names. Indicators show today, populated days, and
+conflicts. Switching days preserves drafts and keeps autosaving; errors and conflict indicators stay visible.
 The current week follows your browser’s local date. Notes save automatically
 after a short typing pause; **Save now** or **⌘/Ctrl + Enter** saves immediately. Wait for
 **All changes saved** before closing the app. Previous/next arrows revisit saved weeks; **This week**
 returns to the current one. A new week starts empty without removing earlier entries. Clearing all five
 daily entries removes only that week’s saved entry. This section is always present in Work and does not change
-your widget layout or regular notes.
+your stored widget layout or regular notes.
 
 **Copy week** opens a dated text preview to paste into your timesheet. If clipboard access is unavailable
 on a private HTTP origin, select the preview text and copy manually. Nothing is submitted to an external
