@@ -4,7 +4,9 @@ Configure **Settings → Integrations & system → Security events** after signi
 
 The app sends one RFC 3164 syslog line per event over TCP. Wazuh uses plain TCP. The Sentinel destination can use plain TCP or certificate-verified TLS. Use plain TCP only across a trusted LAN or VPN; install a private CA with `NODE_EXTRA_CA_CERTS` if using TLS. Destination names are resolved through the app's outbound policy and each connection uses the approved IP address. The target host and port are stored as non-secret `SystemConfig` settings, excluded from portable configuration exports. They remain in full database backups.
 
-Events cover successful and failed sign-ins, password confirmations, explicit sign-outs, and password changes. Failed sign-ins include bad credentials, malformed requests, and rate-limited attempts. Stateless session expiration does not produce a sign-out event. Each JSON payload has `id`, `timestamp` (UTC), `product`, `event`, `result`, `account` (the targeted single-admin account), and `clientIp`; password and session values are excluded. `auth.login`, `auth.reauthenticate`, `auth.logout`, and `auth.password_change` are the current event names. A manual test sends `siem.test`. The syslog facility is `local0`, with informational severity for success and warning severity for failure.
+Events cover successful and failed sign-ins, password confirmations, explicit sign-outs, and password changes. Failed sign-ins include bad credentials, parsed login payload validation failures, and rate-limited attempts. Stateless session expiration does not produce a sign-out event. The syslog facility is `local0`, with informational severity for success and warning severity for failure.
+
+Each JSON payload has `id`, `timestamp` (UTC), `product`, `event`, `result`, `account` (the targeted single-admin account), and `clientIp`; password and session values are excluded. Login events also include `username`: the username supplied in the request, trimmed and limited to the login field's 64-character maximum. It is `null` if missing or unsafe to record. A supplied username is not a verified identity, including when the environment-managed password is used. `auth.login`, `auth.reauthenticate`, `auth.logout`, and `auth.password_change` are the current event names. A manual test sends `siem.test`.
 
 Delivery uses a bounded in-memory queue and short timeouts so a disconnected SIEM cannot delay sign-in. The settings page shows sent, failed, and dropped counts for the current app process. It does not guarantee delivery, retry failed events, or retain the queue across restarts. Keep ordinary application structured logs if you need an independent record.
 
@@ -26,7 +28,8 @@ Syslog
 | extend payload = parse_json(substring(SyslogMessage, indexof(SyslogMessage, "{")))
 | where tostring(payload.event) startswith "auth."
 | project TimeGenerated, event=tostring(payload.event), result=tostring(payload.result),
-          clientIp=tostring(payload.clientIp), eventId=tostring(payload.id), Computer
+          username=tostring(payload.username), clientIp=tostring(payload.clientIp),
+          eventId=tostring(payload.id), Computer
 ```
 
 Inspect the received `SyslogMessage` and adjust the query for your forwarder's parsing. The [Syslog table reference](https://learn.microsoft.com/en-us/azure/azure-monitor/reference/tables/syslog) describes the available columns. A successful test send only confirms the TCP/TLS write; confirm ingestion and analytic rule results in the SIEM.
@@ -38,6 +41,7 @@ Syslog
 | where SyslogMessage contains '"product":"homelab-dashboard"'
 | extend payload = parse_json(substring(SyslogMessage, indexof(SyslogMessage, "{")))
 | where tostring(payload.event) == "auth.login" and tostring(payload.result) == "failure"
-| summarize failures=count() by clientIp=tostring(payload.clientIp), bin(TimeGenerated, 5m)
+| summarize failures=count() by username=tostring(payload.username),
+          clientIp=tostring(payload.clientIp), bin(TimeGenerated, 5m)
 | where failures >= 3
 ```

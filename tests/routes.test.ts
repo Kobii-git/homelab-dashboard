@@ -42,6 +42,7 @@ import {
 } from "../src/server/outboundPolicy";
 import { isValidIconBody } from "../src/server/iconProxy";
 import { DEFAULT_SIEM_CONFIG, sendSyslog, SiemForwarder } from "../src/server/siem";
+import { RateLimiter } from "../src/server/rateLimit";
 
 const execFileAsync = promisify(execFile);
 const prisma = new PrismaClient();
@@ -3294,20 +3295,28 @@ describe("api routes", () => {
       expect(saved.json().config).toEqual(config);
       expect((await app.inject({ method: "GET", url: "/api/siem", headers: { cookie } })).json().config).toEqual(config);
       expect((await app.inject({ method: "POST", url: "/api/siem/test", headers: { cookie }, payload: { destination: "wazuh" } })).statusCode).toBe(200);
-      await app.inject({ method: "POST", url: "/api/auth/login", payload: { password: "do-not-send-this-password" } });
-      await app.inject({ method: "POST", url: "/api/auth/login", payload: { password: "" } });
-      const login = await app.inject({ method: "POST", url: "/api/auth/login", payload: { password: "test-pass" } });
+      await app.inject({ method: "POST", url: "/api/auth/login", payload: { username: "guessed-user", password: "do-not-send-this-password" } });
+      await app.inject({ method: "POST", url: "/api/auth/login", payload: { username: " malformed-user ", password: "" } });
+      await app.inject({ method: "POST", url: "/api/auth/login", payload: { username: "control\nspoof", password: "do-not-send-this-password" } });
+      const login = await app.inject({ method: "POST", url: "/api/auth/login", payload: { username: "entered-user", password: "test-pass" } });
+      const allowSpy = vi.spyOn(RateLimiter.prototype, "allow").mockReturnValueOnce(false);
+      try {
+        expect((await app.inject({ method: "POST", url: "/api/auth/login", payload: { username: "rate-user", password: "incorrect" } })).statusCode).toBe(429);
+      } finally { allowSpy.mockRestore(); }
       const newSession = login.cookies.map(value => `${value.name}=${value.value}`).join("; ");
       await app.inject({ method: "POST", url: "/api/auth/reauth", headers: { cookie: newSession }, payload: { password: "wrong-password" } });
       await app.inject({ method: "POST", url: "/api/auth/reauth", headers: { cookie: newSession }, payload: { password: "test-pass" } });
       await app.inject({ method: "POST", url: "/api/auth/logout", headers: { cookie: newSession } });
       cachedCookie = null;
-      await vi.waitFor(() => expect(received.length).toBeGreaterThanOrEqual(13), { timeout: 5000 });
+      await vi.waitFor(() => expect(received.length).toBeGreaterThanOrEqual(17), { timeout: 5000 });
       const marker = "homelab-dashboard: ";
       const events = received.map(line => JSON.parse(line.slice(line.indexOf(marker) + marker.length).trim()) as Record<string, unknown>);
       expect(events).toEqual(expect.arrayContaining([
-        expect.objectContaining({ event: "auth.login", result: "failure", account: "admin", product: "homelab-dashboard" }),
-        expect.objectContaining({ event: "auth.login", result: "success", account: "admin", product: "homelab-dashboard" }),
+        expect.objectContaining({ event: "auth.login", result: "failure", account: "admin", username: "guessed-user", product: "homelab-dashboard" }),
+        expect.objectContaining({ event: "auth.login", result: "failure", username: "malformed-user" }),
+        expect.objectContaining({ event: "auth.login", result: "failure", username: null }),
+        expect.objectContaining({ event: "auth.login", result: "failure", username: "rate-user" }),
+        expect.objectContaining({ event: "auth.login", result: "success", account: "admin", username: "entered-user", product: "homelab-dashboard" }),
         expect.objectContaining({ event: "auth.reauthenticate", result: "failure" }),
         expect.objectContaining({ event: "auth.reauthenticate", result: "success" }),
         expect.objectContaining({ event: "auth.logout", result: "success" }),

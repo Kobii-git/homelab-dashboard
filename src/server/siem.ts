@@ -33,6 +33,7 @@ type SecurityEvent = {
   result: "success" | "failure";
   account: "admin";
   clientIp: string;
+  username?: string | null;
   objectType?: string;
   objectId?: string;
 };

@@ -753,10 +753,12 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     request: FastifyRequest,
     event: string,
     result: "success" | "failure",
-    object?: { type: string; id?: string }
+    object?: { type: string; id?: string },
+    username?: string | null
   ): void {
     if (event.startsWith("auth.")) {
       siem.record({ event, result, clientIp: request.ip || "unknown",
+        ...(event === "auth.login" ? { username: username ?? null } : {}),
         ...(object ? { objectType: object.type, objectId: object.id } : {}) });
     }
     app.log.info({
@@ -767,6 +769,15 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
         ...(object ? { objectType: object.type, objectId: object.id ?? null } : {})
       }
     }, "security event");
+  }
+
+  function attemptedLoginUsername(body: unknown): string | null {
+    if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+    const value = (body as Record<string, unknown>).username;
+    if (typeof value !== "string") return null;
+    const username = value.trim();
+    if (!username || username.length > 64 || /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(username)) return null;
+    return username;
   }
 
   function requireRecentReauthentication(request: FastifyRequest, reply: FastifyReply): boolean {
@@ -1044,17 +1055,18 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   app.post("/api/auth/login", async (request, reply) => {
     const clientIp = request.ip || "unknown";
+    const attemptedUsername = attemptedLoginUsername(request.body);
     if (!loginLimiter.allow(clientIp)) {
-      securityLog(request, "auth.login", "failure");
+      securityLog(request, "auth.login", "failure", undefined, attemptedUsername);
       return reply.code(429).send({ error: "Too many login attempts. Try again shortly." });
     }
 
     let body: z.infer<typeof loginSchema>;
     try { body = loginSchema.parse(request.body); }
-    catch (error) { securityLog(request, "auth.login", "failure"); throw error; }
+    catch (error) { securityLog(request, "auth.login", "failure", undefined, attemptedUsername); throw error; }
 
     if (!(await verifyAdminLogin(body.username, body.password, env, prisma))) {
-      securityLog(request, "auth.login", "failure");
+      securityLog(request, "auth.login", "failure", undefined, attemptedUsername);
       reply.code(401).send({ error: "Invalid password" });
       return;
     }
@@ -1068,7 +1080,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       path: "/",
       maxAge: env.sessionMaxAgeSeconds
     });
-    securityLog(request, "auth.login", "success");
+    securityLog(request, "auth.login", "success", undefined, attemptedUsername);
 
     return { authenticated: true };
   });

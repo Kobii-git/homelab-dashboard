@@ -56,7 +56,7 @@ export function SiemSettings() {
   const changed = JSON.stringify(draft) !== JSON.stringify(status.config);
   return <>
     <h3>Authentication events</h3>
-    <p className="muted-copy">Forward successful and failed sign-ins, password confirmations, sign-outs, and password changes. Events include time, result, and client IP, with no password or session data. Delivery is best effort; use a trusted LAN or VPN for plain TCP syslog.</p>
+    <p className="muted-copy">Forward successful and failed sign-ins, password confirmations, sign-outs, and password changes. Sign-in events include the supplied username, time, result, and client IP, with no password or session data. A supplied username is not a verified identity. Delivery is best effort; use a trusted LAN or VPN for plain TCP syslog.</p>
     <form className="inline-form" onSubmit={save}>
       {(["wazuh", "sentinel"] as const).map(name => <fieldset key={name} className="siem-destination">
         <legend>{name === "wazuh" ? "Wazuh manager" : "Microsoft Sentinel syslog forwarder"}</legend>
