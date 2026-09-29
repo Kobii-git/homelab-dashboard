@@ -1,5 +1,6 @@
 import { APP_VERSION } from "../src/shared/version";
 import http from "node:http";
+import net from "node:net";
 import tls from "node:tls";
 import crypto from "node:crypto";
 import dns from "node:dns";
@@ -40,6 +41,7 @@ import {
   withFixedProviderLimit
 } from "../src/server/outboundPolicy";
 import { isValidIconBody } from "../src/server/iconProxy";
+import { DEFAULT_SIEM_CONFIG, sendSyslog, SiemForwarder } from "../src/server/siem";
 
 const execFileAsync = promisify(execFile);
 const prisma = new PrismaClient();
@@ -3110,6 +3112,12 @@ describe("api routes", () => {
         expect(untrusted.status).toBe("offline");
         expect(untrusted.error).toMatch(/certificate|self-signed|issuer/i);
 
+        await expect(sendSyslog(
+          { enabled: true, host: "127.0.0.1", port, transport: "tls" },
+          { id: "test-id", timestamp: new Date().toISOString(), product: "homelab-dashboard",
+            event: "siem.test", result: "success", account: "admin", clientIp: "unknown" }
+        )).rejects.toThrow(/certificate|self-signed|issuer/i);
+
         await expect(runWithPrivateCa(`127.0.0.1:${port}`)).resolves.toMatchObject({ status: "online" });
         const mismatch = await runWithPrivateCa(`mismatch.test:${port}`, true);
         expect(mismatch.status).toBe("offline");
@@ -3246,5 +3254,71 @@ describe("api routes", () => {
         ["event", "result", "clientIp", "objectType", "objectId"].includes(key)
       )
     )).toBe(true);
+  });
+
+  it("isolates SIEM delivery failures without exposing transport errors", async () => {
+    const forwarder = new SiemForwarder(async () => { throw new Error("secret receiver detail"); });
+    forwarder.configure({
+      ...DEFAULT_SIEM_CONFIG,
+      sentinel: { enabled: true, host: "receiver.example", port: 514, transport: "tcp" }
+    });
+    forwarder.record({ event: "auth.login", result: "failure", clientIp: "127.0.0.1" });
+    await vi.waitFor(() => expect(forwarder.status().delivery.sentinel.failed).toBe(1));
+    expect(JSON.stringify(forwarder.status())).not.toContain("secret receiver detail");
+    forwarder.close();
+  });
+
+  it("protects SIEM settings and forwards authentication events to both syslog receivers", async () => {
+    const received: string[] = [];
+    const server = net.createServer(socket => {
+      socket.setEncoding("utf8");
+      socket.on("data", chunk => received.push(chunk.toString()));
+    });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const cookie = await loginCookie();
+    const sessionOnly = cookie.split("; ").filter(value => value.startsWith("homelab_session=")).join("; ");
+    const config = {
+      wazuh: { enabled: true, host: "127.0.0.1", port, transport: "tcp" },
+      sentinel: { enabled: true, host: "127.0.0.1", port, transport: "tcp" }
+    };
+    try {
+      expect((await app.inject({ method: "GET", url: "/api/siem" })).statusCode).toBe(401);
+      expect((await app.inject({ method: "PATCH", url: "/api/siem", payload: config })).statusCode).toBe(401);
+      expect((await app.inject({ method: "PATCH", url: "/api/siem", headers: { cookie: sessionOnly }, payload: config })).statusCode).toBe(403);
+      expect((await app.inject({ method: "POST", url: "/api/siem/test", headers: { cookie: sessionOnly }, payload: { destination: "wazuh" } })).statusCode).toBe(403);
+      expect((await app.inject({ method: "PATCH", url: "/api/siem", headers: { cookie, origin: "https://other.example" }, payload: config })).statusCode).toBe(403);
+      expect((await app.inject({ method: "PATCH", url: "/api/siem", headers: { cookie }, payload: { ...config, wazuh: { ...config.wazuh, port: 0 } } })).statusCode).toBe(400);
+      const saved = await app.inject({ method: "PATCH", url: "/api/siem", headers: { cookie }, payload: config });
+      expect(saved.statusCode).toBe(200);
+      expect(saved.json().config).toEqual(config);
+      expect((await app.inject({ method: "GET", url: "/api/siem", headers: { cookie } })).json().config).toEqual(config);
+      expect((await app.inject({ method: "POST", url: "/api/siem/test", headers: { cookie }, payload: { destination: "wazuh" } })).statusCode).toBe(200);
+      await app.inject({ method: "POST", url: "/api/auth/login", payload: { password: "do-not-send-this-password" } });
+      await app.inject({ method: "POST", url: "/api/auth/login", payload: { password: "" } });
+      const login = await app.inject({ method: "POST", url: "/api/auth/login", payload: { password: "test-pass" } });
+      const newSession = login.cookies.map(value => `${value.name}=${value.value}`).join("; ");
+      await app.inject({ method: "POST", url: "/api/auth/reauth", headers: { cookie: newSession }, payload: { password: "wrong-password" } });
+      await app.inject({ method: "POST", url: "/api/auth/reauth", headers: { cookie: newSession }, payload: { password: "test-pass" } });
+      await app.inject({ method: "POST", url: "/api/auth/logout", headers: { cookie: newSession } });
+      cachedCookie = null;
+      await vi.waitFor(() => expect(received.length).toBeGreaterThanOrEqual(13), { timeout: 5000 });
+      const marker = "homelab-dashboard: ";
+      const events = received.map(line => JSON.parse(line.slice(line.indexOf(marker) + marker.length).trim()) as Record<string, unknown>);
+      expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({ event: "auth.login", result: "failure", account: "admin", product: "homelab-dashboard" }),
+        expect.objectContaining({ event: "auth.login", result: "success", account: "admin", product: "homelab-dashboard" }),
+        expect.objectContaining({ event: "auth.reauthenticate", result: "failure" }),
+        expect.objectContaining({ event: "auth.reauthenticate", result: "success" }),
+        expect.objectContaining({ event: "auth.logout", result: "success" }),
+        expect.objectContaining({ event: "siem.test" })
+      ]));
+      expect(JSON.stringify(events)).not.toContain("do-not-send-this-password");
+      expect(received.every(line => /^<13[24]>[A-Z][a-z]{2} /.test(line))).toBe(true);
+    } finally {
+      cachedCookie = null;
+      await app.inject({ method: "PATCH", url: "/api/siem", headers: { cookie: await loginCookie() }, payload: DEFAULT_SIEM_CONFIG });
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
   });
 });

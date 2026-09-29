@@ -124,6 +124,7 @@ import {
   widgetSecretOrigin
 } from "./apiWidgetBindings.js";
 import { fetchProxiedIcon, serverIconSlug } from "./iconProxy.js";
+import { readSiemConfig, saveSiemConfig, SiemDestinationError, SiemForwarder } from "./siem.js";
 
 type CreateAppOptions = {
   env?: AppEnv;
@@ -732,6 +733,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   });
 
   await initializeHomepage(prisma);
+  const siem = new SiemForwarder();
+  siem.configure(await readSiemConfig(prisma));
   await backfillManagedHealthChecks(prisma);
   await backfillPrimaryHealthChecks(prisma);
   await adoptExistingApiWidgetBindings(prisma);
@@ -752,6 +755,10 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     result: "success" | "failure",
     object?: { type: string; id?: string }
   ): void {
+    if (event.startsWith("auth.")) {
+      siem.record({ event, result, clientIp: request.ip || "unknown",
+        ...(object ? { objectType: object.type, objectId: object.id } : {}) });
+    }
     app.log.info({
       securityEvent: {
         event,
@@ -774,6 +781,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   function sensitiveMutationFor(request: FastifyRequest): { type: string; id?: string } | null {
     if (!["POST", "PATCH", "DELETE"].includes(request.method)) return null;
     const pathname = new URL(request.raw.url ?? "/", "http://localhost").pathname;
+    if (pathname === "/api/siem" || pathname === "/api/siem/test") return { type: "siem-configuration" };
     const collections: Array<{ prefix: string; type: string }> = [
       { prefix: "/api/metrics/hosts", type: "host-monitor" },
       { prefix: "/api/api-widgets", type: "api-widget" },
@@ -1041,7 +1049,9 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       return reply.code(429).send({ error: "Too many login attempts. Try again shortly." });
     }
 
-    const body = loginSchema.parse(request.body);
+    let body: z.infer<typeof loginSchema>;
+    try { body = loginSchema.parse(request.body); }
+    catch (error) { securityLog(request, "auth.login", "failure"); throw error; }
 
     if (!(await verifyAdminLogin(body.username, body.password, env, prisma))) {
       securityLog(request, "auth.login", "failure");
@@ -1091,6 +1101,29 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     reply.clearCookie(REAUTH_COOKIE, { path: "/", sameSite: "strict", secure: env.cookieSecure });
     securityLog(request, "auth.logout", "success");
     return { authenticated: false };
+  });
+
+  app.get("/api/siem", async () => siem.status());
+
+  app.patch("/api/siem", async (request, reply) => {
+    try {
+      const config = await saveSiemConfig(prisma, request.body);
+      siem.configure(config);
+      return siem.status();
+    } catch (error) {
+      if (!(error instanceof SiemDestinationError)) throw error;
+      return reply.code(400).send({ error: "SIEM destination could not be validated" });
+    }
+  });
+
+  app.post("/api/siem/test", async (request, reply) => {
+    const body = z.object({ destination: z.enum(["wazuh", "sentinel"]) }).strict().parse(request.body);
+    try {
+      await siem.test(body.destination);
+      return { ok: true };
+    } catch {
+      return reply.code(502).send({ error: "SIEM test delivery failed" });
+    }
   });
 
   app.get("/api/auth/me", async (request) => {
@@ -2178,6 +2211,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   }
 
   app.addHook("onClose", async () => {
+    siem.close();
     stopScheduler?.();
     stopMetricsScheduler?.();
     stopIntegrationScheduler?.();

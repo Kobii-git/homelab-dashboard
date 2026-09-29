@@ -27,7 +27,7 @@ A private, self-hosted browser homepage and command center for your bookmarks, w
 - **Command palette** - `⌘K` (or `/`) to search and launch any service or action from anywhere
 - **Services** - manual catalog for apps, websites, Docker services, VMs, servers, and other devices, with common homelab templates, duplicate actions, and confirmed OPNsense imports
 - **Health checks** - one primary HTTP, TCP, ping, or SSL availability check per service, optional non-disruptive diagnostics, in-container testing, latency, failure reasons, thresholds, and history
-- **Settings** - homepage appearance, bookmark/folder management, service configuration, backups, password change, Launchpad search/weather/release settings, Glances host monitors, OPNsense integration status, AI briefing runtime state, API widgets, runtime health diagnostics, public status page, build info, and demo-data controls
+- **Settings** - homepage appearance, bookmark/folder management, service configuration, backups, password change, Launchpad search/weather/release settings, Glances host monitors, OPNsense integration status, SIEM authentication forwarding, AI briefing runtime state, API widgets, runtime health diagnostics, public status page, build info, and demo-data controls
 - **Optional status page** - disabled by default, with aggregate-only or service-detail modes when deliberately enabled
 
 Remote SSH/RDP/VNC access, Guacamole, saved credentials, vaults, alert channels, incidents, script/plugin widgets, scheduled backups or full-database restore through the UI, tags, AI control agents, and mutating integration actions are intentionally out of the current app scope.
@@ -39,6 +39,8 @@ Remote SSH/RDP/VNC access, Guacamole, saved credentials, vaults, alert channels,
 Version `0.8.6` is a focused service launchpad and daily-operations command center with service health, lab vitals, threshold-aware monitoring, optional read-only utilities and AI briefings, and safe runtime diagnostics. The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles, network discovery, Docker discovery, Hyper-V discovery, or built-in HTTPS termination.
 
 The active database models are `Resource`, `DashboardGroup`, `HealthCheck`, `HealthResult`, `HostMonitor`, `HostMetricSample`, `IntegrationSource`, `IntegrationSample`, `ApiWidget`, `ApiWidgetSample`, `AdminAccount`, `SystemConfig`, `HomepageState`, and `HomepageAsset`.
+
+Wazuh manager and Microsoft Sentinel syslog forwarding for authentication events can be configured under **Settings → Integrations & system → Security events**. See [SIEM setup and demo query](docs/SIEM.md).
 
 ---
 

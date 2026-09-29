@@ -19,6 +19,7 @@ import {
 import { formatByteRate, formatPercent, relativeTime } from "../../lib/format";
 import { suggestedReleaseRepositories } from "../../lib/serviceCatalog";
 import type { DashboardResource } from "../../../shared/types";
+import { SiemSettings } from "./SiemSettings";
 
 type HostMonitorForm = {
   id: string | null;
@@ -611,10 +612,13 @@ export function SettingsView({
 
       <nav className="system-sections" aria-label="System settings sections">
         {([
-          ["daily", "Daily tools"], ["connections", "Connections"], ["system", "Account & runtime"],
+          ["daily", "Daily tools"], ["connections", "Connections"], ["siem", "Security events"], ["system", "Account & runtime"],
         ] as const).map(([id, label]) => <button key={id} aria-pressed={category === id} className={category === id ? "active" : ""} onClick={() => setCategory(id)}>{label}</button>)}
       </nav>
       <section className="settings-grid">
+        <section className="table-panel settings-wide-panel" hidden={category !== "siem"}>
+          {category === "siem" ? <SiemSettings /> : null}
+        </section>
         <section className="table-panel settings-wide-panel" hidden={category !== "daily"}>
           <h3><CloudSun size={16} /> Launchpad utilities</h3>
           <p className="muted-copy">

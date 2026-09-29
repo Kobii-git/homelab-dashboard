@@ -17,6 +17,7 @@ boundary.
 | API widgets | Definition in SQLite; secret value read from an allowed environment-variable name | Read-only JSON GET, bounded request, supported auth adapters, credential-origin binding, recent reauth for sensitive changes, sanitized failures. |
 | AI Command Briefing | Environment-only OpenAI-compatible endpoint, model, optional key, TLS and redaction settings | Authenticated summary only; evidence is sanitized and targets are excluded by default; bounded request; cached result/failure does not block core dashboard. |
 | Weather/releases | Non-secret settings in `SystemConfig` | Fixed Open-Meteo/GitHub hosts, concurrency/time/size bounds, caching, stale fallback, and separate dashboard request path. |
+| SIEM authentication forwarding | Non-secret Wazuh and Sentinel syslog destinations in `SystemConfig` | Auth events only; bounded in-memory queue; pinned TCP or verified TLS to the configured receiver; failures do not block authentication. See `docs/SIEM.md`. |
 | Service icons | Catalog slug or approved service favicon | Fixed catalog allowlist or shared outbound policy, byte/content validation, same-origin proxy, initials fallback. |
 
 ## Shared requirements

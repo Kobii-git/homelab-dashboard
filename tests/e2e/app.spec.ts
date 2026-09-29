@@ -450,6 +450,31 @@ test("Runtime Health surfaces security warnings and disabled public-status polic
   await expect(page.getByRole("button", { name: "Public status page" })).toHaveCount(0);
 });
 
+test("SIEM destinations can be saved from Security events with password confirmation", async ({ page }) => {
+  await login(page);
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Integrations & system", exact: true }).click();
+  await page.getByRole("button", { name: "Security events", exact: true }).click();
+  const wazuh = page.getByRole("group", { name: "Wazuh manager" });
+  await expect(wazuh).toBeVisible();
+  await expect(wazuh.getByRole("button", { name: "Send test event" })).toBeDisabled();
+  await wazuh.getByLabel("Receiver hostname or IP").fill("collector.example.lan");
+  await page.getByRole("button", { name: "Save destinations" }).click();
+  const reauth = page.getByRole("dialog", { name: "Confirm it’s you" });
+  await expect(reauth).toBeVisible();
+  await reauth.getByLabel(/administrator password/i).fill("e2e-admin-password");
+  await reauth.getByRole("button", { name: "Confirm", exact: true }).click();
+  await expect(page.getByText("SIEM destinations saved.")).toBeVisible();
+  await page.reload();
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Integrations & system", exact: true }).click();
+  await page.getByRole("button", { name: "Security events", exact: true }).click();
+  await expect(page.getByRole("group", { name: "Wazuh manager" }).getByLabel("Receiver hostname or IP")).toHaveValue("collector.example.lan");
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await expectNoSeriousAxeViolations(page);
+});
+
 test("authenticated views, palette, and drawer have no serious axe violations", async ({ page }) => {
   await page.goto("/");
   await expectNoSeriousAxeViolations(page);

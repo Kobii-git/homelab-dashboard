@@ -109,7 +109,7 @@ service's icon, name, or description to open it. **Manage services** opens confi
 under Settings. Operational filters, checks, and service reordering remain in **Operations**;
 the homepage Services module stays focused on launching and inspecting services.
 
-Integration settings are grouped into **Daily tools**, **Connections**, and **Account & runtime**.
+Integration settings are grouped into **Daily tools**, **Connections**, **Security events**, and **Account & runtime**.
 Changing groups preserves unsaved form edits while the Settings page stays open.
 
 For Todoist, enable its read-only source in **Settings → Integrations & system → Daily tools → Personal context**,

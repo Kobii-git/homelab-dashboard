@@ -5449,6 +5449,9 @@ input::file-selector-button {
 .system-sections button { padding:9px 14px; border:1px solid var(--border); border-radius:20px; background:transparent; color:var(--text-muted); font-size:13px; }
 .system-sections button.active { color:var(--text); background:var(--accent-subtle); border-color:var(--accent-strong); }
 .settings-grid > [hidden] { display:none; }
+.siem-destination { border:1px solid var(--line-soft); border-radius:12px; padding:16px; margin:0 0 16px; min-width:0; }
+.siem-destination legend { font-weight:700; padding:0 6px; }
+.siem-destination .settings-form-grid { grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr)); margin-top:12px; }
 .system-settings .muted-copy { line-height:1.6; margin:8px 0 16px; }
 .system-settings .settings-actions { grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); }
 .check-data-row { grid-template-columns:minmax(0,1fr) auto auto repeat(3,36px); }
