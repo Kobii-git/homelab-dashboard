@@ -11,6 +11,31 @@ async function login(page: Page) {
   ).toBeVisible();
 }
 
+test("homepage snapshot is shared and stays visible when returning to Dashboard", async ({ page }) => {
+  let snapshotRequests = 0;
+  let delayedRequestFinished = false;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/homepage") snapshotRequests += 1;
+  });
+  await login(page);
+  expect(snapshotRequests).toBe(1);
+  const current = await (await page.request.get("/api/homepage")).json();
+
+  await page.route("**/api/homepage", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await route.fulfill({ json: current });
+    delayedRequestFinished = true;
+  });
+  const primary = page.getByRole("navigation", { name: "Primary" });
+  await primary.getByRole("button", { name: "Services", exact: true }).click();
+  await primary.getByRole("button", { name: "Dashboard", exact: true }).click();
+  await expect(page.getByRole("searchbox", { name: "Search Google" })).toBeVisible({ timeout: 1000 });
+  await expect(page.getByText("Loading your homepage…")).toHaveCount(0);
+  await expect.poll(() => snapshotRequests).toBe(2);
+
+  await expect.poll(() => delayedRequestFinished).toBe(true);
+});
+
 test("Work notes preserve drafts across devices and expose explicit conflict recovery", async ({
   page,
   context,

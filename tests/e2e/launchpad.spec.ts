@@ -140,9 +140,12 @@ test("Home services lead below search and wrap side by side without rewriting sa
       await page.locator(".workspace-scroll").evaluate(el => { el.scrollTop = 0; });
       const searchBox = (await page.getByRole("search", { name: "Google", exact: true }).boundingBox())!;
       const sectionBox = (await services.boundingBox())!;
-      const gridBox = (await page.locator(".hp-grid").boundingBox())!;
       expect(sectionBox.y).toBeGreaterThanOrEqual(searchBox.y + searchBox.height);
-      expect(Math.abs(sectionBox.width - gridBox.width)).toBeLessThan(1);
+      await expect.poll(async () => {
+        const section = await services.boundingBox();
+        const grid = await page.locator(".hp-grid").boundingBox();
+        return section && grid ? Math.abs(section.width - grid.width) : Infinity;
+      }).toBeLessThan(1);
       const cards = services.locator(".service-group .svc-collection").first().locator(".svc-card");
       const first = (await cards.nth(0).boundingBox())!;
       const second = (await cards.nth(1).boundingBox())!;

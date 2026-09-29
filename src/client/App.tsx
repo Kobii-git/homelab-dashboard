@@ -3,6 +3,7 @@ import { ServiceLauncher } from "./features/services/ServiceLauncher";
 import { ModalSurface } from "./components/ModalSurface";
 import { Gauge, LayoutDashboard, Server, Settings, Shield, StickyNote } from "lucide-react";
 import { NotesPage } from "./features/homepage/NotesPage";
+import { clearHomepageCache } from "./features/homepage/useHomepage";
 import { TimesheetDraftProvider, useTimesheetDraftState } from "./features/homepage/TimesheetDrafts";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -475,6 +476,7 @@ export function App() {
 
   useEffect(() => {
     function onSessionExpired() {
+      clearHomepageCache();
       setAuthenticated(false);
       setSessionMessage("Your session expired or was invalidated. Sign in again to continue.");
       setPaletteOpen(false);
@@ -569,6 +571,7 @@ export function App() {
   async function logout() {
     try {
       await apiSend("/api/auth/logout", "POST");
+      clearHomepageCache();
       setAuthenticated(false);
       setSessionMessage("You have been signed out on all browsers.");
       setData(emptyAppData);

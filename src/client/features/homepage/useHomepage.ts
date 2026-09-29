@@ -1,8 +1,45 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
 import type { HomepageData, HomepageSnapshot } from "../../../shared/homepage";
 import { apiGet, apiSend } from "../../lib/api";
+
+let cachedSnapshot: HomepageSnapshot | null = null;
+let snapshotRequest: Promise<HomepageSnapshot> | null = null;
+let cacheGeneration = 0;
+const snapshotListeners = new Set<() => void>();
+
+function subscribeSnapshot(listener: () => void) {
+  snapshotListeners.add(listener);
+  return () => { snapshotListeners.delete(listener); };
+}
+
+function publishSnapshot(update: SetStateAction<HomepageSnapshot | null>) {
+  const next = typeof update === "function" ? update(cachedSnapshot) : update;
+  if (next === cachedSnapshot) return;
+  cachedSnapshot = next;
+  snapshotListeners.forEach((listener) => listener());
+}
+
+function fetchSnapshot() {
+  if (!snapshotRequest) {
+    const request = apiGet<HomepageSnapshot>("/api/homepage");
+    snapshotRequest = request;
+    void request.then(
+      () => { if (snapshotRequest === request) snapshotRequest = null; },
+      () => { if (snapshotRequest === request) snapshotRequest = null; }
+    );
+  }
+  return snapshotRequest;
+}
+
+export function clearHomepageCache() {
+  cacheGeneration += 1;
+  snapshotRequest = null;
+  publishSnapshot(null);
+}
+
 export function useHomepage() {
-  const [snapshot, setSnapshot] = useState<HomepageSnapshot | null>(null);
+  const snapshot = useSyncExternalStore(subscribeSnapshot, () => cachedSnapshot, () => null);
+  const setSnapshot: Dispatch<SetStateAction<HomepageSnapshot | null>> = publishSnapshot;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
@@ -11,16 +48,17 @@ export function useHomepage() {
   const refresh = useCallback(async () => {
     if (pending.current || mutating.current) return;
     pending.current = true;
+    const generation = cacheGeneration;
     try {
-      const next = await apiGet<HomepageSnapshot>("/api/homepage");
-      if (mounted.current && !mutating.current) {
-        setSnapshot((current) =>
+      const next = await fetchSnapshot();
+      if (mounted.current && !mutating.current && generation === cacheGeneration) {
+        publishSnapshot((current) =>
           !current || next.revision >= current.revision ? next : current,
         );
         setError(null);
       }
     } catch (e) {
-      if (mounted.current)
+      if (mounted.current && generation === cacheGeneration)
         setError(
           e instanceof Error
             ? e.message
@@ -53,12 +91,15 @@ export function useHomepage() {
   async function mutate(path: string, body: object): Promise<HomepageSnapshot> {
     if (mutating.current) throw new Error("A save is already in progress");
     mutating.current = true;
+    const generation = cacheGeneration;
     setBusy(true);
     setError(null);
     try {
       const next = await apiSend<HomepageSnapshot>(path, "POST", body);
-      setSnapshot(next);
-      window.dispatchEvent(new Event("homepage:changed"));
+      if (generation === cacheGeneration) {
+        setSnapshot(next);
+        window.dispatchEvent(new Event("homepage:changed"));
+      }
       return next;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save");
