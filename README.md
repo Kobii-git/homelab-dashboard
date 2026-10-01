@@ -2,7 +2,7 @@
 
 A private, self-hosted browser homepage and command center for your bookmarks, work, and home services. Home and Work organize everyday browsing and planning; Operations monitors lab health and useful read-only signals over LAN/VPN.
 
-![Version](https://img.shields.io/badge/version-0.8.6-2dd4bf)
+![Version](https://img.shields.io/badge/version-0.8.7-2dd4bf)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -36,7 +36,7 @@ Remote SSH/RDP/VNC access, Guacamole, saved credentials, vaults, alert channels,
 
 ## Current Scope
 
-Version `0.8.6` is a focused service launchpad and daily-operations command center with service health, lab vitals, threshold-aware monitoring, optional read-only utilities and AI briefings, and safe runtime diagnostics. The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles, network discovery, Docker discovery, Hyper-V discovery, or built-in HTTPS termination.
+Version `0.8.7` is a focused service launchpad and daily-operations command center with service health, lab vitals, threshold-aware monitoring, optional read-only utilities and AI briefings, and safe runtime diagnostics. The app remains designed for one trusted admin on a private LAN, VPN, or private mesh network. It does not include multi-user roles, network discovery, Docker discovery, Hyper-V discovery, or built-in HTTPS termination.
 
 The active database models are `Resource`, `DashboardGroup`, `HealthCheck`, `HealthResult`, `HostMonitor`, `HostMetricSample`, `IntegrationSource`, `IntegrationSample`, `ApiWidget`, `ApiWidgetSample`, `AdminAccount`, `SystemConfig`, `HomepageState`, and `HomepageAsset`.
 
@@ -275,7 +275,7 @@ Every branch build also publishes a commit-labelled `sha-*` tag and signs the di
 
 ## Versioning
 
-Current: **v0.8.6**
+Current: **v0.8.7**
 
 Verify the running build:
 

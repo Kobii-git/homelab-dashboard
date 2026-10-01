@@ -6,6 +6,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.8.7] - 2026-10-01
+
+### Changed
+- Homepage state saves return compact responses to the current client and update the shared snapshot without redundant refresh requests. Existing API clients retain full snapshot responses.
+- Settings saves track the configuration revision after local homepage changes, preserving revision checks while avoiding unnecessary conflicts.
+- Dashboard reads avoid rewriting unchanged OPNsense and TrueNAS source configuration.
+- API requests taking at least 500 ms log their route, status, and duration for diagnosis.
+- Update Fastify, fast-uri, and brace-expansion to resolve dependency advisories blocking image publication; regenerate dependency notices.
+
 ## [0.8.6] - 2026-09-25
 
 ### Changed

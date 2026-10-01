@@ -30,7 +30,7 @@ ajv-formats@3.0.1 — MIT
 atomic-sleep@1.0.0 — MIT
 avvio@9.2.0 — MIT
 balanced-match@4.0.4 — MIT
-brace-expansion@5.0.9 — MIT
+brace-expansion@5.0.12 — MIT
 c12@3.1.0 — MIT
 chokidar@4.0.3 — MIT
 citty@0.1.6 — MIT
@@ -54,11 +54,11 @@ fast-decode-uri-component@1.0.1 — MIT
 fast-deep-equal@3.1.3 — MIT
 fast-json-stringify@6.4.0 — MIT
 fast-querystring@1.1.2 — MIT
-fast-uri@3.1.6 — BSD-3-Clause
-fastify@5.12.3 — MIT
+fast-uri@3.1.8 — BSD-3-Clause
+fastify@5.12.5 — MIT
 fastify-plugin@6.0.0 — MIT
 fast-json-stringify@7.0.1 — MIT
-fast-uri@4.1.3 — BSD-3-Clause
+fast-uri@4.2.1 — BSD-3-Clause
 semver@7.8.1 — ISC
 fastq@1.20.1 — ISC
 fflate@0.8.3 — MIT
@@ -845,7 +845,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ========================================================================
-brace-expansion@5.0.9
+brace-expansion@5.0.12
 
 MIT License
 
@@ -1504,8 +1504,8 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ========================================================================
-fast-uri@3.1.6
-fast-uri@4.1.3
+fast-uri@3.1.8
+fast-uri@4.2.1
 
 Copyright (c) 2011-2021, Gary Court until https://github.com/garycourt/uri-js/commit/a1acf730b4bba3f1097c9f52e7d9d3aba8cdcaae
 Copyright (c) 2021-present The Fastify team <https://github.com/fastify/fastify#team>
@@ -1539,7 +1539,7 @@ The complete list of contributors can be found at:
 - https://github.com/garycourt/uri-js/graphs/contributors
 
 ========================================================================
-fastify@5.12.3
+fastify@5.12.5
 
 MIT License
 
