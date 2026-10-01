@@ -46,6 +46,9 @@ Homepage, bookmark-export, and settings read snapshots use Prisma batch transact
 queries execute together without holding an interactive SQLite transaction across JavaScript
 callbacks. Keep each snapshot atomic with its configuration revision. Mutations retain interactive
 transactions for revision checks and dependent writes.
+Homepage state saves accept `Prefer: return=minimal` for a revision-and-data response; callers
+without that header still receive the full bookmark and asset snapshot. The client updates its
+shared homepage snapshot from a successful local save and refreshes dashboard data when bookmarks change.
 
 ## Trust boundaries
 

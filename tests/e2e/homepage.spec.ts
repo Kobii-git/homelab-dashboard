@@ -36,6 +36,34 @@ test("homepage snapshot is shared and stays visible when returning to Dashboard"
   await expect.poll(() => delayedRequestFinished).toBe(true);
 });
 
+test("saving a note avoids refresh requests and keeps the next settings revision current", async ({ page }) => {
+  await login(page);
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Notes", exact: true }).click();
+  const note = page.getByLabel("Workspace notes");
+  await expect(note).toBeVisible();
+  await note.fill("Quick save without a refresh cascade");
+  const requests: string[] = [];
+  page.on("request", request => {
+    const path = new URL(request.url()).pathname;
+    if (["/api/homepage", "/api/dashboard", "/api/settings", "/api/config/revision"].includes(path)) requests.push(path);
+  });
+  const saved = page.waitForResponse(response => response.url().endsWith("/api/homepage/state") && response.status() === 200);
+  await page.getByRole("button", { name: "Save notes", exact: true }).click();
+  const response = await saved;
+  const compact = await response.json();
+  expect(Object.keys(compact).sort()).toEqual(["data", "revision"]);
+  await expect(page.getByRole("status").filter({ hasText: "Saved to your notes" })).toBeVisible();
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  expect(requests).toEqual([]);
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("navigation", { name: "Settings sections" }).getByRole("button", { name: "Integrations & system" }).click();
+  await page.getByRole("button", { name: "Daily tools" }).click();
+  const settingsSave = page.waitForRequest(request => new URL(request.url()).pathname === "/api/settings" && request.method() === "PATCH");
+  await page.getByRole("button", { name: "Save Launchpad utilities" }).click();
+  expect((await settingsSave).postDataJSON().revision).toBe(compact.revision);
+  await expect(page.getByText("Dashboard utilities updated")).toBeVisible();
+});
+
 test("Work notes preserve drafts across devices and expose explicit conflict recovery", async ({
   page,
   context,

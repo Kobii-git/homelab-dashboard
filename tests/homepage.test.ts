@@ -153,6 +153,53 @@ describe("private homepage", () => {
     }
   }, 20_000);
 
+  it("returns a compact state save while preserving legacy snapshots and revision checks", async () => {
+    const before = await snapshot();
+    const data = structuredClone(before.data);
+    data.workspaces.work.notes = "Compact save";
+    const compact = await app.inject({
+      method: "POST",
+      url: "/api/homepage/state",
+      headers: { prefer: "return=minimal" },
+      cookies,
+      payload: { revision: before.revision, data },
+    });
+    expect(compact.statusCode).toBe(200);
+    expect(compact.json()).toEqual({ revision: expect.any(Number), data });
+    expect(compact.json().revision).toBeGreaterThan(before.revision);
+    expect((await snapshot()).revision).toBe(compact.json().revision);
+    expect((await send("/api/homepage/state", { revision: compact.json().revision, data })).json()).toEqual({
+      revision: expect.any(Number), data, bookmarks: expect.any(Array), assets: expect.any(Array),
+    });
+    expect((await app.inject({
+      method: "POST", url: "/api/homepage/state", headers: { prefer: "return=minimal" }, cookies,
+      payload: { revision: before.revision, data },
+    })).statusCode).toBe(409);
+    expect((await app.inject({
+      method: "POST", url: "/api/homepage/state", headers: { prefer: "return=minimal" },
+      payload: { revision: before.revision, data },
+    })).statusCode).toBe(401);
+  });
+
+  it("can replace malformed saved data with a valid state", async () => {
+    const before = await snapshot();
+    await prisma.homepageState.update({
+      where: { id: "main" },
+      data: { data: { ...before.data, prompts: null } },
+    });
+    try {
+      const damaged = await prisma.homepageState.findUniqueOrThrow({ where: { id: "main" } });
+      const repaired = await app.inject({
+        method: "POST", url: "/api/homepage/state", headers: { prefer: "return=minimal" }, cookies,
+        payload: { revision: damaged.revision, data: before.data },
+      });
+      expect(repaired.statusCode).toBe(200);
+      expect((await snapshot()).data).toEqual(before.data);
+    } finally {
+      await prisma.homepageState.update({ where: { id: "main" }, data: { data: before.data } });
+    }
+  });
+
   it("authenticates new routes and enforces origin and reauthentication", async () => {
     expect((await app.inject({ url: "/api/homepage" })).statusCode).toBe(401);
     expect(

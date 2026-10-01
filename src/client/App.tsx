@@ -3,7 +3,7 @@ import { ServiceLauncher } from "./features/services/ServiceLauncher";
 import { ModalSurface } from "./components/ModalSurface";
 import { Gauge, LayoutDashboard, Server, Settings, Shield, StickyNote } from "lucide-react";
 import { NotesPage } from "./features/homepage/NotesPage";
-import { clearHomepageCache } from "./features/homepage/useHomepage";
+import { clearHomepageCache, type HomepageChangedDetail } from "./features/homepage/useHomepage";
 import { TimesheetDraftProvider, useTimesheetDraftState } from "./features/homepage/TimesheetDrafts";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -313,6 +313,7 @@ export function App() {
   const [data, setData] = useState<AppData>(emptyAppData);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("homepage");
   const [systemSettings, setSystemSettings] = useState<SystemSettingsDto>(defaultSystemSettings);
+  const settingsRevisionRef = useRef<number | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [dataReady, setDataReady] = useState(false);
@@ -418,6 +419,7 @@ export function App() {
 
   async function loadSystemSettings() {
     const settings = await apiGet<SystemSettingsDto>("/api/settings");
+    settingsRevisionRef.current = Math.max(settingsRevisionRef.current ?? 0, settings.revision ?? 0);
     setSystemSettings(settings);
   }
 
@@ -432,7 +434,7 @@ export function App() {
     setSetupStatus(status);
     if (me.authenticated) {
       await Promise.all([loadData(), loadSystemSettings()]);
-    }
+    } else settingsRevisionRef.current = undefined;
   }
 
   async function completeSetup(usernameInput: string | null, password: string | null, setupCode: string | null, withDemo: boolean) {
@@ -477,6 +479,7 @@ export function App() {
   useEffect(() => {
     function onSessionExpired() {
       clearHomepageCache();
+      settingsRevisionRef.current = undefined;
       setAuthenticated(false);
       setSessionMessage("Your session expired or was invalidated. Sign in again to continue.");
       setPaletteOpen(false);
@@ -522,13 +525,21 @@ export function App() {
     const timer = setInterval(update, 30000);
     window.addEventListener("focus", update);
     window.addEventListener("online", update);
-    window.addEventListener("homepage:changed", update);
+    const onHomepageChanged = (event: Event) => {
+      const detail = (event as CustomEvent<HomepageChangedDetail>).detail;
+      if (detail?.source === "local") {
+        lastRevision = Math.max(lastRevision ?? 0, detail.revision);
+        settingsRevisionRef.current = Math.max(settingsRevisionRef.current ?? 0, detail.revision);
+        if (detail.bookmarksChanged) void loadData({ background: true });
+      } else update();
+    };
+    window.addEventListener("homepage:changed", onHomepageChanged);
     document.addEventListener("visibilitychange", update);
     return () => {
       clearInterval(timer);
       window.removeEventListener("focus", update);
       window.removeEventListener("online", update);
-      window.removeEventListener("homepage:changed", update);
+      window.removeEventListener("homepage:changed", onHomepageChanged);
       document.removeEventListener("visibilitychange", update);
     };
   }, [authenticated, view]);
@@ -572,6 +583,7 @@ export function App() {
     try {
       await apiSend("/api/auth/logout", "POST");
       clearHomepageCache();
+      settingsRevisionRef.current = undefined;
       setAuthenticated(false);
       setSessionMessage("You have been signed out on all browsers.");
       setData(emptyAppData);
@@ -633,7 +645,11 @@ export function App() {
   }
 
   async function patchSystemSettings(next: Partial<SystemSettingsDto>) {
-    setSystemSettings(await apiSend<SystemSettingsDto>("/api/settings", "PATCH", { ...next, revision: systemSettings.revision }));
+    const saved = await apiSend<SystemSettingsDto>("/api/settings", "PATCH", {
+      ...next, revision: settingsRevisionRef.current ?? systemSettings.revision,
+    });
+    settingsRevisionRef.current = saved.revision;
+    setSystemSettings(saved);
   }
 
   function openServicesForCreate() {

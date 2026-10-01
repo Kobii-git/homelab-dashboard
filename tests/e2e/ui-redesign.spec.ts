@@ -137,7 +137,7 @@ test("dashboard status, forecast icons, logo fallbacks, and container columns re
       data: { units: "imperial", temperature: 61, apparentTemperature: 58, weatherCode: 2, isDay: true, condition: "Partly cloudy", location: { name: "Example City" }, days: [] } },
     releases: { state: "disabled", data: null, stale: false, error: null, fetchedAt: null },
   } }));
-  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.reload();
   await expect(status.locator(".health-warning").filter({ hasText: "Weather: cached data" })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Weather:/ })).toContainText("61°F");
   await page.getByRole("button", { name: /^Weather:/ }).click();

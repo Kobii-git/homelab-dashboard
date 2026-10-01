@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type { HomepageAsset, HomepageState, Prisma, PrismaClient, Resource } from "@prisma/client";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -282,11 +283,20 @@ export async function registerHomepageRoutes(
       .parse(request.body);
     return prisma.$transaction(async (tx) => {
       await claimRevision(tx, revision);
-      const bookmarks = await tx.resource.findMany({
-        where: { purpose: "bookmark" },
+      const previous = await tx.homepageState.findUniqueOrThrow({
+        where: { id: "main" },
+        select: { data: true },
       });
-      for (const b of bookmarks)
-        assertCollection(data, b.workspaceId, b.collectionId);
+      const previousCollections = previous.data && typeof previous.data === "object" && !Array.isArray(previous.data)
+        ? previous.data.collections : undefined;
+      if (!isDeepStrictEqual(previousCollections, data.collections)) {
+        const bookmarks = await tx.resource.findMany({
+          where: { purpose: "bookmark" },
+          select: { workspaceId: true, collectionId: true },
+        });
+        for (const bookmark of bookmarks)
+          assertCollection(data, bookmark.workspaceId, bookmark.collectionId);
+      }
       for (const w of Object.values(data.workspaces))
         if (
           w.layout.background.startsWith("asset:") &&
@@ -296,6 +306,13 @@ export async function registerHomepageRoutes(
         )
           bad("Background asset is missing");
       await tx.homepageState.update({ where: { id: "main" }, data: { data } });
+      if (request.headers.prefer === "return=minimal") {
+        const saved = await tx.homepageState.findUniqueOrThrow({
+          where: { id: "main" },
+          select: { revision: true },
+        });
+        return { revision: saved.revision, data };
+      }
       return readHomepage(tx);
     });
   });

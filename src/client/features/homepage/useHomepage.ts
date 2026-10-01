@@ -7,6 +7,12 @@ let snapshotRequest: Promise<HomepageSnapshot> | null = null;
 let cacheGeneration = 0;
 const snapshotListeners = new Set<() => void>();
 
+export type HomepageChangedDetail = {
+  source: "local";
+  revision: number;
+  bookmarksChanged: boolean;
+};
+
 function subscribeSnapshot(listener: () => void) {
   snapshotListeners.add(listener);
   return () => { snapshotListeners.delete(listener); };
@@ -77,14 +83,17 @@ export function useHomepage() {
     const timer = setInterval(update, 30_000);
     window.addEventListener("focus", update);
     window.addEventListener("online", update);
-    window.addEventListener("homepage:changed", update);
+    const onChanged = (event: Event) => {
+      if ((event as CustomEvent<HomepageChangedDetail>).detail?.source !== "local") update();
+    };
+    window.addEventListener("homepage:changed", onChanged);
     document.addEventListener("visibilitychange", update);
     return () => {
       mounted.current = false;
       clearInterval(timer);
       window.removeEventListener("focus", update);
       window.removeEventListener("online", update);
-      window.removeEventListener("homepage:changed", update);
+      window.removeEventListener("homepage:changed", onChanged);
       document.removeEventListener("visibilitychange", update);
     };
   }, [refresh]);
@@ -95,10 +104,21 @@ export function useHomepage() {
     setBusy(true);
     setError(null);
     try {
-      const next = await apiSend<HomepageSnapshot>(path, "POST", body);
+      const base = cachedSnapshot;
+      const isStateSave = path === "/api/homepage/state" && base !== null;
+      const next = isStateSave
+        ? {
+            ...base,
+            ...await apiSend<Pick<HomepageSnapshot, "revision" | "data">>(
+              path, "POST", body, { Prefer: "return=minimal" },
+            ),
+          }
+        : await apiSend<HomepageSnapshot>(path, "POST", body);
       if (generation === cacheGeneration) {
-        setSnapshot(next);
-        window.dispatchEvent(new Event("homepage:changed"));
+        setSnapshot((current) => current && current.revision > next.revision ? current : next);
+        window.dispatchEvent(new CustomEvent<HomepageChangedDetail>("homepage:changed", {
+          detail: { source: "local", revision: next.revision, bookmarksChanged: path.startsWith("/api/homepage/bookmarks") },
+        }));
       }
       return next;
     } catch (e) {

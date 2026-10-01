@@ -1354,6 +1354,11 @@ describe("api routes", () => {
         expect(dashboardBody.integrations[0].latestSnapshot.gateways).toHaveLength(1);
         expect(dashboardBody.integrations[0].latestSnapshot.importSuggestions.length).toBeGreaterThan(0);
 
+        const originalTimestamp = new Date("2020-01-01T00:00:00.000Z");
+        await prisma.integrationSource.update({ where: { id: sourceId }, data: { updatedAt: originalTimestamp } });
+        expect((await integrationApp.inject({ method: "GET", url: "/api/dashboard", headers: { cookie } })).statusCode).toBe(200);
+        expect((await prisma.integrationSource.findUniqueOrThrow({ where: { id: sourceId } })).updatedAt).toEqual(originalTimestamp);
+
         const runtime = await integrationApp.inject({ method: "GET", url: "/api/admin/runtime", headers: { cookie } });
         expect(runtime.statusCode).toBe(200);
         expect(runtime.body).not.toContain("opn-test-key");

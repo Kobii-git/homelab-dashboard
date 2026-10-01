@@ -844,7 +844,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return null;
   }
 
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {
       reply.code(400).send({
         error: "Invalid request",
@@ -867,7 +867,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       return;
     }
 
-    app.log.error(error);
+    request.log.error({ err: error, method: request.method, route: request.routeOptions.url ?? "unmatched" }, "API request failed");
     reply.code(500).send({ error: "Internal server error" });
   });
 
@@ -970,6 +970,14 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   });
 
   app.addHook("onResponse", async (request, reply) => {
+    if (request.url.startsWith("/api/") && reply.elapsedTime >= 500) {
+      request.log.warn({
+        method: request.method,
+        route: request.routeOptions.url ?? "unmatched",
+        statusCode: reply.statusCode,
+        durationMs: Math.round(reply.elapsedTime)
+      }, "Slow API request");
+    }
     const sensitiveMutation = sensitiveMutationFor(request);
     if (sensitiveMutation && reply.statusCode !== 403) {
       securityLog(

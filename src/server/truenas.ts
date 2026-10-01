@@ -334,6 +334,7 @@ export async function syncConfiguredTrueNasSource(prisma: PrismaClient, config: 
       data: { provider: TRUENAS_PROVIDER, name: config.name, baseUrl: config.baseUrl, enabled: true }
     });
   }
+  if (existing.enabled && existing.name === config.name && existing.baseUrl === config.baseUrl) return existing;
   const moved = existing.baseUrl !== config.baseUrl;
   return prisma.$transaction(async (tx) => {
     const source = await tx.integrationSource.update({

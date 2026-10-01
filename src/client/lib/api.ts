@@ -238,7 +238,8 @@ export async function apiGet<T>(path: string): Promise<T> {
 export async function apiSend<T>(
   path: string,
   method: "POST" | "PUT" | "PATCH" | "DELETE",
-  body?: unknown
+  body?: unknown,
+  headers?: Record<string, string>
 ): Promise<T> {
   const send = async (): Promise<T> => {
     let response: Response;
@@ -246,7 +247,7 @@ export async function apiSend<T>(
       response = await fetch(path, {
         method,
         credentials: "include",
-        headers: body ? { "Content-Type": "application/json" } : undefined,
+        headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...headers },
         body: body ? JSON.stringify(body) : undefined
       });
     } catch (error) {
